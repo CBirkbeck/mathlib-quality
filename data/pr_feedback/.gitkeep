@@ -1,0 +1,14 @@
+# This directory will contain scraped PR feedback data
+# Run scripts/scrape_pr_feedback.py to populate
+#
+# Expected files after scraping:
+# - style_feedback.json
+# - naming_feedback.json
+# - documentation_feedback.json
+# - proof_golf_feedback.json
+# - api_design_feedback.json
+# - imports_feedback.json
+# - performance_feedback.json
+# - general_feedback.json
+# - metadata.json
+# - analysis.json
