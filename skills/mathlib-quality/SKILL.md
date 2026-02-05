@@ -25,6 +25,7 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | `/check-style` | Validate without making changes |
 | `/golf-proof` | Optimize specific proofs |
 | `/decompose-proof` | Break long proofs into helper lemmas |
+| `/split-file` | Split large files (>1500 lines) into focused modules |
 | `/pre-submit` | Pre-PR submission checklist |
 | `/fix-pr-feedback` | Address reviewer comments |
 
@@ -530,11 +531,50 @@ These will be flagged at PR time; focus on semantic issues instead.
 
 ## File Splitting Guidelines
 
-When a file exceeds ~1500 lines, split by theme:
-1. `Defs.lean` - Core definitions only
-2. `Basic.lean` - Simple API lemmas
-3. `[Topic].lean` - Thematic groupings
-4. `Main.lean` - Final theorems importing above
+When a file exceeds ~1500 lines, use `/split-file` to split it.
+
+### Splitting Strategy
+
+**Step 1: Group by naming prefix**
+Declarations about the same object share naming prefixes:
+- `cauchyPrincipalValue*` → `CauchyPrincipalValue.lean`
+- `residue*`, `Residue*` → `Residue.lean`
+- `integral_*` → `Integration.lean`
+
+**Step 2: Choose structure based on size**
+
+For 1500-3000 lines:
+```
+Module/
+├── Basic.lean      -- Definitions + core lemmas
+└── Theorems.lean   -- Main results (imports Basic)
+```
+
+For >3000 lines:
+```
+Module/
+├── Defs.lean       -- Pure definitions
+├── GroupA.lean     -- Lemmas about object A
+├── GroupB.lean     -- Lemmas about object B
+└── Main.lean       -- Main theorems (imports all)
+```
+
+**Step 3: Respect dependencies**
+- Lower files import higher files, never vice versa
+- No circular imports
+- Each file must compile independently
+
+### Example Split
+
+```
+Before: ResidueTheory.lean (3000 lines)
+
+After:
+ResidueTheory/
+├── CauchyPrincipalValue.lean  -- PV definitions & lemmas
+├── Residue.lean               -- Residue definitions & lemmas
+└── ResidueTheorem.lean        -- Main theorems (imports above)
+```
 
 ## PR Feedback RAG System
 
