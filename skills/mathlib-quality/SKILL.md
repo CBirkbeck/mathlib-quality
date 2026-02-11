@@ -28,6 +28,11 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | `/split-file` | Split large files (>1500 lines) into focused modules |
 | `/pre-submit` | Pre-PR submission checklist |
 | `/fix-pr-feedback` | Address reviewer comments |
+| `/setup-rag` | Set up RAG MCP server for PR feedback search |
+
+## First-Time Setup
+
+For enhanced suggestions based on 4,600+ real mathlib PR reviews, run `/setup-rag` to configure the RAG MCP server. This gives Claude Code access to searchable PR feedback examples for golfing and style.
 
 ## Core Style Rules (Quick Reference)
 

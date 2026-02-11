@@ -31,14 +31,17 @@ else
     echo "   ⚠ MCP package not installed (optional)"
 fi
 
-# Step 3: Build the RAG index
+# Step 3: Build the RAG index (skip if pre-built indexes exist)
 echo ""
-echo "3. Building RAG index from PR feedback data..."
-if [ -f "data/pr_feedback/proof_golf_feedback.json" ]; then
+echo "3. Checking RAG index..."
+if [ -f "data/pr_feedback/rag_index.json" ] && [ -f "data/pr_feedback/rag_index_focused.json" ]; then
+    echo "   ✓ RAG index files already exist (from repo), skipping build"
+elif [ -f "data/pr_feedback/proof_golf_feedback.json" ]; then
+    echo "   Building RAG index from PR feedback data..."
     python3 scripts/build_rag_index.py
     echo "   ✓ RAG index built"
 else
-    echo "   ERROR: PR feedback data not found at data/pr_feedback/"
+    echo "   ERROR: Neither pre-built indexes nor raw feedback data found"
     echo "   Make sure you have the full skill repository"
     exit 1
 fi

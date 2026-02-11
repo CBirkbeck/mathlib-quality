@@ -10,6 +10,9 @@ venv/
 # Data files (can be regenerated)
 data/pr_feedback/*.json
 !data/pr_feedback/.gitkeep
+# Keep RAG index files (needed by MCP server, ~5MB total)
+!data/pr_feedback/rag_index.json
+!data/pr_feedback/rag_index_focused.json
 
 # Editor
 .vscode/

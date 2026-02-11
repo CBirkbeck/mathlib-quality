@@ -46,6 +46,11 @@
       "name": "check-mathlib",
       "path": "commands/check-mathlib.md",
       "description": "Find mathlib equivalents to avoid duplication"
+    },
+    {
+      "name": "setup-rag",
+      "path": "commands/setup-rag.md",
+      "description": "Set up the RAG MCP server for PR feedback search"
     }
   ],
   "triggers": {
