@@ -18,22 +18,35 @@ When working on Lean 4 files destined for mathlib, this plugin gives Claude Code
 
 ## Installation
 
-### From GitHub
+### Step 1: Add the Marketplace
 
-```bash
-claude /install-skill https://github.com/CBirkbeck/mathlib-quality
+In Claude Code, run:
+
+```
+/plugin marketplace add CBirkbeck/mathlib-quality
 ```
 
-### Local Installation
+Then install the plugin from the **Discover** tab in the `/plugin` menu, or run:
 
-Clone the repo and install locally:
+```
+/plugin install mathlib-quality
+```
+
+### Alternative: Local Installation
+
+Clone the repo and install from a local path:
 
 ```bash
 git clone https://github.com/CBirkbeck/mathlib-quality.git
-claude /install-skill ~/mathlib-quality
 ```
 
-### Set Up the RAG Server (Recommended)
+Then in Claude Code:
+
+```
+/plugin marketplace add /path/to/mathlib-quality
+```
+
+### Step 2: Set Up the RAG Server (Recommended)
 
 The plugin includes a RAG (Retrieval Augmented Generation) system that lets Claude Code search 4,600+ PR review examples. To enable it, run the `/setup-rag` command inside Claude Code:
 
@@ -44,7 +57,7 @@ The plugin includes a RAG (Retrieval Augmented Generation) system that lets Clau
 This will check dependencies, configure the MCP server in your project's `.mcp.json`, and verify everything works. You can also run the setup script directly:
 
 ```bash
-cd ~/mathlib-quality  # or wherever you cloned it
+cd /path/to/mathlib-quality
 ./setup.sh
 ```
 
@@ -200,7 +213,7 @@ This plugin builds on work from several sources:
 
 1. Fork the repository
 2. Make changes
-3. Test locally: `claude /install-skill ~/mathlib-quality`
+3. Test locally: `/plugin marketplace add /path/to/your/fork`
 4. Submit a PR
 
 ## License
