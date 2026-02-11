@@ -2,59 +2,10 @@
   "name": "mathlib-quality",
   "version": "0.1.0",
   "description": "Clean up, golf, and bring Lean 4 code up to mathlib standards before PR submission",
-  "author": "CBirkbeck",
+  "author": {
+    "name": "CBirkbeck"
+  },
   "repository": "https://github.com/CBirkbeck/mathlib-quality",
-  "skills": [
-    {
-      "name": "mathlib-quality",
-      "path": "skills/mathlib-quality/SKILL.md",
-      "description": "Mathlib code quality and style enforcement"
-    }
-  ],
-  "commands": [
-    {
-      "name": "cleanup",
-      "path": "commands/cleanup.md",
-      "description": "Full file cleanup to mathlib standards"
-    },
-    {
-      "name": "check-style",
-      "path": "commands/check-style.md",
-      "description": "Validate code against mathlib style rules"
-    },
-    {
-      "name": "golf-proof",
-      "path": "commands/golf-proof.md",
-      "description": "Optimize and shorten proofs"
-    },
-    {
-      "name": "pre-submit",
-      "path": "commands/pre-submit.md",
-      "description": "Pre-PR submission checklist"
-    },
-    {
-      "name": "fix-pr-feedback",
-      "path": "commands/fix-pr-feedback.md",
-      "description": "Address PR reviewer comments"
-    },
-    {
-      "name": "decompose-proof",
-      "path": "commands/decompose-proof.md",
-      "description": "Break long proofs into helper lemmas"
-    },
-    {
-      "name": "check-mathlib",
-      "path": "commands/check-mathlib.md",
-      "description": "Find mathlib equivalents to avoid duplication"
-    },
-    {
-      "name": "setup-rag",
-      "path": "commands/setup-rag.md",
-      "description": "Set up the RAG MCP server for PR feedback search"
-    }
-  ],
-  "triggers": {
-    "filePatterns": ["*.lean"],
-    "keywords": ["mathlib", "style", "cleanup", "golf", "PR", "submit"]
-  }
+  "license": "MIT",
+  "keywords": ["lean4", "mathlib", "code-quality", "proof-golfing", "style"]
 }
