@@ -52,7 +52,82 @@ Read the target file and assess:
    -/
    ```
 
-### Step 3: Formatting Fixes
+### Step 3: Naming Convention Fixes (CRITICAL)
+
+**All declaration names MUST follow mathlib conventions.** For each declaration:
+
+1. **Check the name** against naming rules
+2. **Rename if non-conforming** - fix the name
+3. **Update ALL usages** in the file
+
+**CRITICAL: Different conventions for defs vs lemmas/theorems!**
+
+| Declaration | Returns | Convention | Example |
+|-------------|---------|------------|---------|
+| `lemma`/`theorem` | `Prop` | `snake_case` | `continuous_of_bounded` |
+| `def` | Data (ℂ, ℝ, Set, etc.) | `lowerCamelCase` | `cauchyPrincipalValue` |
+| `structure`/`inductive` | Type | `UpperCamelCase` | `ModularForm` |
+| Helper lemmas | `Prop` | `snake_case` + `_aux` | `main_theorem_aux` |
+
+**Key rule: Look at what the declaration RETURNS:**
+- Returns **Prop** (statement to prove) → `snake_case`
+- Returns **data** (number, set, function) → `lowerCamelCase`
+- Defines a **Type** → `UpperCamelCase`
+
+**Examples:**
+```lean
+-- Lemmas/theorems (return Prop) → snake_case
+theorem continuous_of_uniform : Continuous f := ...
+lemma norm_le_of_mem_ball : ‖x‖ ≤ r := ...
+
+-- Defs returning data → lowerCamelCase
+def cauchyPrincipalValue (f : ℝ → ℂ) : ℂ := ...
+def residueAtPole (f : ℂ → ℂ) (z₀ : ℂ) : ℂ := ...
+def fundamentalDomain : Set ℂ := ...
+
+-- Types → UpperCamelCase
+structure ModularForm where ...
+```
+
+**"Conclusion of hypotheses" pattern for lemmas:**
+```lean
+-- Good lemma names (snake_case, descriptive)
+continuous_of_uniform      -- conclusion: continuous, hypothesis: uniform
+norm_le_of_mem_ball        -- conclusion: norm ≤, hypothesis: mem ball
+integrable_of_bounded      -- conclusion: integrable, hypothesis: bounded
+
+-- Bad - rename these
+myLemma                    → describe what it proves (snake_case)
+Lemma1                     → use meaningful snake_case
+continuous_Function        → continuous_function (consistent snake_case)
+```
+
+**Common mistake: snake_case for defs returning data:**
+```lean
+-- WRONG: def returning ℂ uses snake_case
+def cauchy_principal_value (f : ℝ → ℂ) : ℂ := ...
+
+-- CORRECT: def returning ℂ uses lowerCamelCase
+def cauchyPrincipalValue (f : ℝ → ℂ) : ℂ := ...
+```
+
+**American English:**
+- `Factorization` not `Factorisation`
+- `normalize` not `normalise`
+- `localization` not `localisation`
+
+**How to rename:**
+```lean
+-- For lemmas: rename to snake_case
+lemma fooBar : P := ...  →  lemma foo_bar : P := ...
+
+-- For defs returning data: rename to lowerCamelCase
+def foo_bar : ℂ := ...   →  def fooBar : ℂ := ...
+
+-- Then find and replace ALL usages in the file
+```
+
+### Step 4: Formatting Fixes
 
 For each declaration, check and fix:
 
@@ -64,29 +139,84 @@ For each declaration, check and fix:
    - `<|` over `$`
    - `change` over `show` in tactic mode
 
-### Step 4: Naming Review
+### Step 5: Comment Stripping
 
-Check declaration names against conventions:
-- `snake_case` for lemmas/theorems
-- `UpperCamelCase` for types
-- Descriptive names following "conclusion of hypotheses" pattern
+**Remove ALL inline comments from proofs:**
+```lean
+-- BEFORE (bad)
+theorem foo : P := by
+  -- First establish the bound
+  have hbound := bound_lemma hf
+  -- Now apply convergence
+  exact convergence_lemma hbound
 
-Flag non-conforming names but don't auto-rename (requires user decision).
+-- AFTER (good)
+theorem foo : P := by
+  have hbound := bound_lemma hf
+  exact convergence_lemma hbound
+```
 
-### Step 5: Documentation Check
+**Docstrings only on key public theorems** (one sentence).
 
-For each public declaration:
-- Check for docstring presence
-- Suggest docstring content if missing
+### Step 6: Documentation Check
 
-### Step 6: Proof Opportunities
+For each **key public declaration** only:
+- Add ONE-SENTENCE docstring describing the result
+- Do NOT add docstrings to helper/private lemmas
+
+### Step 7: Structural Decomposition (CRITICAL)
+
+**Apply these mandatory rules to EVERY proof:**
+
+1. **No `∧` in theorem statements** - Split into separate lemmas, combine at end:
+   ```lean
+   -- BAD
+   theorem main : P ∧ Q := by constructor; ...
+
+   -- GOOD
+   lemma main_left : P := by ...
+   lemma main_right : Q := by ...
+   theorem main : P ∧ Q := ⟨main_left, main_right⟩
+   ```
+
+2. **Split large `constructor` branches** - If either branch >10 lines, extract both:
+   ```lean
+   -- BAD
+   theorem foo : A ∧ B := by
+     constructor
+     · -- 15 lines
+     · -- 20 lines
+
+   -- GOOD
+   private lemma foo_fst : A := by ...  -- 15 lines
+   private lemma foo_snd : B := by ...  -- 20 lines
+   theorem foo : A ∧ B := ⟨foo_fst, foo_snd⟩
+   ```
+
+3. **Split large case branches** - If any branch >10 lines, extract all:
+   ```lean
+   -- BAD
+   theorem bar : P := by
+     by_cases h : cond
+     · -- 20 lines
+     · -- 25 lines
+
+   -- GOOD
+   private lemma bar_pos (h : cond) : P := by ...
+   private lemma bar_neg (h : ¬cond) : P := by ...
+   theorem bar : P := by by_cases h : cond <;> [exact bar_pos h; exact bar_neg h]
+   ```
+
+**10 lines is the threshold** - Extract ANY block exceeding 10 lines.
+
+### Step 8: Proof Opportunities
 
 Identify obvious golfing opportunities:
+- Inline `have foo := bar` (simple invocations used once)
 - Term-mode candidates (simple `by exact x` → `x`)
-- Automation opportunities (`ring`, `linarith`, `omega`)
-- Unnecessary `have` blocks
+- Automation opportunities (`ring`, `linarith`, `omega`, `grind`)
 
-### Step 7: Compile Verification
+### Step 9: Compile Verification
 
 After all changes:
 1. Save the file
@@ -101,19 +231,20 @@ After all changes:
 ### Summary
 - Lines: X (Y lines changed)
 - Declarations: N
-- Issues found: M
-- Issues fixed: K
+- Names fixed: K
+- Other issues fixed: M
 
-### Changes Made
+### Naming Fixes
+| Old Name | New Name | Reason |
+|----------|----------|--------|
+| `fooBar` | `foo_bar` | snake_case for lemmas |
+| `Lemma1` | `bound_of_compact` | descriptive name |
+
+### Other Changes Made
 1. Fixed line length on lines: 45, 78, 123
 2. Fixed indentation in: theorem foo, lemma bar
-3. Replaced λ with fun: 3 occurrences
-4. Added module docstring
-
-### Manual Review Needed
-1. Line 56: Consider renaming `lemma1` to descriptive name
-2. Line 89: Missing docstring for `importantDef`
-3. Line 120: Proof could potentially be golfed
+3. Stripped inline comments from proofs
+4. Inlined 5 single-use `have` statements
 
 ### Compilation Status
 ✓ File compiles without errors
@@ -121,14 +252,19 @@ After all changes:
 
 ## Reference
 
-See `skills/mathlib-quality/references/style-rules.md` for complete rules.
+See:
+- `skills/mathlib-quality/references/naming-conventions.md` - Full naming guide
+- `skills/mathlib-quality/references/style-rules.md` - Complete style rules
 
 ## Example
 
 Before:
 ```lean
 import Mathlib.Data.Set.Basic
-theorem foo(x:Nat):x+0=x:= by
+
+-- My custom lemma for addition
+theorem myAddLemma(x:Nat):x+0=x:= by
+    -- This is obvious
     simp
 ```
 
@@ -142,6 +278,6 @@ import Mathlib.Data.Set.Basic
 Simple arithmetic lemmas.
 -/
 
-theorem foo (x : Nat) : x + 0 = x := by
-  simp only [add_zero]
+/-- Addition of zero on the right. -/
+theorem add_zero_right (x : Nat) : x + 0 = x := by simp only [add_zero]
 ```

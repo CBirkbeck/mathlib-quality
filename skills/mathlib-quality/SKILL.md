@@ -460,6 +460,214 @@ For each proof >30 lines:
 - [ ] Golf the extracted helpers
 - [ ] Final main proof should be <15 lines
 
+## Aggressive Mathlib Usage (CRITICAL)
+
+**Rule: Use mathlib DIRECTLY. Do not create wrapper lemmas.**
+
+### The Core Principle
+
+**If mathlib has a lemma, USE IT DIRECTLY at call sites. Do NOT create a "convenience wrapper".**
+
+A wrapper lemma like this is FORBIDDEN:
+```lean
+-- FORBIDDEN: This just wraps mathlib lemmas
+lemma my_finite_lemma [DiscreteTopology S] (hK : IsCompact K) : Set.Finite (S ∩ K) := by
+  haveI : DiscreteTopology (S ∩ K).Elem := DiscreteTopology.of_subset ‹_› Set.inter_subset_left
+  exact hK.finite this
+```
+
+Instead, use the mathlib lemmas DIRECTLY where needed:
+```lean
+-- CORRECT: Use mathlib directly at the call site
+theorem main_result ... := by
+  ...
+  haveI : DiscreteTopology (S ∩ K).Elem := DiscreteTopology.of_subset ‹_› Set.inter_subset_left
+  have h_finite := (hK.inter_left hS_closed).finite this
+  ...
+```
+
+### Why Wrappers Are Bad
+
+1. **Duplication** - The wrapper duplicates mathlib's API
+2. **Maintenance burden** - Another lemma to maintain
+3. **Discovery problem** - Users won't find your wrapper; they'll find mathlib
+4. **API bloat** - Adds noise to the namespace
+
+### The Test
+
+Before creating ANY lemma, ask:
+1. **Is this just combining 1-3 mathlib lemmas?** → Don't create it, use mathlib directly
+2. **Would someone searching mathlib find the same thing?** → Don't create it
+3. **Is this providing genuinely new mathematical content?** → Maybe create it
+
+### What IS Acceptable
+
+- Lemmas that prove genuinely NEW mathematical facts not in mathlib
+- Lemmas that require significant proof (>10 lines of non-trivial reasoning)
+- Definitions for domain-specific concepts not in mathlib
+
+Before creating ANY custom definition or hypothesis condition, search mathlib for an equivalent.
+When found, use the mathlib version as a **type class or instance argument**, not a custom Prop.
+
+### The Pattern
+
+**BAD:** Custom condition as explicit hypothesis
+```lean
+-- Custom condition that duplicates mathlib
+lemma foo (hS : ∀ s ∈ S, ∃ ε > 0, Metric.ball s ε ∩ S = {s}) : P := ...
+```
+
+**GOOD:** Mathlib type class as instance argument
+```lean
+-- Use mathlib's DiscreteTopology directly
+lemma foo [DiscreteTopology S] : P := ...
+```
+
+### Why This Matters
+
+1. **Avoids duplication** - Mathlib already has the concept; don't reinvent it
+2. **Better API** - Instance arguments compose automatically
+3. **More lemmas available** - Mathlib provides many lemmas about its own concepts
+4. **Cleaner call sites** - Callers provide instance, not explicit proof
+
+### Common Replacements
+
+| Custom Condition | Use Instead |
+|------------------|-------------|
+| `∀ s ∈ S, ∃ ε > 0, ball s ε ∩ S = {s}` | `[DiscreteTopology S]` |
+| `∀ s ∈ S, ∃ ε > 0, ∀ s' ∈ S, s' ≠ s → ε ≤ dist s s'` | `[DiscreteTopology S]` |
+| `∀ x, f x ≤ g x` (for continuous f, g) | `hle : f ≤ g` with `[Preorder]` |
+| Custom finiteness predicate | `[Finite S]` or `Set.Finite S` |
+| Custom compactness predicate | `[CompactSpace X]` or `IsCompact S` |
+
+### Recovering Properties from Type Classes
+
+When you need specific properties that your custom condition provided, use mathlib's lemmas:
+
+```lean
+-- From DiscreteTopology, recover ball isolation:
+obtain ⟨ε, hε_pos, hε_ball⟩ := exists_ball_inter_eq_singleton_of_mem_discrete hs
+
+-- From DiscreteTopology, derive positive distance:
+-- s' ∉ ball s ε means ε ≤ dist s' s, hence 0 < ‖s' - s‖
+have h_pos : 0 < ‖s' - s‖ := by
+  have h := exists_ball_inter_eq_singleton_of_mem_discrete hs
+  ...
+```
+
+### Search Strategy for Mathlib Equivalents (EXHAUSTIVE)
+
+**CRITICAL: Search MULTIPLE ways before concluding something isn't in mathlib.**
+
+For each custom definition, lemma, or condition:
+
+#### Step 1: Use Lean-Finder (AI-powered search) - BEST TOOL
+```
+https://huggingface.co/spaces/delta-lab-ai/Lean-Finder
+```
+Supports BOTH type signatures AND natural language queries. This is the most powerful search tool.
+
+**Type signature queries:**
+- `IsCompact s → DiscreteTopology s → s.Finite`
+- `∀ x ∈ S, ∃ ε > 0, ball x ε ∩ S = {x}`
+
+**Natural language queries:**
+- "discrete topology inherited by subset"
+- "compact set with discrete topology is finite"
+- "intersection of closed and compact is compact"
+- "ball isolation implies discrete"
+
+#### Step 2: Search by type pattern (Loogle)
+```bash
+lean_loogle "DiscreteTopology → Set.Finite"
+lean_loogle "IsCompact → DiscreteTopology → Finite"
+lean_loogle "∀ x ∈ S, ∃ ε > 0, _"
+```
+
+#### Step 3: Search by natural language (LeanSearch)
+```bash
+lean_leansearch "discrete topology subset inherits discrete"
+lean_leansearch "compact set with discrete topology is finite"
+lean_leansearch "isolated points metric space"
+```
+
+#### Step 4: Grep mathlib directly
+```bash
+# Search for key terms
+grep -r "DiscreteTopology.of_subset" .lake/packages/mathlib/
+grep -r "IsCompact.finite" .lake/packages/mathlib/
+```
+
+#### Step 5: Check standard files
+- Topology: `Mathlib/Topology/DiscreteSubset.lean`, `Topology/Compactness/*.lean`
+- Metric: `Mathlib/Topology/MetricSpace/*.lean`
+- Analysis: `Mathlib/Analysis/Normed/*.lean`
+- Constructions: `Mathlib/Topology/Constructions.lean`
+
+#### Step 6: Check for auxiliary lemmas
+Often the exact lemma you need is a building block. Search for:
+- `.of_subset`, `.subset`, `.inter` variants
+- `_left`, `_right` variants
+- `_of_*` implication variants
+
+### Refactoring Checklist
+
+When cleaning up a file:
+- [ ] List all custom definitions/conditions
+- [ ] For each, search mathlib for equivalent
+- [ ] Replace custom conditions with mathlib type classes
+- [ ] Update function signatures to use `[TypeClass X]` syntax
+- [ ] Update all call sites
+- [ ] Use mathlib's lemmas to recover specific properties
+- [ ] Verify compilation after each change
+
+### Example: DiscreteTopology Refactoring
+
+**Before (25 lines) - WRONG: Custom lemma duplicating mathlib:**
+```lean
+lemma finite_of_discrete_inter_compact
+    (hS : ∀ s ∈ S, ∃ ε > 0, Metric.ball s ε ∩ S = {s})
+    (hS_closed : IsClosed S) (hK : IsCompact K) : Set.Finite (S ∩ K) := by
+  have h_discrete : DiscreteTopology (S ∩ K).Elem := by
+    rw [discreteTopology_subtype_iff']
+    intro x ⟨hx_S, hx_K⟩
+    obtain ⟨ε, hε_pos, hε_ball⟩ := hS x hx_S
+    -- ... 15 more lines manually proving discrete ...
+  exact (hK.inter_left hS_closed).finite h_discrete
+```
+
+**After - CORRECT: DELETE the lemma, use mathlib directly at call sites:**
+```lean
+-- The lemma finite_of_discrete_inter_compact is DELETED entirely.
+-- At call sites, use mathlib directly:
+
+theorem main_theorem ... := by
+  ...
+  -- Need finiteness? Use mathlib's IsCompact.finite + DiscreteTopology.of_subset:
+  haveI : DiscreteTopology (S ∩ K).Elem := DiscreteTopology.of_subset ‹_› Set.inter_subset_left
+  have h_finite := (hK.inter_left hS_closed).finite this
+  ...
+```
+
+**Key mathlib lemmas to use DIRECTLY:**
+- `DiscreteTopology.of_subset`: discrete topology inherits to subsets
+- `IsCompact.finite`: compact + discrete → finite
+
+### The Decision Tree
+
+```
+Is this lemma just combining mathlib lemmas?
+├── YES (1-5 lines of mathlib calls) → DELETE IT, use mathlib directly
+└── NO (genuinely new content) → Keep it, but search mathlib first
+```
+
+### Goal: ELIMINATE Wrapper Lemmas
+
+- **Don't** create `my_foo` that just calls `Mathlib.foo`
+- **Don't** create `foo_bar` that just calls `foo` then `bar`
+- **Do** use mathlib's lemmas directly at every call site
+- **Do** document which mathlib lemmas to use (in module docstring)
+
 ## Key Tactics for Golfing
 
 **Goal: Minimize proof length.** One-liners are ideal. Brevity trumps readability.

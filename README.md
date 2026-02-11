@@ -2,6 +2,8 @@
 
 A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up to mathlib standards before PR submission.
 
+**Includes a RAG system built from 4,600+ mathlib PR review comments.**
+
 ## Installation
 
 ### From GitHub (Recommended)
@@ -15,6 +17,20 @@ claude /plugin marketplace add CBirkbeck/mathlib-quality
 ```bash
 claude /plugin install ~/mathlib-quality
 ```
+
+### Setup RAG System (Recommended)
+
+After installation, run the setup script to build the RAG index:
+
+```bash
+cd ~/mathlib-quality  # or wherever you installed it
+./setup.sh
+```
+
+This will:
+1. Install the `mcp` package (for MCP server integration)
+2. Build the searchable RAG index from PR feedback data
+3. Generate `.mcp.json` with correct paths for your machine
 
 ## Features
 
@@ -64,10 +80,41 @@ claude /plugin install ~/mathlib-quality
 /fix-pr-feedback --comments "Please shorten line 45..."
 ```
 
+## RAG System
+
+The skill includes a RAG (Retrieval Augmented Generation) system built from 4,600+ PR review comments. Use it to find relevant examples for the specific code you're working on.
+
+### Using the Query Script
+
+```bash
+# Find examples similar to your code
+python3 scripts/query_rag.py --code "have h := foo; simp [h]"
+
+# Find examples of specific patterns
+python3 scripts/query_rag.py --pattern use_grind
+python3 scripts/query_rag.py --pattern use_fun_prop
+
+# Find examples using specific tactics
+python3 scripts/query_rag.py --tactics simp have exact
+
+# Find examples by topic
+python3 scripts/query_rag.py --topic continuity
+```
+
+Available patterns: `simp_to_simpa`, `use_grind`, `use_fun_prop`, `use_aesop`, `use_omega`, `term_mode`, `remove_redundant`
+
+### Using the MCP Server (Claude Code Integration)
+
+If the MCP server is configured, you can use these tools directly:
+- `search_golf_examples(code="...")` - Find similar before/after examples
+- `search_by_pattern(pattern="use_grind")` - Find pattern examples
+- `get_mathlib_quality_principles()` - Get core quality rules
+
 ## Reference Documentation
 
 The `skills/mathlib-quality/references/` directory contains detailed guidance:
 
+- **mathlib-quality-principles.md** - **KEY DOCUMENT**: Core quality principles from PR analysis
 - **style-rules.md** - Complete formatting and style rules
 - **naming-conventions.md** - Naming patterns and conventions
 - **proof-patterns.md** - Proof golfing techniques
@@ -109,9 +156,15 @@ python scripts/categorize_feedback.py
 
 ### Naming Conventions
 
-- Lemmas/theorems: `snake_case`
-- Types/structures: `UpperCamelCase`
-- Pattern: `conclusion_of_hypothesis`
+**CRITICAL: Different conventions for defs vs lemmas:**
+
+| Declaration | Returns | Convention | Example |
+|-------------|---------|------------|---------|
+| `lemma`/`theorem` | `Prop` | `snake_case` | `continuous_of_bounded` |
+| `def` | Data (ℂ, ℝ, Set) | `lowerCamelCase` | `cauchyPrincipalValue` |
+| `structure` | Type | `UpperCamelCase` | `ModularForm` |
+
+- Pattern: `conclusion_of_hypothesis` (for lemmas)
 - Hypotheses: `h`, `h₁`, `hf`, `hx`
 
 ### Required Documentation

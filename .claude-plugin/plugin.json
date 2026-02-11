@@ -36,6 +36,16 @@
       "name": "fix-pr-feedback",
       "path": "commands/fix-pr-feedback.md",
       "description": "Address PR reviewer comments"
+    },
+    {
+      "name": "decompose-proof",
+      "path": "commands/decompose-proof.md",
+      "description": "Break long proofs into helper lemmas"
+    },
+    {
+      "name": "check-mathlib",
+      "path": "commands/check-mathlib.md",
+      "description": "Find mathlib equivalents to avoid duplication"
     }
   ],
   "triggers": {

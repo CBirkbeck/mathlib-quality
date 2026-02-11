@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "mathlib-rag": {
+      "command": "python3",
+      "args": ["./mcp_server/mathlib_rag.py"],
+      "description": "Mathlib quality RAG server - provides PR feedback examples for golfing and style"
+    }
+  }
+}

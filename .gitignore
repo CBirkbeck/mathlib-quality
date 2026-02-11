@@ -22,6 +22,9 @@ data/pr_feedback/*.json
 .DS_Store
 Thumbs.db
 
+# Claude Code local files
+.claude/
+
 # Temporary
 *.tmp
 *.temp
