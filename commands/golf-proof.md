@@ -1,3 +1,8 @@
+---
+name: golf-proof
+description: Optimize and shorten proofs
+---
+
 # /golf-proof - Proof Optimization
 
 Optimize and shorten Lean proofs. **Goal: One-liners. Brevity trumps readability.**

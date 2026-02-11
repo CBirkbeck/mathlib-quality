@@ -1,3 +1,8 @@
+---
+name: setup-rag
+description: Set up the RAG MCP server for PR feedback search
+---
+
 # /setup-rag - Set Up the RAG MCP Server
 
 Set up the mathlib quality RAG server so Claude Code can search 4,600+ PR review examples for golfing and style suggestions.

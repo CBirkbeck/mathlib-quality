@@ -1,3 +1,8 @@
+---
+name: decompose-proof
+description: Break long proofs into helper lemmas
+---
+
 # /decompose-proof - Aggressive Proof Decomposition
 
 **CRITICAL: No proof should exceed 50 lines. Target: main theorems <15 lines.**

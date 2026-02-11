@@ -1,3 +1,8 @@
+---
+name: cleanup
+description: Full file cleanup to mathlib standards
+---
+
 # /cleanup - Full File Cleanup
 
 Clean up a Lean file to meet mathlib standards.

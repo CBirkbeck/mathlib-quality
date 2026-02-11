@@ -1,3 +1,8 @@
+---
+name: check-mathlib
+description: Find mathlib equivalents to avoid duplication
+---
+
 # /check-mathlib - Find Mathlib Equivalents
 
 Systematically check definitions and lemmas against mathlib to avoid duplication.

@@ -1,3 +1,8 @@
+---
+name: split-file
+description: Split large files (>1500 lines) into focused modules
+---
+
 # /split-file - Split Large Lean Files
 
 Split a large Lean file (>1500 lines) into smaller, focused modules.

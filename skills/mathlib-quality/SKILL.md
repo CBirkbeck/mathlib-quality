@@ -1,3 +1,18 @@
+---
+name: mathlib-quality
+description: Mathlib code quality and style enforcement for Lean 4
+trigger:
+  filePatterns:
+    - "*.lean"
+  keywords:
+    - mathlib
+    - style
+    - cleanup
+    - golf
+    - PR
+    - submit
+---
+
 # Mathlib Quality Skill
 
 ## Activation Triggers

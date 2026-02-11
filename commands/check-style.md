@@ -1,3 +1,8 @@
+---
+name: check-style
+description: Validate code against mathlib style rules
+---
+
 # /check-style - Style Validation
 
 Validate a Lean file against mathlib style rules without making changes.

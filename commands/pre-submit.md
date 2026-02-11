@@ -1,3 +1,8 @@
+---
+name: pre-submit
+description: Pre-PR submission checklist
+---
+
 # /pre-submit - Pre-PR Submission Checklist
 
 Final verification before submitting a PR to mathlib.

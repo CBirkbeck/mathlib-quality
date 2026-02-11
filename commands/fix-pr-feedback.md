@@ -1,3 +1,8 @@
+---
+name: fix-pr-feedback
+description: Address PR reviewer comments
+---
+
 # /fix-pr-feedback - Handle PR Reviewer Comments
 
 Parse and address feedback from mathlib PR reviews.
