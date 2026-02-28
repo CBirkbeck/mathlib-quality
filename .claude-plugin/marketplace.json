@@ -8,7 +8,7 @@
       "name": "mathlib-quality",
       "source": "./",
       "description": "Clean up, golf, and bring Lean 4 code up to mathlib standards before PR submission",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "repository": "https://github.com/CBirkbeck/mathlib-quality",
       "keywords": ["lean4", "mathlib", "code-quality", "proof-golfing", "style"]
     }
