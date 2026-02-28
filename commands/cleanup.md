@@ -286,3 +286,45 @@ Simple arithmetic lemmas.
 /-- Addition of zero on the right. -/
 theorem add_zero_right (x : Nat) : x + 0 = x := by simp only [add_zero]
 ```
+
+### Final Step: Record Learnings
+
+After completing all changes and showing the report, capture what was learned.
+
+**For each significant change made**, write a JSON entry to `.mathlib-quality/learnings.jsonl` (create the file and directory if they don't exist):
+
+```json
+{
+  "id": "<generate a short unique id>",
+  "timestamp": "<current ISO timestamp>",
+  "command": "cleanup",
+  "type": "<style_correction|naming_fix|golf_pattern|decomposition|mathlib_discovery|failed_pattern>",
+  "before_code": "<original code snippet, max 500 chars>",
+  "after_code": "<resulting code snippet, max 500 chars>",
+  "pattern_tags": ["<relevant pattern names>"],
+  "description": "<1-2 sentence description of the change>",
+  "math_area": "<analysis|algebra|topology|number_theory|combinatorics|order|category_theory|measure_theory|other>",
+  "accepted": true,
+  "source": "<agent_suggestion|user_correction>",
+  "context": {
+    "file_path": "<relative path>",
+    "theorem_name": "<if applicable>"
+  }
+}
+```
+
+**What to capture from cleanup:**
+- Each naming correction (before/after name with reason)
+- Each non-trivial style fix (e.g., `by` placement, comment removal with proof restructuring)
+- Each proof that was golfed or decomposed during cleanup
+- Each mathlib lemma discovered that replaced custom code
+- Each suggestion the user rejected (with `"accepted": false`)
+- Each time the user corrected your suggestion (with `"source": "user_correction"`)
+
+**What NOT to capture:**
+- Trivial whitespace fixes
+- Line length adjustments
+- Import reordering
+- Mechanical rule applications (adding missing docstrings, fixing indentation)
+
+**Keep it lightweight** - only 1-5 entries per command run, capturing the most interesting/novel learnings.

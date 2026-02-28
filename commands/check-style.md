@@ -123,3 +123,41 @@ This command checks style issues that may not be caught by Lean's built-in linte
 - Documentation completeness
 
 Run both `/check-style` and the official linters for complete coverage.
+
+### Final Step: Record Learnings
+
+After completing the style check and showing the report, capture any notable findings.
+
+**For each non-obvious style issue found**, write a JSON entry to `.mathlib-quality/learnings.jsonl` (create the file and directory if they don't exist):
+
+```json
+{
+  "id": "<generate a short unique id>",
+  "timestamp": "<current ISO timestamp>",
+  "command": "check-style",
+  "type": "style_correction",
+  "before_code": "<the offending code snippet, max 500 chars>",
+  "after_code": "",
+  "pattern_tags": ["<relevant pattern names>"],
+  "description": "<1-2 sentence description of the style issue>",
+  "math_area": "<analysis|algebra|topology|number_theory|combinatorics|order|category_theory|measure_theory|other>",
+  "accepted": true,
+  "source": "agent_suggestion",
+  "context": {
+    "file_path": "<relative path>",
+    "theorem_name": "<if applicable>"
+  }
+}
+```
+
+**What to capture from check-style:**
+- Recurring style issues that indicate project-level patterns (e.g., consistently wrong `by` placement)
+- Naming convention violations that suggest the user needs guidance
+- Unusual patterns not covered by standard rules
+
+**What NOT to capture:**
+- Individual line length violations
+- Trivial whitespace issues
+- Standard linter-catchable issues
+
+**Keep it lightweight** - only 1-3 entries per command run, focusing on patterns rather than individual violations.

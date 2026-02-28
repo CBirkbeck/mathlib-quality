@@ -248,3 +248,42 @@ A golfed proof should be:
 4. **Comment-free** - No inline comments in proofs
 
 **Main theorems after decomposition should be <15 lines**, reading as clear outlines.
+
+### Final Step: Record Learnings
+
+After completing all golfing and showing the report, capture what was learned.
+
+**For each proof that was golfed**, write a JSON entry to `.mathlib-quality/learnings.jsonl` (create the file and directory if they don't exist):
+
+```json
+{
+  "id": "<generate a short unique id>",
+  "timestamp": "<current ISO timestamp>",
+  "command": "golf-proof",
+  "type": "golf_pattern",
+  "before_code": "<original proof, max 500 chars>",
+  "after_code": "<golfed proof, max 500 chars>",
+  "pattern_tags": ["<patterns used, e.g. inline_have, use_grind, term_mode>"],
+  "description": "<1-2 sentence description: what technique reduced what>",
+  "math_area": "<analysis|algebra|topology|number_theory|combinatorics|order|category_theory|measure_theory|other>",
+  "accepted": true,
+  "source": "<agent_suggestion|user_correction>",
+  "context": {
+    "file_path": "<relative path>",
+    "theorem_name": "<the theorem that was golfed>"
+  }
+}
+```
+
+**What to capture from golf-proof:**
+- Each proof that was significantly shortened (before/after with technique used)
+- New automation discoveries (e.g., "grind closes this kind of goal")
+- Patterns that failed (with `"accepted": false` and `"type": "failed_pattern"`)
+- User corrections that reveal better approaches
+
+**What NOT to capture:**
+- Trivial `by exact h` → `h` conversions
+- Simple `by rfl` → `rfl` conversions
+- Mechanical trailing comma removal
+
+**Keep it lightweight** - only 1-5 entries per command run, capturing the most impactful reductions.

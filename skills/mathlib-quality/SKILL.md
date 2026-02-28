@@ -44,6 +44,9 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | `/pre-submit` | Pre-PR submission checklist |
 | `/fix-pr-feedback` | Address reviewer comments |
 | `/setup-rag` | Set up RAG MCP server for PR feedback search |
+| `/teach` | Teach the skill a project-specific pattern or convention |
+| `/contribute` | Contribute local learnings back to the repo via PR |
+| `/integrate-learnings` | (Maintainers) Process community contributions into reference docs |
 
 ## First-Time Setup
 
@@ -263,6 +266,36 @@ Exceptions (suffixes, like atoms): `_injective`, `_surjective`, `_bijective`, `_
 - Helper lemmas should be `private`
 - Only results intended for use in other files/mathlib should be public
 - If a lemma is only used within the file, make it private
+
+## Learning System
+
+The skill learns from every use and gets better over time. There are three layers:
+
+### 1. Automatic Local Capture
+Every command (`/cleanup`, `/golf-proof`, `/check-style`, etc.) automatically records significant learnings to `.mathlib-quality/learnings.jsonl` in your project. This captures:
+- Proof golfing patterns that worked (before/after code)
+- Style corrections applied
+- Mathlib lemmas discovered that replaced custom code
+- Patterns that failed (valuable negative data)
+- User corrections to agent suggestions
+
+### 2. Local Recall
+The MCP server loads local learnings at query time and boosts search results with project-specific patterns. This means suggestions improve as you use the tool more within a project.
+
+### 3. Opt-in Contribution
+Run `/contribute` to review your local learnings and create a PR on the mathlib-quality repo. This shares your discoveries with all users. Learnings are anonymized before contribution.
+
+### Teaching the Skill
+Use `/teach` to explicitly record project-specific patterns:
+```
+/teach "always use grind before omega for Fin goals in this project"
+/teach "in this codebase, prefer explicit universe variables"
+```
+
+### How Learnings Are Stored
+- **Local**: `.mathlib-quality/learnings.jsonl` (JSONL format, one entry per line)
+- **Community**: `data/community_learnings/` (contributed via PRs)
+- **Schema**: See `skills/mathlib-quality/learning/schema.md` for the full JSON schema
 
 ## Workflow Guidance
 

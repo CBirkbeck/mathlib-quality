@@ -214,3 +214,40 @@ Examples:
 - Full style guide: `references/style-rules.md`
 - Naming conventions: `references/naming-conventions.md`
 - Linter rules: `references/linter-checks.md`
+
+### Final Step: Record Learnings
+
+After completing the pre-submit check and showing the report, capture any notable findings.
+
+**For each significant issue found**, write a JSON entry to `.mathlib-quality/learnings.jsonl` (create the file and directory if they don't exist):
+
+```json
+{
+  "id": "<generate a short unique id>",
+  "timestamp": "<current ISO timestamp>",
+  "command": "pre-submit",
+  "type": "<style_correction|naming_fix|golf_pattern|failed_pattern>",
+  "before_code": "<the problematic code, max 500 chars>",
+  "after_code": "<the fix if applied, max 500 chars>",
+  "pattern_tags": ["<relevant pattern names>"],
+  "description": "<1-2 sentence description of what was caught in pre-submit>",
+  "math_area": "<analysis|algebra|topology|number_theory|combinatorics|order|category_theory|measure_theory|other>",
+  "accepted": true,
+  "source": "agent_suggestion",
+  "context": {
+    "file_path": "<relative path>",
+    "theorem_name": "<if applicable>"
+  }
+}
+```
+
+**What to capture from pre-submit:**
+- Issues that other commands missed (indicates gaps in earlier passes)
+- Recurring patterns across files (e.g., same linter issue in multiple places)
+- Things the user chose to defer or override
+
+**What NOT to capture:**
+- Issues already captured by earlier `/cleanup` or `/check-style` runs
+- Standard compilation warnings
+
+**Keep it lightweight** - only 1-3 entries per command run, focusing on lessons for future runs.

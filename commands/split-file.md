@@ -136,3 +136,40 @@ ResidueTheory/
 5. Agent verifies all files compile
 6. User reviews and commits
 ```
+
+### Final Step: Record Learnings
+
+After completing the split and verifying compilation, capture what was learned.
+
+**For each file split**, write a JSON entry to `.mathlib-quality/learnings.jsonl` (create the file and directory if they don't exist):
+
+```json
+{
+  "id": "<generate a short unique id>",
+  "timestamp": "<current ISO timestamp>",
+  "command": "split-file",
+  "type": "file_split",
+  "before_code": "<original file name and line count>",
+  "after_code": "<resulting file structure: names and line counts>",
+  "pattern_tags": ["<e.g. split_by_prefix, split_by_topic, defs_and_theorems>"],
+  "description": "<1-2 sentence description of the splitting strategy and groupings chosen>",
+  "math_area": "<analysis|algebra|topology|number_theory|combinatorics|order|category_theory|measure_theory|other>",
+  "accepted": true,
+  "source": "<agent_suggestion|user_correction>",
+  "context": {
+    "file_path": "<relative path to original file>",
+    "theorem_name": ""
+  }
+}
+```
+
+**What to capture from split-file:**
+- The splitting strategy used (by naming prefix, by topic, defs vs theorems, etc.)
+- How declarations were grouped and why
+- Any dependency challenges encountered
+
+**What NOT to capture:**
+- The mechanical details of moving code between files
+- Import updates
+
+**Keep it lightweight** - typically 1 entry per split describing the overall strategy.

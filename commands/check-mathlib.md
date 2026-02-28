@@ -280,3 +280,41 @@ In the module docstring, document which mathlib lemmas to use:
 * `IsCompact.finite` + `DiscreteTopology.of_subset` for finiteness
 -/
 ```
+
+### Final Step: Record Learnings
+
+After completing the mathlib check and showing the report, capture what was learned.
+
+**For each mathlib discovery**, write a JSON entry to `.mathlib-quality/learnings.jsonl` (create the file and directory if they don't exist):
+
+```json
+{
+  "id": "<generate a short unique id>",
+  "timestamp": "<current ISO timestamp>",
+  "command": "check-mathlib",
+  "type": "mathlib_discovery",
+  "before_code": "<the custom definition/lemma that was replaced, max 500 chars>",
+  "after_code": "<the mathlib equivalent or usage pattern, max 500 chars>",
+  "pattern_tags": ["<e.g. wrapper_eliminated, type_class_replacement, direct_mathlib_use>"],
+  "description": "<1-2 sentence description: what custom code was replaced by what mathlib lemma>",
+  "math_area": "<analysis|algebra|topology|number_theory|combinatorics|order|category_theory|measure_theory|other>",
+  "accepted": true,
+  "source": "<agent_suggestion|user_correction>",
+  "context": {
+    "file_path": "<relative path>",
+    "theorem_name": "<the custom declaration that was replaced>"
+  }
+}
+```
+
+**What to capture from check-mathlib:**
+- Each custom definition/lemma that has a mathlib equivalent (this is gold data!)
+- The mapping from custom code to mathlib usage pattern
+- Search strategies that successfully found matches (which tool worked)
+- False positives: mathlib lemmas that looked like matches but weren't
+
+**What NOT to capture:**
+- Declarations confirmed as genuinely new (no mathlib equivalent)
+- Import changes
+
+**Keep it lightweight** - only 1-5 entries per command run, focusing on the most useful discoveries.

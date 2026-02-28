@@ -603,3 +603,41 @@ Don't rush. Quality over speed.
 7. **Main theorems are outlines** - They should read as clear summaries
 8. **50 lines is the absolute maximum** - Most proofs should be <20 lines
 9. **Golf aggressively after extraction** - Isolated lemmas are often trivial
+
+### Final Step: Record Learnings
+
+After completing decomposition and showing the report, capture what was learned.
+
+**For each decomposition decision**, write a JSON entry to `.mathlib-quality/learnings.jsonl` (create the file and directory if they don't exist):
+
+```json
+{
+  "id": "<generate a short unique id>",
+  "timestamp": "<current ISO timestamp>",
+  "command": "decompose-proof",
+  "type": "decomposition",
+  "before_code": "<original proof structure summary, max 500 chars>",
+  "after_code": "<decomposed structure: helper names and main theorem, max 500 chars>",
+  "pattern_tags": ["<e.g. split_conjunction, extract_case, extract_have, parameterize_helper>"],
+  "description": "<1-2 sentence description of the decomposition strategy and result>",
+  "math_area": "<analysis|algebra|topology|number_theory|combinatorics|order|category_theory|measure_theory|other>",
+  "accepted": true,
+  "source": "<agent_suggestion|user_correction>",
+  "context": {
+    "file_path": "<relative path>",
+    "theorem_name": "<the theorem that was decomposed>"
+  }
+}
+```
+
+**What to capture from decompose-proof:**
+- Each significant decomposition (what was the proof structure, what helpers were extracted)
+- Mathlib lemmas discovered that replaced custom helpers
+- Shared logic that was consolidated across proofs
+- Decomposition strategies that the user rejected or modified
+
+**What NOT to capture:**
+- Trivial extractions (obvious case splits)
+- The golfing of individual helpers (that's golf-proof's domain)
+
+**Keep it lightweight** - only 1-3 entries per command run, capturing the structural decisions.

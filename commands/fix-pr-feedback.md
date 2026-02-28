@@ -198,3 +198,41 @@ Ready for re-review.
 ## Reference
 
 See `references/pr-feedback-examples.md` for curated examples of common feedback patterns and their solutions.
+
+### Final Step: Record Learnings
+
+After addressing all feedback and showing the report, capture what was learned.
+
+**For each significant fix made**, write a JSON entry to `.mathlib-quality/learnings.jsonl` (create the file and directory if they don't exist):
+
+```json
+{
+  "id": "<generate a short unique id>",
+  "timestamp": "<current ISO timestamp>",
+  "command": "fix-pr-feedback",
+  "type": "<golf_pattern|style_correction|naming_fix|mathlib_discovery|failed_pattern>",
+  "before_code": "<original code the reviewer flagged, max 500 chars>",
+  "after_code": "<the fix applied, max 500 chars>",
+  "pattern_tags": ["<relevant pattern names>"],
+  "description": "<1-2 sentence description: what the reviewer asked for and how it was resolved>",
+  "math_area": "<analysis|algebra|topology|number_theory|combinatorics|order|category_theory|measure_theory|other>",
+  "accepted": true,
+  "source": "<agent_suggestion|user_correction>",
+  "context": {
+    "file_path": "<relative path>",
+    "theorem_name": "<if applicable>"
+  }
+}
+```
+
+**What to capture from fix-pr-feedback:**
+- Each reviewer-requested change (what reviewers catch = what the skill should catch earlier)
+- Patterns the skill should have flagged in `/check-style` or `/cleanup`
+- Novel reviewer insights not covered by existing rules
+- Fixes the user disagreed with or modified
+
+**What NOT to capture:**
+- Trivial formatting fixes
+- Changes already in the style guide (unless the skill missed them)
+
+**Keep it lightweight** - only 1-5 entries per command run, prioritizing novel reviewer insights.
