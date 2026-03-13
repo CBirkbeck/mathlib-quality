@@ -89,9 +89,9 @@ Write a structured entry to `.mathlib-quality/learnings.jsonl` (create the file 
 }
 ```
 
-### Step 4: Confirm
+### Step 4: Confirm and Warn About Contribution
 
-Show the user what was recorded:
+Show the user what was recorded, and **warn them that it will be contributed**:
 
 ```
 Recorded learning:
@@ -100,7 +100,82 @@ Recorded learning:
 - Description: "Always try grind before omega for Fin goals in this project"
 - Stored in: .mathlib-quality/learnings.jsonl
 
-This will be used in future /cleanup and /golf-proof runs on this project.
+⚠️  This teaching will be automatically contributed to the mathlib-quality
+    community repo (github.com/CBirkbeck/mathlib-quality) so all users
+    can benefit. File paths will be anonymized. Code snippets in
+    before/after examples will be included as-is.
+
+    Proceed with contribution? [y/n]
+```
+
+**If the user declines**, skip the contribution but keep the local learning:
+```
+Teaching saved locally only. You can contribute later with /contribute.
+```
+
+### Step 5: Auto-Contribute
+
+If the user confirms (or does not decline), automatically contribute the teaching to the community repo.
+
+**5a. Sanitize the entry for contribution:**
+- Strip full file paths → keep filename only
+- Replace project-specific names with generic identifiers if the user requests
+- Keep code snippets as-is (they demonstrate the pattern)
+
+**5b. Generate the contribution file:**
+
+Determine project identifier:
+```bash
+git remote get-url origin 2>/dev/null | sed 's/.*\///' | sed 's/\.git$//'
+```
+
+File name: `data/community_learnings/<date>_<project-hash>.jsonl`
+- Append the new teaching entry to the file if it already exists for today
+- Create a new file otherwise
+
+**5c. Create or update the PR:**
+
+```bash
+# Check if there's already an open learnings PR for this project
+EXISTING_PR=$(gh pr list --repo CBirkbeck/mathlib-quality --state open \
+  --search "learnings: patterns from" --json number,headRefName \
+  --jq '.[0].headRefName // empty')
+
+if [ -n "$EXISTING_PR" ]; then
+  # Push to the existing branch to update the PR
+  git checkout "$EXISTING_PR"
+  # Append new entry, commit, push
+else
+  # Create new branch and PR
+  BRANCH="learnings/$(date +%Y%m%d)-$(head -c 8 /dev/urandom | xxd -p | head -c 8)"
+  gh pr create \
+    --repo CBirkbeck/mathlib-quality \
+    --title "learnings: teaching from $(date +%Y-%m-%d)" \
+    --body "## Community Teaching Contribution
+
+### Entry
+- **Type:** user_teaching
+- **Pattern:** [pattern tags]
+- **Description:** [the teaching]
+
+---
+Auto-contributed by mathlib-quality \`/teach\` command."
+fi
+```
+
+**5d. Report the result:**
+```
+✓ Teaching contributed to community repo.
+  PR: https://github.com/CBirkbeck/mathlib-quality/pull/XX
+
+  The maintainers will review and integrate this into the reference docs.
+```
+
+If the contribution fails (network error, auth issue):
+```
+Teaching saved locally in .mathlib-quality/learnings.jsonl.
+⚠️  Auto-contribution failed: [reason]
+    You can retry later with /contribute.
 ```
 
 ## Interactive Mode
@@ -135,8 +210,14 @@ What pattern does this demonstrate? (e.g., "use grind for membership goals")
 
 Stored in `.mathlib-quality/learnings.jsonl`. This will influence future suggestions.
 
-To see all recorded learnings: check `.mathlib-quality/learnings.jsonl`
-To contribute learnings back: `/contribute`
+⚠️  This teaching will be auto-contributed to the community repo.
+    File paths will be anonymized. Code snippets included as-is.
+    Proceed? [y/n]
+
+> y
+
+✓ Contributed to community repo.
+  PR: https://github.com/CBirkbeck/mathlib-quality/pull/XX
 ```
 
 ## Examples
@@ -153,6 +234,10 @@ To contribute learnings back: `/contribute`
 **Math area:** combinatorics
 
 Stored in `.mathlib-quality/learnings.jsonl`.
+
+⚠️  This will be auto-contributed to the community repo. Proceed? [y/n]
+> y
+✓ Contributed: PR #42
 ```
 
 ### Teaching an Avoidance
@@ -166,7 +251,9 @@ Stored in `.mathlib-quality/learnings.jsonl`.
 **Description:** Don't use aesop on goals with coercions - it loops in this project.
 **Math area:** other
 
-Stored in `.mathlib-quality/learnings.jsonl`.
+⚠️  This will be auto-contributed to the community repo. Proceed? [y/n]
+> n
+Teaching saved locally only. Contribute later with /contribute.
 ```
 
 ### Teaching with Before/After
@@ -182,5 +269,7 @@ What would you like to teach?
 **Description:** simp [FooMap]; fun_prop closes all Continuous goals about FooMap
 **Math area:** topology
 
-Stored in `.mathlib-quality/learnings.jsonl`.
+⚠️  This will be auto-contributed to the community repo. Proceed? [y/n]
+> y
+✓ Contributed: PR #43
 ```
