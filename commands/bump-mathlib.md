@@ -65,7 +65,22 @@ lake update mathlib
    - For files modified in both: present conflicts to user for guidance
    - For files only modified locally: keep ours
 
-### Step 3: Build and Collect Errors
+### Step 3: Fetch Cached Artifacts
+
+**CRITICAL: Always fetch the Mathlib cache before building**, otherwise compilation will take hours.
+
+```bash
+lake exe cache get
+```
+
+This downloads precompiled `.olean` files for all mathlib modules. Wait for it to complete before proceeding to build.
+
+If `cache get` fails, try:
+```bash
+lake exe cache get!   # Force re-download
+```
+
+### Step 4: Build and Collect Errors
 
 Build the project/PR files and collect all errors:
 
@@ -92,7 +107,7 @@ Parse the build output and categorize errors:
 - **Unused import** - A file was moved or split
 - **Other errors** - Anything else
 
-### Step 4: Consult the Mathlib Changelog
+### Step 5: Consult the Mathlib Changelog
 
 **CRITICAL: Use the changelog to understand what changed.**
 
@@ -123,7 +138,7 @@ If the changelog doesn't have the answer, also try:
 - `lean_leansearch` to find replacements by description
 - `grep` in `.lake/packages/mathlib/` for the old name (may find deprecation alias)
 
-### Step 5: Fix Errors Iteratively
+### Step 6: Fix Errors Iteratively
 
 For each error, apply the appropriate fix:
 
@@ -175,7 +190,7 @@ import Mathlib.Data.Foo.Basic
 2. If the fix introduces new errors, address those too
 3. Move to the next error
 
-### Step 6: Verify Full Build
+### Step 7: Verify Full Build
 
 After all fixes:
 
@@ -185,7 +200,7 @@ lake build
 
 Ensure zero errors. If errors remain, go back to Step 5.
 
-### Step 7: Report
+### Step 8: Report
 
 ## Output Format
 
