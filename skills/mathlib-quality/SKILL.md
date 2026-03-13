@@ -11,6 +11,9 @@ trigger:
     - golf
     - PR
     - submit
+    - bump
+    - upgrade
+    - update
 ---
 
 # Mathlib Quality Skill
@@ -42,6 +45,7 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | `/decompose-proof` | Break long proofs into helper lemmas |
 | `/split-file` | Split large files (>1500 lines) into focused modules |
 | `/pre-submit` | Pre-PR submission checklist |
+| `/bump-mathlib` | Bump mathlib version and fix resulting breakage |
 | `/fix-pr-feedback` | Address reviewer comments |
 | `/setup-rag` | Set up RAG MCP server for PR feedback search |
 | `/teach` | Teach the skill a project-specific pattern or convention |
