@@ -17,11 +17,55 @@ If no file is specified, operates on the currently open file.
 
 ## Workflow
 
-### Step 1: Initial Analysis
+### Step 1: Collect Lint Diagnostics
 
-Read the target file and assess:
-- File length (flag if >1500 lines)
-- Line lengths (flag any >100 chars)
+**Before doing anything else**, run `lean_diagnostic_messages` on the file to get ALL warnings and errors from Lean's built-in linters. These are the same yellow/red underlines shown in VS Code.
+
+```
+lean_diagnostic_messages(file_path="/path/to/File.lean")
+```
+
+This returns diagnostics in the format: `"l{line}c{col}-l{line}c{col}, severity: {N}\n{message}"`
+- Severity 1 = error (red), Severity 2 = warning (yellow), Severity 3 = info (blue)
+
+**Group the warnings by line number** and print a summary:
+
+```
+## Lint Diagnostics for File.lean
+
+### Errors (must fix)
+- l45: type mismatch...
+
+### Warnings (fix all)
+- l12: unused variable `hp0_ne_i` [linter.unusedVariables]
+- l34: line has 115 characters [style.longLine]
+- l56: `$` is not allowed, use `<|` [style.dollarSyntax]
+- l78: unused `have` [linter.unusedHavesSuffices]
+- l90: declaration uses `sorry` [linter.sorry]
+- l102: `set_option maxHeartbeats` [style.setOption]
+```
+
+These diagnostics are your **primary TODO list**. Every warning must be addressed.
+
+**Common Lean/Mathlib linter warnings you will see:**
+| Linter | Warning | Fix |
+|--------|---------|-----|
+| `unusedVariables` | Unused parameter | Remove from signature and call sites (do NOT underscore) |
+| `unusedHavesSuffices` | Unused `have`/`suffices` | Remove or inline |
+| `style.longLine` | Line >100 chars | Break line |
+| `style.dollarSyntax` | `$` used | Replace with `<|` |
+| `style.lambdaSyntax` | `λ` used | Replace with `fun` |
+| `style.setOption` | Disallowed `set_option` | Decompose proof instead of bumping heartbeats |
+| `style.cdot` | Incorrect `·` usage | Fix bullet formatting |
+| `style.show` | `show` in tactic mode | Replace with `change` |
+| `unusedArguments` | Unused function argument | Remove or use `_` |
+| `simpNF` | Simp lemma not in normal form | Fix statement |
+| `docBlame` | Public decl without docstring | Add one-sentence docstring |
+
+### Step 1b: Initial Analysis
+
+Read the target file and also assess:
+- File length (flag if >1000 lines)
 - Import organization
 - Module docstring presence
 
@@ -57,176 +101,100 @@ Read the target file and assess:
    -/
    ```
 
-### Step 3: Naming Convention Fixes (CRITICAL)
+### Step 3: Build Declaration List
 
-**All declaration names MUST follow mathlib conventions.** For each declaration:
+Extract every declaration from the file into an ordered list:
 
-1. **Check the name** against naming rules
-2. **Rename if non-conforming** - fix the name
-3. **Update ALL usages** in the file
-
-**CRITICAL: Different conventions for defs vs lemmas/theorems!**
-
-| Declaration | Returns | Convention | Example |
-|-------------|---------|------------|---------|
-| `lemma`/`theorem` | `Prop` | `snake_case` | `continuous_of_bounded` |
-| `def` | Data (ℂ, ℝ, Set, etc.) | `lowerCamelCase` | `cauchyPrincipalValue` |
-| `structure`/`inductive` | Type | `UpperCamelCase` | `ModularForm` |
-| Helper lemmas | `Prop` | `snake_case` + `_aux` | `main_theorem_aux` |
-
-**Key rule: Look at what the declaration RETURNS:**
-- Returns **Prop** (statement to prove) → `snake_case`
-- Returns **data** (number, set, function) → `lowerCamelCase`
-- Defines a **Type** → `UpperCamelCase`
-
-**Examples:**
-```lean
--- Lemmas/theorems (return Prop) → snake_case
-theorem continuous_of_uniform : Continuous f := ...
-lemma norm_le_of_mem_ball : ‖x‖ ≤ r := ...
-
--- Defs returning data → lowerCamelCase
-def cauchyPrincipalValue (f : ℝ → ℂ) : ℂ := ...
-def residueAtPole (f : ℂ → ℂ) (z₀ : ℂ) : ℂ := ...
-def fundamentalDomain : Set ℂ := ...
-
--- Types → UpperCamelCase
-structure ModularForm where ...
+```
+1. def myFoo (line 25)
+2. lemma bar_thing (line 40)
+3. theorem main_result (line 65)
+...
 ```
 
-**"Conclusion of hypotheses" pattern for lemmas:**
-```lean
--- Good lemma names (snake_case, descriptive)
-continuous_of_uniform      -- conclusion: continuous, hypothesis: uniform
-norm_le_of_mem_ball        -- conclusion: norm ≤, hypothesis: mem ball
-integrable_of_bounded      -- conclusion: integrable, hypothesis: bounded
+Print this list. Then process each declaration **one at a time**, in order, applying the FULL checklist below.
 
--- Bad - rename these
-myLemma                    → describe what it proves (snake_case)
-Lemma1                     → use meaningful snake_case
-continuous_Function        → continuous_function (consistent snake_case)
-```
+### Step 4: Per-Declaration Checklist (THE CORE LOOP)
 
-**Common mistake: snake_case for defs returning data:**
-```lean
--- WRONG: def returning ℂ uses snake_case
-def cauchy_principal_value (f : ℝ → ℂ) : ℂ := ...
+**For EACH declaration in the list**, apply ALL of the following checks. Do not skip any. Print the declaration name before checking it.
 
--- CORRECT: def returning ℂ uses lowerCamelCase
-def cauchyPrincipalValue (f : ℝ → ℂ) : ℂ := ...
-```
+#### CHECK 0: Lint Warnings (from Step 1)
+- List ALL lint warnings from Step 1 that fall within this declaration's line range
+- These are **mandatory fixes** — address every single one
+- Common fixes: remove unused variables (entirely, not underscore), remove unused `have`/`suffices`, fix line length, replace `$` with `<|`, replace `λ` with `fun`, replace `show` with `change`
 
-**American English:**
-- `Factorization` not `Factorisation`
-- `normalize` not `normalise`
-- `localization` not `localisation`
+#### CHECK 1: Mathlib-First
+- Could this `def` be replaced by a mathlib definition? Search with `exact?`, Loogle, or by name.
+- If a mathlib equivalent exists: replace with it. Do NOT create a bridge theorem.
+- For simple compositions: prefer `local notation` over a `def`.
 
-**How to rename:**
-```lean
--- For lemmas: rename to snake_case
-lemma fooBar : P := ...  →  lemma foo_bar : P := ...
+#### CHECK 2: Naming
+- `lemma`/`theorem` (returns Prop) → `snake_case`
+- `def` (returns data) → `lowerCamelCase`
+- `structure`/`inductive` (Type) → `UpperCamelCase`
+- Helper lemmas → `snake_case` + `_aux` suffix, mark `private`
+- Theorem names should follow "conclusion_of_hypothesis" pattern
+- American English (`Factorization` not `Factorisation`)
+- If renamed: update ALL usages across the file
 
--- For defs returning data: rename to lowerCamelCase
-def foo_bar : ℂ := ...   →  def fooBar : ℂ := ...
+#### CHECK 3: Unused Variables
+- Any parameter with an unused variable warning? → Remove entirely from signature and all call sites. Do NOT add `_` prefix.
 
--- Then find and replace ALL usages in the file
-```
+#### CHECK 4: Formatting
+- 2-space indentation in tactic blocks
+- Lines ≤ 100 chars (break at parameters, operators)
+- `by` at end of line, never alone on its own line
+- `fun` over `λ`, `<|` over `$`
+- Proper whitespace around operators and colons
 
-### Step 4: Formatting Fixes
+#### CHECK 5: Comments
+- Remove ALL inline comments from proofs
+- No "Step N" markers, no play-by-play
+- No commented-out code (theorems as comments = unacceptable)
+- If this is a key public theorem: add ONE-SENTENCE docstring (what, not how)
+- Private/helper lemmas: NO docstring
 
-For each declaration, check and fix:
+#### CHECK 6: Proof Structure
+- `set_option maxHeartbeats`? → Decompose the proof into helper lemmas instead
+- Proof >30 lines? → Flag for decomposition
+- `∧` in theorem statement? → Split into separate lemmas, combine with `⟨left, right⟩`
+- Any `constructor`/`by_cases`/`match`/`induction` branch >10 lines? → Extract into private helper lemma
 
-1. **Indentation** - Ensure 2-space indentation in tactic blocks
-2. **Line breaks** - Break lines >100 chars appropriately
-3. **Whitespace** - Fix spacing around operators, colons, parentheses
-4. **Syntax preferences**:
-   - `fun` over `λ`
-   - `<|` over `$`
-   - `change` over `show` in tactic mode
+#### CHECK 7: Proof Golf
+- Consecutive trivial `have h := foo x` lines? → Inline them: `exact bar (foo x)`
+- `by exact h` → just `h`
+- `by rfl` → `rfl`
+- Single-use `have` with trivial RHS? → Inline at usage site
+- Can `ring`, `linarith`, `omega`, `grind`, `simp`, or `aesop` close the goal? → Use them
+- `rw [...]; exact h` → `rwa [...]`
+- Redundant tactics? → Remove
 
-### Step 5: Comment Stripping
+#### CHECK 8: Visibility
+- Only used within this file? → `private`
+- Helper for one main result? → `private` with `_aux` suffix
+- API lemma for reuse? → public, no `private`
 
-**Remove ALL inline comments from proofs:**
-```lean
--- BEFORE (bad)
-theorem foo : P := by
-  -- First establish the bound
-  have hbound := bound_lemma hf
-  -- Now apply convergence
-  exact convergence_lemma hbound
+After checking all 8 items, **make the fixes** for that declaration, then move to the next one.
 
--- AFTER (good)
-theorem foo : P := by
-  have hbound := bound_lemma hf
-  exact convergence_lemma hbound
-```
+### Step 5: Post-Loop File-Level Checks
 
-**Docstrings only on key public theorems** (one sentence).
+After processing all declarations:
 
-### Step 6: Documentation Check
+1. **File length** - Still >1000 lines? → Split by topic
+2. **Import minimality** - Remove unused imports
+3. **Import order** - Mathlib imports first (alphabetical), then project imports
 
-For each **key public declaration** only:
-- Add ONE-SENTENCE docstring describing the result
-- Do NOT add docstrings to helper/private lemmas
-
-### Step 7: Structural Decomposition (CRITICAL)
-
-**Apply these mandatory rules to EVERY proof:**
-
-1. **No `∧` in theorem statements** - Split into separate lemmas, combine at end:
-   ```lean
-   -- BAD
-   theorem main : P ∧ Q := by constructor; ...
-
-   -- GOOD
-   lemma main_left : P := by ...
-   lemma main_right : Q := by ...
-   theorem main : P ∧ Q := ⟨main_left, main_right⟩
-   ```
-
-2. **Split large `constructor` branches** - If either branch >10 lines, extract both:
-   ```lean
-   -- BAD
-   theorem foo : A ∧ B := by
-     constructor
-     · -- 15 lines
-     · -- 20 lines
-
-   -- GOOD
-   private lemma foo_fst : A := by ...  -- 15 lines
-   private lemma foo_snd : B := by ...  -- 20 lines
-   theorem foo : A ∧ B := ⟨foo_fst, foo_snd⟩
-   ```
-
-3. **Split large case branches** - If any branch >10 lines, extract all:
-   ```lean
-   -- BAD
-   theorem bar : P := by
-     by_cases h : cond
-     · -- 20 lines
-     · -- 25 lines
-
-   -- GOOD
-   private lemma bar_pos (h : cond) : P := by ...
-   private lemma bar_neg (h : ¬cond) : P := by ...
-   theorem bar : P := by by_cases h : cond <;> [exact bar_pos h; exact bar_neg h]
-   ```
-
-**10 lines is the threshold** - Extract ANY block exceeding 10 lines.
-
-### Step 8: Proof Opportunities
-
-Identify obvious golfing opportunities:
-- Inline `have foo := bar` (simple invocations used once)
-- Term-mode candidates (simple `by exact x` → `x`)
-- Automation opportunities (`ring`, `linarith`, `omega`, `grind`)
-
-### Step 9: Compile Verification
+### Step 6: Compile Verification & Lint Re-check
 
 After all changes:
 1. Save the file
-2. Run `lean_diagnostic_messages` to check for errors
-3. If errors introduced, revert problematic changes
+2. Run `lean_diagnostic_messages` on the file again
+3. **Compare with Step 1 diagnostics:**
+   - All original warnings should be resolved
+   - No new errors should be introduced
+   - If new warnings appeared (from code you moved/rewrote), fix them now
+4. If errors were introduced, revert the problematic changes
+5. Repeat until `lean_diagnostic_messages` returns `[]` (empty = clean)
 
 ## Output Format
 

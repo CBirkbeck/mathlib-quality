@@ -51,8 +51,8 @@ namespace MyNamespace
 - One import per line
 
 ### File Length
-- **Maximum**: ~1500 lines (consider splitting if larger)
-- **Preferred**: 500-1000 lines
+- **Hard limit**: 1000 lines (nothing should exceed this)
+- **Preferred**: 500-800 lines
 - **Action**: Split large files by topic; use `#find_home` to verify location
 
 ### File Organization (Splitting Large Files)
@@ -299,6 +299,76 @@ calc
 
 -- Relations aligned, underscores left-justified
 -- Justifications need not have aligned := symbols
+```
+
+## Mathlib-First Principle
+
+### Always Check Mathlib Before Defining
+
+Before creating any definition, **always check if mathlib already has an equivalent**. Use `exact?`, `apply?`, Loogle, or Moogle to search.
+
+```lean
+-- BAD: redefining something mathlib already has
+def fundamentalDomain : Set UpperHalfPlane := {z | |z.re| ≤ 1/2 ∧ ‖(z : ℂ)‖ ≥ 1}
+
+-- GOOD: use the mathlib version
+-- ModularGroup.fd already exists — use it directly
+```
+
+**Key rules:**
+- Reuse mathlib definitions everywhere possible
+- Build new API/lemmas FOR mathlib's existing definitions rather than creating custom ones
+- If replacing a custom def with a mathlib one, update ALL lemmas to use the mathlib def
+
+### No Bridge Theorems
+
+When a custom definition duplicates a mathlib definition, do NOT create bridge theorems between them. Instead, migrate all code to use the mathlib definition directly.
+
+```lean
+-- BAD: bridge theorem
+theorem fd_eq_fd' : (𝒟 : Set ℍ) = 𝒟' := by ...
+theorem S0_mem_fd_clean : ... := by rw [fd_eq_fd']; ...
+
+-- GOOD: update ALL code to use the mathlib definition directly
+-- Delete custom fundamentalDomain and rewrite every lemma that used it
+```
+
+### Prefer Notation Over Definitions for Simple Compositions
+
+For simple compositions, use notation instead of a `def`. This avoids needing to unfold/simp the definition everywhere.
+
+```lean
+-- BAD: unnecessary definition that needs unfolding
+def modularFormComp (f : ModularForm (Gamma 1) k) : ℂ → ℂ := f ∘ UpperHalfPlane.ofComplex
+
+-- GOOD: transparent notation
+local notation "f_ℂ" => (f : ModularForm (Gamma 1) k) ∘ UpperHalfPlane.ofComplex
+```
+
+## No Commented-Out Code
+
+**Never put theorems or definitions as comments in a file.** A file with only commented-out theorem statements is completely useless.
+
+```lean
+-- BAD: commented-out theorem
+-- `valenceFormula_textbook_orbit_finsum :
+--     (orderAtCusp' f : ℂ) + ...`
+
+-- GOOD: actual theorem that compiles
+theorem valenceFormula_textbook_orbit_finsum ... := ...
+```
+
+When moving a theorem into its own file, put the actual theorem statement uncommented and bring in whatever it needs to compile.
+
+## Unused Variables
+
+**Remove unused variables entirely from signatures and call sites. Do NOT add a `_` prefix.**
+
+```lean
+-- BAD: underscore prefix
+(_hp0_ne_i : p0 ≠ ellipticPointI)
+
+-- GOOD: remove entirely from signature and all call sites
 ```
 
 ## Syntax Preferences

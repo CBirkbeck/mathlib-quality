@@ -700,6 +700,26 @@ theorem card_add (s t : Multiset α) : card (s + t) = card s + card t :=
   Quotient.inductionOn₂ s t fun _ _ => length_append
 ```
 
+### Cross-File Rename Example
+
+**Issue:** Theorem name prefix uses camelCase instead of snake_case
+
+```lean
+-- Before (camelCase prefix in theorem names)
+theorem valenceFormula_gWN_base ...
+theorem valenceFormula_orbit_sum ...
+theorem valenceFormula_textbook_orbit_finsum ...
+
+-- After (snake_case for theorem names)
+theorem valence_formula_gWN_base ...
+theorem valence_formula_orbit_sum ...
+theorem valence_formula_textbook_orbit_finsum ...
+```
+
+**Feedback pattern:** "Theorem names must use snake_case. Rename across all files."
+
+Note: Definition names within theorem name prefixes (like `fdBoundary`, `normSq`) stay as-is per convention, since they reference lowerCamelCase defs.
+
 ### Data-Driven Feedback Categories
 
 Based on analysis of curated PR data (`data/pr_feedback/`):

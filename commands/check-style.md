@@ -15,46 +15,60 @@ Validate a Lean file against mathlib style rules without making changes.
 
 If no file is specified, operates on the currently open file.
 
+## Workflow
+
+### Step 1: Run Lean Diagnostics
+
+**First**, run `lean_diagnostic_messages` on the file to get ALL warnings from Lean's built-in linters:
+
+```
+lean_diagnostic_messages(file_path="/path/to/File.lean")
+```
+
+This gives you warnings for: unused variables, unused haves, line length, `$` vs `<|`, `λ` vs `fun`, `show` vs `change`, `set_option maxHeartbeats`, missing docstrings, simp normal form issues, and more.
+
+**These are authoritative** — they are the exact same warnings shown as yellow underlines in VS Code.
+
+### Step 2: Manual Checks (not covered by linters)
+
+In addition to the lint warnings, manually check:
+
 ## What It Checks
 
+### From Lean Linters (automatic via `lean_diagnostic_messages`)
+- [ ] `unusedVariables` — unused parameters
+- [ ] `unusedHavesSuffices` — unused have/suffices blocks
+- [ ] `style.longLine` — lines >100 characters
+- [ ] `style.dollarSyntax` — `$` instead of `<|`
+- [ ] `style.lambdaSyntax` — `λ` instead of `fun`
+- [ ] `style.setOption` — disallowed set_option
+- [ ] `style.show` — `show` instead of `change` in tactic mode
+- [ ] `style.cdot` — bullet point formatting
+- [ ] `docBlame` — public declarations without docstrings
+- [ ] `simpNF` — simp lemmas not in normal form
+- [ ] `unusedArguments` — unused function arguments
+
+### Manual Checks (not caught by linters)
 ### 1. File Structure
-- [ ] File length ≤ 1500 lines
+- [ ] File length ≤ 1000 lines
 - [ ] Has copyright header
 - [ ] Has module docstring after imports
 - [ ] Imports are organized (Mathlib first, alphabetical)
 
-### 2. Line Formatting
-- [ ] All lines ≤ 100 characters
-- [ ] No trailing whitespace
-- [ ] Consistent line endings
-
-### 3. Indentation
-- [ ] 2-space indentation in tactic blocks
-- [ ] Proper alignment of continuation lines
-- [ ] Consistent indentation throughout
-
-### 4. Syntax Preferences
-- [ ] `fun` instead of `λ`
-- [ ] `<|` instead of `$`
-- [ ] `change` instead of `show` in tactic mode
-- [ ] No redundant parentheses
-
-### 5. Naming Conventions
+### 2. Naming Conventions
 - [ ] `snake_case` for lemmas/theorems
+- [ ] `lowerCamelCase` for defs returning data
 - [ ] `UpperCamelCase` for types/structures
 - [ ] Descriptive hypothesis names (h-prefix)
 - [ ] Instance names follow `inst` pattern
+- [ ] No commented-out code/theorems
 
-### 6. Documentation
-- [ ] Module docstring present
-- [ ] Public declarations have docstrings
-- [ ] Docstrings are informative
-
-### 7. Code Quality
-- [ ] No bare `simp` (use `simp only`)
+### 3. Code Quality
+- [ ] No bare `simp` in non-terminal position (use `simp only`)
 - [ ] No `sorry`
-- [ ] No debug `set_option`
-- [ ] No unnecessary `have` blocks (flagged, not auto-detected)
+- [ ] No consecutive trivial `have h := ...` lines (inline them)
+- [ ] No proofs >30 lines without decomposition
+- [ ] Helpers are `private` with `_aux` suffix
 
 ## Output Format
 

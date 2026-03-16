@@ -175,14 +175,24 @@ theorem bar : P := by
 
 ### Eliminate Unnecessary `have` Blocks
 
-```lean
--- Verbose
-theorem foo (h : P → Q) (hp : P) : Q := by
-  have hq : Q := h hp
-  exact hq
+**Aggressively inline trivial haves.** Consecutive lines of `have h := ...` (no type annotation, just applying a lemma) are a code smell. Only keep `have` where the RHS is a nontrivial proof (e.g., `have h : P := by ...` with actual tactic work).
 
--- Golfed
-theorem foo (h : P → Q) (hp : P) : Q := h hp
+```lean
+-- BAD: consecutive trivial haves
+have h1 := foo x
+have h2 := bar y
+have h3 := baz h1 h2
+exact qux h3
+
+-- GOOD: inline trivial applications
+exact qux (baz (foo x) (bar y))
+
+-- ACCEPTABLE: have with nontrivial proof
+have h : P := by
+  apply complicated_lemma
+  · exact first_step
+  · exact second_step
+exact use_h h
 ```
 
 ### Use Term Mode for Simple Proofs
