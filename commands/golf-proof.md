@@ -3,16 +3,19 @@ name: golf-proof
 description: Optimize and shorten proofs
 ---
 
-# /golf-proof - Proof Optimization
+# /golf-proof - Single Proof Optimization
 
-Optimize and shorten Lean proofs. **Goal: One-liners. Brevity trumps readability.**
+Optimize and shorten a specific Lean proof. **Goal: One-liners. Brevity trumps readability.**
+
+> **For file-wide cleanup + golfing**, use `/cleanup` instead. It combines all cleanup rules with golfing in a systematic two-pass approach (audit → fix).
+>
+> Use `/golf-proof` when you want to golf a **single specific proof** quickly.
 
 ## Usage
 
 ```
 /golf-proof [theorem_name]
 /golf-proof [file_path:line_number]
-/golf-proof --all [file_path]
 ```
 
 ## Agent Integration

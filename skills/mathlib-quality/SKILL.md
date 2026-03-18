@@ -305,10 +305,16 @@ Use `/teach` to explicitly record project-specific patterns:
 
 ### When Preparing a PR
 
-1. **First pass**: Run `/check-style` to see all issues
-2. **Apply fixes**: Run `/cleanup` to auto-fix what's possible
-3. **Golf proofs**: Run `/golf-proof` on verbose proofs
-4. **Final check**: Run `/pre-submit` before creating PR
+1. **Cleanup + Golf**: Run `/cleanup` — two-pass approach that audits every declaration for style, naming, formatting, and golfing issues, then dispatches agents to fix them
+2. **Decompose**: Run `/decompose-proof` — two-pass approach that analyzes long proofs, plans decomposition, then dispatches agents to extract helpers
+3. **Final check**: Run `/pre-submit` before creating PR
+
+**How the two-pass commands work:**
+- **Pass 1 (Audit/Analysis)**: Goes declaration by declaration, checks EVERY rule, annotates the code with `-- FIXME:` or `/- DECOMPOSE: -/` comments. Nothing is changed yet.
+- **Pass 2 (Fix/Decompose)**: Dispatches parallel agents, each handling a batch of annotated declarations. Agents implement the fixes and remove the annotation comments.
+- This ensures nothing is forgotten or skipped.
+
+**For quick single-proof golfing**: Use `/golf-proof [theorem_name]` to golf one proof without the full file audit.
 
 ### When Handling PR Feedback
 

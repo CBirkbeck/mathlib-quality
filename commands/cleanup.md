@@ -3,9 +3,9 @@ name: cleanup
 description: Full file cleanup to mathlib standards
 ---
 
-# /cleanup - Full File Cleanup
+# /cleanup - Full File Cleanup (Two-Pass Architecture)
 
-Clean up a Lean file to meet mathlib standards.
+Combined cleanup + golfing with systematic annotation-then-fix approach.
 
 ## Usage
 
@@ -15,20 +15,28 @@ Clean up a Lean file to meet mathlib standards.
 
 If no file is specified, operates on the currently open file.
 
-## Workflow
+## Architecture
+
+**Problem**: Agents forget or skip issues when auditing and fixing simultaneously.
+
+**Solution**: Separate annotation from implementation:
+1. **Pass 1 (Audit)**: Go declaration by declaration. Check EVERY rule. Annotate with `-- FIXME:` comments. **Do NOT fix anything.**
+2. **Pass 2 (Fix)**: Dispatch parallel agents, each handling a batch of declarations. They implement the FIXME fixes and remove the comments.
+3. **Pass 3 (Refactor)**: Handle cross-cutting changes (renames, removals) from the refactoring list.
+
+---
+
+## Pass 1: Audit
 
 ### Step 1: Collect Lint Diagnostics
 
-**Before doing anything else**, run `lean_diagnostic_messages` on the file to get ALL warnings and errors from Lean's built-in linters. These are the same yellow/red underlines shown in VS Code.
+**Before doing anything else**, run `lean_diagnostic_messages` on the file.
 
 ```
 lean_diagnostic_messages(file_path="/path/to/File.lean")
 ```
 
-This returns diagnostics in the format: `"l{line}c{col}-l{line}c{col}, severity: {N}\n{message}"`
-- Severity 1 = error (red), Severity 2 = warning (yellow), Severity 3 = info (blue)
-
-**Group the warnings by line number** and print a summary:
+**Group warnings by line number** and print a summary:
 
 ```
 ## Lint Diagnostics for File.lean
@@ -40,259 +48,344 @@ This returns diagnostics in the format: `"l{line}c{col}-l{line}c{col}, severity:
 - l12: unused variable `hp0_ne_i` [linter.unusedVariables]
 - l34: line has 115 characters [style.longLine]
 - l56: `$` is not allowed, use `<|` [style.dollarSyntax]
-- l78: unused `have` [linter.unusedHavesSuffices]
-- l90: declaration uses `sorry` [linter.sorry]
-- l102: `set_option maxHeartbeats` [style.setOption]
 ```
 
-These diagnostics are your **primary TODO list**. Every warning must be addressed.
+**Common linter warnings:**
+| Linter | Fix |
+|--------|-----|
+| `unusedVariables` | Remove parameter entirely (NOT underscore) |
+| `unusedHavesSuffices` | Remove or inline |
+| `style.longLine` | Break line |
+| `style.dollarSyntax` | Replace `$` with `<|` |
+| `style.lambdaSyntax` | Replace `λ` with `fun` |
+| `style.setOption` | Decompose proof instead |
+| `style.cdot` | Fix `·` formatting |
+| `style.show` | Replace `show` with `change` |
+| `docBlame` | Add one-sentence docstring |
 
-**Common Lean/Mathlib linter warnings you will see:**
-| Linter | Warning | Fix |
-|--------|---------|-----|
-| `unusedVariables` | Unused parameter | Remove from signature and call sites (do NOT underscore) |
-| `unusedHavesSuffices` | Unused `have`/`suffices` | Remove or inline |
-| `style.longLine` | Line >100 chars | Break line |
-| `style.dollarSyntax` | `$` used | Replace with `<|` |
-| `style.lambdaSyntax` | `λ` used | Replace with `fun` |
-| `style.setOption` | Disallowed `set_option` | Decompose proof instead of bumping heartbeats |
-| `style.cdot` | Incorrect `·` usage | Fix bullet formatting |
-| `style.show` | `show` in tactic mode | Replace with `change` |
-| `unusedArguments` | Unused function argument | Remove or use `_` |
-| `simpNF` | Simp lemma not in normal form | Fix statement |
-| `docBlame` | Public decl without docstring | Add one-sentence docstring |
+### Step 2: Header Cleanup (Fix Immediately)
 
-### Step 1b: Initial Analysis
+These are file-level, fix them now without annotation:
 
-Read the target file and also assess:
-- File length (flag if >1000 lines)
-- Import organization
-- Module docstring presence
-
-### Step 2: Header Cleanup
-
-1. **Copyright header** - Ensure proper format:
-   ```lean
-   /-
-   Copyright (c) YEAR [Names]. All rights reserved.
-   Released under Apache 2.0 license as described in the file LICENSE.
-   Authors: [Names]
-   -/
-   ```
-
-2. **Imports** - Organize alphabetically, remove unused:
-   ```lean
-   import Mathlib.Algebra.Group.Basic
-   import Mathlib.Data.Set.Basic
-   ```
-
-3. **Module docstring** - Add or improve:
-   ```lean
-   /-!
-   # Module Title
-
-   Brief description.
-
-   ## Main definitions
-   * `Foo`: Description
-
-   ## Main results
-   * `foo_bar`: Description
-   -/
-   ```
+1. **Copyright header** — proper format
+2. **Imports** — alphabetical, remove unused
+3. **Module docstring** — add or improve (one at TOP of file only)
 
 ### Step 3: Build Declaration List
 
-Extract every declaration from the file into an ordered list:
+Extract every declaration into an ordered list:
 
 ```
-1. def myFoo (line 25)
-2. lemma bar_thing (line 40)
-3. theorem main_result (line 65)
+1. def myFoo (line 25, 15 lines)
+2. lemma bar_thing (line 40, 8 lines)
+3. theorem main_result (line 65, 45 lines)
 ...
 ```
 
-Print this list. Then process each declaration **one at a time**, in order, applying the FULL checklist below.
+Print this list. This is your audit roadmap.
 
-### Step 4: Per-Declaration Checklist (THE CORE LOOP)
+### Step 4: Audit Each Declaration (THE CORE LOOP)
 
-**For EACH declaration in the list**, apply ALL of the following checks. Do not skip any. Print the declaration name before checking it.
+For EACH declaration, go through ALL checks below. **Do NOT fix anything yet.**
 
-#### CHECK 0: Lint Warnings (from Step 1)
-- List ALL lint warnings from Step 1 that fall within this declaration's line range
-- These are **mandatory fixes** — address every single one
-- Common fixes: remove unused variables (entirely, not underscore), remove unused `have`/`suffices`, fix line length, replace `$` with `<|`, replace `λ` with `fun`, replace `show` with `change`
+For each issue found:
+- Add a `-- FIXME: [CATEGORY] description` comment **ABOVE** the declaration
+- If the change affects OTHER declarations (rename, remove, replace with mathlib), add to the **REFACTORING LIST** instead
 
-#### CHECK 1: Mathlib-First
-- Could this `def` be replaced by a mathlib definition? Search with `exact?`, Loogle, or by name.
-- If a mathlib equivalent exists: replace with it. Do NOT create a bridge theorem.
-- For simple compositions: prefer `local notation` over a `def`.
+#### FIXME Comment Format
 
-#### CHECK 2: Naming
-- `lemma`/`theorem` (returns Prop) → `snake_case`
-- `def` (returns data) → `lowerCamelCase`
-- `structure`/`inductive` (Type) → `UpperCamelCase`
-- Helper lemmas → `snake_case` + `_aux` suffix, mark `private`
-- Theorem names should follow "conclusion_of_hypothesis" pattern
+```lean
+-- FIXME: [LINT] unused variable `hp0_ne_i` — remove from signature and call sites
+-- FIXME: [NAMING] rename to `foo_bar` — snake_case for lemmas returning Prop
+-- FIXME: [FORMAT] `by` on own line (line 48) — move to end of preceding line
+-- FIXME: [GOLF] inline `have h1 := lemma1 x` (line 52) — single-use, no proof block
+-- FIXME: [GOLF] try `grind` on lines 54-60 — multi-step case analysis
+-- FIXME: [COMMENT] remove inline comments (lines 50-51, 53)
+-- FIXME: [VISIBILITY] make `private` — only used within this file
+-- FIXME: [STRUCTURE] proof is 45 lines — flag for /decompose-proof
+theorem fooBar (x : ℝ) (hp0_ne_i : ...) : ... := by
+  ...
+```
+
+#### Refactoring List Format
+
+Track these separately (NOT as code comments). Print after auditing all declarations:
+
+```
+REFACTORING LIST:
+1. RENAME `fooBar` → `foo_bar` — update usages at lines 80, 95, 120
+2. REMOVE `def myHelper` (line 40) — duplicates `Mathlib.Foo.bar`. Update sites: 70, 85
+3. MATHLIB `def customCondition` (line 15) — replace with `[DiscreteTopology S]`
+```
+
+---
+
+#### The Audit Checklist
+
+Print the declaration name before each audit. Check ALL items — do not skip.
+
+**CHECK 0: Lint Warnings**
+- List ALL lint warnings from Step 1 within this declaration's line range
+- Each becomes `-- FIXME: [LINT] ...`
+- Common: unused variables (remove entirely), unused have/suffices, long lines, `$`→`<|`, `λ`→`fun`, `show`→`change`
+
+**CHECK 1: Mathlib-First**
+- Could this `def` be replaced by a mathlib definition? Quick search with `exact?` or Loogle
+- If yes → add to REFACTORING LIST (affects call sites)
+- For simple 1-3 line compositions → note preference for `local notation` or direct mathlib use
+
+**CHECK 2: Naming**
+- `lemma`/`theorem` (returns Prop) → must be `snake_case`
+- `def` (returns data) → must be `lowerCamelCase`
+- `structure`/`inductive` → must be `UpperCamelCase`
+- Theorem name should follow `conclusion_of_hypothesis` pattern
 - American English (`Factorization` not `Factorisation`)
-- If renamed: update ALL usages across the file
+- If rename needed → add to REFACTORING LIST (must update all usages file-wide)
 
-#### CHECK 3: Unused Variables
-- Any parameter with an unused variable warning? → Remove entirely from signature and all call sites. Do NOT add `_` prefix.
+**CHECK 3: Unused Variables**
+- Parameters with unused lint warnings → `-- FIXME: [LINT] unused variable 'x' — remove from signature and all call sites`
+- Do NOT prefix with `_` — remove entirely
 
-#### CHECK 4: Formatting
+**CHECK 4: Formatting**
 - 2-space indentation in tactic blocks
-- Lines ≤ 100 chars (break at parameters, operators)
-- `by` at end of line, never alone on its own line
+- Lines ≤100 chars (break at parameters, operators)
+- `by` at end of preceding line, never alone on its own line
 - `fun` over `λ`, `<|` over `$`
 - Proper whitespace around operators and colons
+- No empty lines inside declarations
+- Each issue → `-- FIXME: [FORMAT] ...`
 
-#### CHECK 5: Comments
-- Remove ALL inline comments from proofs
-- No "Step N" markers, no play-by-play
-- No commented-out code (theorems as comments = unacceptable)
-- If this is a key public theorem: add ONE-SENTENCE docstring (what, not how)
-- Private/helper lemmas: NO docstring
+**CHECK 5: Comments & Docstrings**
+- Any inline comments in proofs → `-- FIXME: [COMMENT] remove inline comments`
+- Commented-out code → `-- FIXME: [COMMENT] remove commented-out code`
+- Section markers (`/-! ## ... -/`) → `-- FIXME: [COMMENT] remove section marker`
+- Missing docstring on important public theorem/def → `-- FIXME: [COMMENT] add one-sentence docstring`
+- Docstring on helper/private lemma → `-- FIXME: [COMMENT] remove docstring from helper`
+- Verbose multi-paragraph docstring → `-- FIXME: [COMMENT] shorten docstring to one sentence`
 
-#### CHECK 6: Proof Structure
-- `set_option maxHeartbeats`? → Decompose the proof into helper lemmas instead
-- Proof >30 lines? → Flag for decomposition
-- `∧` in theorem statement? → Split into separate lemmas, combine with `⟨left, right⟩`
-- Any `constructor`/`by_cases`/`match`/`induction` branch >10 lines? → Extract into private helper lemma
+**CHECK 6: Proof Structure** (flag for `/decompose-proof`, don't fix here)
+- `set_option maxHeartbeats` → `-- FIXME: [STRUCTURE] remove maxHeartbeats — decompose proof instead`
+- Proof >30 lines → `-- FIXME: [STRUCTURE] proof is N lines — needs /decompose-proof`
+- `∧` in theorem statement → `-- FIXME: [STRUCTURE] split ∧ into separate lemmas`
+- Any constructor/by_cases/rcases branch >10 lines → `-- FIXME: [STRUCTURE] branch (lines X-Y) >10 lines — extract to helper`
 
-#### CHECK 7: Proof Golf
-- Consecutive trivial `have h := foo x` lines? → Inline them: `exact bar (foo x)`
-- `by exact h` → just `h`
-- `by rfl` → `rfl`
-- Single-use `have` with trivial RHS? → Inline at usage site
-- Can `ring`, `linarith`, `omega`, `grind`, `simp`, or `aesop` close the goal? → Use them
-- `rw [...]; exact h` → `rwa [...]`
-- Redundant tactics? → Remove
+**CHECK 7: Proof Golf**
 
-#### CHECK 8: Visibility
-- Only used within this file? → `private`
-- Helper for one main result? → `private` with `_aux` suffix
-- API lemma for reuse? → public, no `private`
+Go through the proof line by line. For each golfing opportunity:
 
-After checking all 8 items, **make the fixes** for that declaration, then move to the next one.
+- Single-use `have foo := bar` (no `by`) → `-- FIXME: [GOLF] inline have 'foo' (line N) — single-use, no proof block`
+- Single-use `have foo : T := bar` (no `by`) → same
+- `by exact h` → `-- FIXME: [GOLF] 'by exact h' → 'h' (line N)`
+- `by rfl` → `-- FIXME: [GOLF] 'by rfl' → 'rfl' (line N)`
+- `fun x => f x` → `-- FIXME: [GOLF] eta-reduce (line N)`
+- `rw [...]; exact h` → `-- FIXME: [GOLF] use rwa (line N)`
+- `simp; exact h` → `-- FIXME: [GOLF] use simpa (line N)`
+- `constructor; exact a; exact b` → `-- FIXME: [GOLF] use ⟨a, b⟩ (line N)`
+- `intro h; exact f h` → `-- FIXME: [GOLF] eta-reduce to f (line N)`
+- Consecutive `rw` → `-- FIXME: [GOLF] merge rw calls (lines N-M)`
+- Multi-step tactic block that automation might close → `-- FIXME: [GOLF] try grind/fun_prop/omega on lines N-M`
+- Redundant tactic → `-- FIXME: [GOLF] redundant tactic (line N)`
+- Trailing comma in simp list → `-- FIXME: [GOLF] trailing comma (line N)`
 
-### Step 5: Post-Loop File-Level Checks
+**`have` inlining decision tree:**
+1. `have h := bar` (no type, no `by`) → **INLINE** unless used 2+ times
+2. `have h : T := bar` (typed, no `by`) → **INLINE** unless used 2+ times
+3. `have h := by ...` or `have h : T := by ...` → **KEEP** (has proof content)
+4. Any `have` used 2+ times → **KEEP**
 
-After processing all declarations:
+**CHECK 8: Visibility**
+- Only used within this file → `-- FIXME: [VISIBILITY] make private`
+- Helper for one result → `-- FIXME: [VISIBILITY] make private, add _aux suffix`
+- Already private but missing `_aux` suffix → `-- FIXME: [VISIBILITY] add _aux suffix`
 
-1. **File length** - Still >1000 lines? → Split by topic
-2. **Import minimality** - Remove unused imports
-3. **Import order** - Mathlib imports first (alphabetical), then project imports
+---
 
-### Step 6: Compile Verification & Lint Re-check
+### Step 5: Print Audit Summary
 
-After all changes:
-1. Save the file
-2. Run `lean_diagnostic_messages` on the file again
-3. **Compare with Step 1 diagnostics:**
-   - All original warnings should be resolved
-   - No new errors should be introduced
-   - If new warnings appeared (from code you moved/rewrote), fix them now
-4. If errors were introduced, revert the problematic changes
-5. Repeat until `lean_diagnostic_messages` returns `[]` (empty = clean)
+After auditing ALL declarations:
+
+```
+## Audit Summary for [filename]
+
+### FIXME Comments Added
+| Declaration | Line | Issues |
+|-------------|------|--------|
+| `fooBar` | 25 | LINT, GOLF×2, COMMENT |
+| `main_theorem` | 65 | STRUCTURE, GOLF×3, FORMAT |
+| `small_helper` | 90 | VISIBILITY |
+| ... | ... | ... |
+
+Total: N issues across M declarations
+
+### REFACTORING LIST
+1. RENAME `fooBar` → `foo_bar` — update usages at lines 80, 95, 120
+2. REMOVE `def myHelper` (line 40) — duplicates `Mathlib.Foo.bar`. Call sites: 70, 85
+3. MATHLIB `def customCond` (line 15) — replace with `[DiscreteTopology S]`. Sites: 55, 130
+
+### Declarations with No Issues
+- `clean_lemma` (line 100) ✓
+- `another_clean` (line 115) ✓
+```
+
+**Ask the user to confirm before proceeding to Pass 2.** Show them the audit and refactoring list. They may want to adjust priorities or skip some items.
+
+---
+
+## Pass 2: Fix (Parallel Agents)
+
+### Grouping Strategy
+
+Group annotated declarations into batches of 3-5 declarations. Each batch should:
+- Contain declarations that are **close together** in the file (minimize context needed)
+- **NOT** include declarations involved in REFACTORING LIST items (those are handled in Pass 3)
+- **NOT** span declarations with interdependencies (if B calls A, put them in the same batch with A first)
+
+Skip declarations with ONLY `[STRUCTURE]` issues — those are handled by `/decompose-proof`.
+
+### Dispatching Fix Agents
+
+For each batch, dispatch an agent using the `Agent` tool. Use `subagent_type="general-purpose"`.
+
+**Agent prompt template:**
+
+```
+Fix FIXME-annotated declarations in [file_path].
+
+Read the file. Your batch covers lines [start_line] to [end_line], containing these declarations:
+- `decl_1` (line N): [LINT] unused var, [GOLF] inline have, [COMMENT] remove comments
+- `decl_2` (line M): [FORMAT] by placement, [GOLF] try grind
+- `decl_3` (line P): [VISIBILITY] make private
+
+For EACH `-- FIXME:` comment in your range:
+1. Implement the fix exactly as described
+2. Delete the FIXME comment line after implementing the fix
+3. For [GOLF] items involving automation (grind, fun_prop, omega): test with lean_multi_attempt before committing
+4. After fixing ALL items on a declaration, run lean_diagnostic_messages to verify no new errors
+
+Rules:
+- Remove unused variables from BOTH the signature AND all call sites within the file
+- When inlining `have`, verify it's truly single-use by searching for the variable name
+- When trying automation, if it fails silently move on — don't force it
+- Do NOT touch declarations outside your line range
+- Do NOT handle any REFACTORING LIST items
+- Do NOT try to fix [STRUCTURE] items — those are for /decompose-proof
+- Leave [STRUCTURE] FIXME comments in place
+```
+
+**Dispatch all batches in parallel** using multiple Agent tool calls in a single message. The batches are independent by construction so they won't conflict.
+
+### Collecting Results
+
+Wait for all agents to complete. Check:
+- Any compilation errors introduced → fix them directly
+- Any FIXME comments that agents couldn't resolve → note for user
+- Verify no non-STRUCTURE FIXME comments remain
+
+---
+
+## Pass 3: Refactoring
+
+Work through the REFACTORING LIST one item at a time. These are cross-cutting changes that affect multiple declarations.
+
+**Priority order:**
+1. **MATHLIB replacements** — remove defs that duplicate mathlib, replace with type classes
+2. **REMOVE** — delete unnecessary declarations, update call sites
+3. **RENAME** — rename + update all usages
+
+For EACH item:
+1. Make the change
+2. Find and update ALL affected call sites (use Grep to find usages)
+3. Run `lean_diagnostic_messages` to verify
+4. Fix any errors before moving to next item
+
+**For renames:** Use `replace_all: true` in the Edit tool to rename across the file in one shot.
+
+---
+
+## Pass 4: Final Verification
+
+1. Run `lean_diagnostic_messages` on the full file
+2. Compare with Step 1 diagnostics — all original warnings should be resolved
+3. Grep for remaining `-- FIXME:` comments:
+   - `[STRUCTURE]` comments should remain (for `/decompose-proof`)
+   - All other FIXME comments should be gone
+4. If new issues appeared, fix them directly
+
+---
 
 ## Output Format
 
 ```
 ## Cleanup Report for [filename]
 
-### Summary
-- Lines: X (Y lines changed)
-- Declarations: N
-- Names fixed: K
-- Other issues fixed: M
+### Pass 1: Audit
+- Declarations audited: N
+- Issues found: M (LINT: a, NAMING: b, FORMAT: c, GOLF: d, COMMENT: e, VISIBILITY: f, STRUCTURE: g)
+- Refactoring items: R
 
-### Naming Fixes
-| Old Name | New Name | Reason |
-|----------|----------|--------|
-| `fooBar` | `foo_bar` | snake_case for lemmas |
-| `Lemma1` | `bound_of_compact` | descriptive name |
+### Pass 2: Fixes Applied
+- Agent batches dispatched: B
+- Issues resolved: M
+- By category: LINT(a), FORMAT(c), GOLF(d), COMMENT(e), VISIBILITY(f)
 
-### Other Changes Made
-1. Fixed line length on lines: 45, 78, 123
-2. Fixed indentation in: theorem foo, lemma bar
-3. Stripped inline comments from proofs
-4. Inlined 5 single-use `have` statements
+### Pass 3: Refactoring
+- Renames: [old → new, ...]
+- Mathlib replacements: [removed → mathlib, ...]
+- Removals: [what was removed]
 
-### Compilation Status
+### Pass 4: Verification
 ✓ File compiles without errors
+✓ No non-STRUCTURE FIXME comments remaining
+✓ Original lint warnings resolved
+
+### Remaining for /decompose-proof
+- `theorem_X` (line N): 45 lines, needs decomposition
+- `theorem_Y` (line M): ∧ in statement, needs splitting
+
+### Summary
+| Change Type | Count |
+|-------------|-------|
+| Lint fixes | a |
+| Names fixed | b |
+| Formatting fixes | c |
+| Proofs golfed | d |
+| Comments removed | e |
+| Visibility changes | f |
+| Mathlib replacements | g |
 ```
+
+---
 
 ## Reference
 
-See:
-- `skills/mathlib-quality/references/naming-conventions.md` - Full naming guide
-- `skills/mathlib-quality/references/style-rules.md` - Complete style rules
+For the complete rules applied during auditing:
+- `skills/mathlib-quality/SKILL.md` — comprehensive style reference
+- `skills/mathlib-quality/references/naming-conventions.md` — full naming guide
+- `skills/mathlib-quality/references/style-rules.md` — formatting rules
+- `skills/mathlib-quality/references/proof-patterns.md` — golf patterns
+- `skills/mathlib-quality/references/mathlib-quality-principles.md` — core principles from PR analysis
 
-## Example
+For golf pattern examples:
+- `skills/mathlib-quality/examples/inline_have.md` — 77 have-inlining examples
+- `skills/mathlib-quality/examples/term_mode.md` — 311 term mode conversions
+- `skills/mathlib-quality/examples/simp_golf.md` — 311 simp simplifications
+- `skills/mathlib-quality/examples/automation.md` — 1144 automation examples
 
-Before:
-```lean
-import Mathlib.Data.Set.Basic
+---
 
--- My custom lemma for addition
-theorem myAddLemma(x:Nat):x+0=x:= by
-    -- This is obvious
-    simp
-```
+## Learnings
 
-After:
-```lean
-import Mathlib.Data.Set.Basic
+After completing all passes, record significant learnings to `.mathlib-quality/learnings.jsonl` (create if needed).
 
-/-!
-# Basic theorems
-
-Simple arithmetic lemmas.
--/
-
-/-- Addition of zero on the right. -/
-theorem add_zero_right (x : Nat) : x + 0 = x := by simp only [add_zero]
-```
-
-### Final Step: Record Learnings
-
-After completing all changes and showing the report, capture what was learned.
-
-**For each significant change made**, write a JSON entry to `.mathlib-quality/learnings.jsonl` (create the file and directory if they don't exist):
-
-```json
-{
-  "id": "<generate a short unique id>",
-  "timestamp": "<current ISO timestamp>",
-  "command": "cleanup",
-  "type": "<style_correction|naming_fix|golf_pattern|decomposition|mathlib_discovery|failed_pattern>",
-  "before_code": "<original code snippet, max 500 chars>",
-  "after_code": "<resulting code snippet, max 500 chars>",
-  "pattern_tags": ["<relevant pattern names>"],
-  "description": "<1-2 sentence description of the change>",
-  "math_area": "<analysis|algebra|topology|number_theory|combinatorics|order|category_theory|measure_theory|other>",
-  "accepted": true,
-  "source": "<agent_suggestion|user_correction>",
-  "context": {
-    "file_path": "<relative path>",
-    "theorem_name": "<if applicable>"
-  }
-}
-```
-
-**What to capture from cleanup:**
-- Each naming correction (before/after name with reason)
-- Each non-trivial style fix (e.g., `by` placement, comment removal with proof restructuring)
-- Each proof that was golfed or decomposed during cleanup
-- Each mathlib lemma discovered that replaced custom code
-- Each suggestion the user rejected (with `"accepted": false`)
-- Each time the user corrected your suggestion (with `"source": "user_correction"`)
+**What to capture** (1-5 entries per run):
+- Non-trivial golf patterns (before/after with technique)
+- Mathlib discoveries that replaced custom code
+- Naming corrections with reasoning
+- User rejections or corrections
 
 **What NOT to capture:**
-- Trivial whitespace fixes
-- Line length adjustments
+- Trivial whitespace/formatting fixes
+- Mechanical `by exact → term` conversions
 - Import reordering
-- Mechanical rule applications (adding missing docstrings, fixing indentation)
 
-**Keep it lightweight** - only 1-5 entries per command run, capturing the most interesting/novel learnings.
+See `skills/mathlib-quality/learning/schema.md` for the JSON schema.
