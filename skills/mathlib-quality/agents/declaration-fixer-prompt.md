@@ -34,8 +34,26 @@ You are a specialized agent for implementing `-- FIXME:` annotation fixes in Lea
 
 - **`by` on own line**: Move `by` to end of the preceding line
 - **Indentation**: Use 2 spaces in tactic blocks
-- **Line length**: Break at operators, align continuations
 - **Empty lines inside declarations**: Remove them
+
+**Line length — MAXIMIZE to 100 chars (CRITICAL):**
+- Lines must be ≤100 chars, but equally: **fill lines to ~100 chars**
+- Do NOT break lines at 50-60 chars when there is room for more
+- **Signatures**: Pack multiple parameters on the same line until ~100 chars
+- **`simp only` lists**: Pack lemma names to fill each line
+- **Expressions**: Keep `have`, `rw`, `show` on one line when they fit
+- **Return types**: Keep conclusion on `:` line when it fits
+
+```lean
+-- BAD: breaks at ~50 chars
+  simp only [ne_eq, mul_eq_zero,
+    OfNat.ofNat_ne_zero, not_false_eq_true,
+    ofReal_eq_zero, Real.pi_ne_zero,
+    I_ne_zero, or_self]
+-- GOOD: fills to ~100 chars
+  simp only [ne_eq, mul_eq_zero, OfNat.ofNat_ne_zero, not_false_eq_true, ofReal_eq_zero,
+    Real.pi_ne_zero, I_ne_zero, or_self]
+```
 
 ### [GOLF] — Proof optimization
 

@@ -78,6 +78,70 @@ For enhanced suggestions based on 4,600+ real mathlib PR reviews, run `/setup-ra
 - **No trailing whitespace**
 - **No empty lines inside declarations**
 
+### Line Length: MAXIMIZE to 100 Characters (CRITICAL)
+
+**Fill lines to ~100 characters.** Do NOT break lines at 50-60 characters when there is room for more. Short lines waste vertical space and make proofs look longer than they need to be.
+
+**Rule**: Pack as much as fits on each line, up to the 100-character limit. Only break when you must.
+
+**Signatures**: Put multiple parameters on the same line. Only break to a new line when the next parameter would exceed 100 chars.
+
+```lean
+-- BAD: breaks lines too early, wastes vertical space
+theorem pv_chain_identity
+    (S : Finset UpperHalfPlane)
+    (hS : ∀ p ∈ S, p ∈ 𝒟)
+    (hS_complete :
+      ∀ p, p ∈ 𝒟 →
+        orderOfVanishingAt' (⇑f) p ≠ 0 → p ∈ S) :
+    ∃ H₀ : ℝ, ... := by
+
+-- GOOD: fills to ~100 chars, fewer lines
+theorem pv_chain_identity (S : Finset UpperHalfPlane) (hS : ∀ p ∈ S, p ∈ 𝒟)
+    (hS_complete : ∀ p, p ∈ 𝒟 → orderOfVanishingAt' (⇑f) p ≠ 0 → p ∈ S) :
+    ∃ H₀ : ℝ, ... := by
+```
+
+**`simp only` lists**: Pack lemma names to fill the line. Do not put one or two per line.
+
+```lean
+-- BAD: artificially narrow
+  simp only [ne_eq, mul_eq_zero,
+    OfNat.ofNat_ne_zero, not_false_eq_true,
+    ofReal_eq_zero, Real.pi_ne_zero,
+    I_ne_zero, or_self]
+
+-- GOOD: fills to ~100 chars
+  simp only [ne_eq, mul_eq_zero, OfNat.ofNat_ne_zero, not_false_eq_true, ofReal_eq_zero,
+    Real.pi_ne_zero, I_ne_zero, or_self]
+```
+
+**`have` statements and expressions**: Keep on one line when possible.
+
+```lean
+-- BAD: unnecessary line breaks in expression
+  rw [show -(2 * ↑Real.pi * I *
+      ((k : ℂ) / 12 - (orderAtCusp' f : ℂ))) =
+    2 * ↑Real.pi * I *
+      (-((k : ℂ) / 12 - (orderAtCusp' f : ℂ)))
+    from by ring] at h_eq
+
+-- GOOD: pack the expression
+  rw [show -(2 * ↑Real.pi * I * ((k : ℂ) / 12 - (orderAtCusp' f : ℂ))) =
+      2 * ↑Real.pi * I * (-((k : ℂ) / 12 - (orderAtCusp' f : ℂ))) from by ring] at h_eq
+```
+
+**Return type**: Keep conclusion on the same line as `:` when it fits.
+
+```lean
+-- BAD: conclusion on separate line unnecessarily
+theorem foo (h : P) :
+    Q := by
+
+-- GOOD: fits on one line
+theorem foo (h : P) : Q := by
+```
+
 ### `by` Placement (CRITICAL)
 ```lean
 -- CORRECT: by at end of preceding line
@@ -352,6 +416,7 @@ This skill works alongside the `lean4-theorem-proving` skill:
 ## Common Mistakes to Avoid
 
 1. **Overly long lines** - Break at operators, align continuations
+1b. **Overly SHORT lines** - CRITICAL: Fill lines to ~100 chars. Do NOT break at 50-60 chars when there is room. Pack parameters, simp lists, and expressions to use available space.
 2. **Verbose proofs** - Golf aggressively; one-liners are ideal
 3. **Unnecessary `have` blocks** - Inline `have foo := bar` unless used 2+ times
    - `have h := lemma x` → inline as `lemma x` where used

@@ -26,6 +26,26 @@ If no file is specified, operates on the currently open file.
 
 ---
 
+## ⚠️ CRITICAL: Two-Pass Enforcement
+
+**Pass 1 is AUDIT ONLY.** You MUST complete the full audit of ALL declarations before making ANY changes to the code (other than adding FIXME comments and fixing the header).
+
+**DO NOT:**
+- Fix a bug you notice while auditing — add a FIXME instead
+- Golf a proof while reading it — add a FIXME instead
+- Rename anything while auditing — add to REFACTORING LIST instead
+- "Quickly fix" a formatting issue — add a FIXME instead
+
+**The ONLY changes allowed during Pass 1 are:**
+- Adding `-- FIXME:` comment lines above declarations
+- Fixing the file header (Step 2)
+
+If you catch yourself about to edit non-comment code during Pass 1, STOP. Add a FIXME comment instead.
+
+**After Pass 1 completes**, you must print the full Audit Summary and REFACTORING LIST, then proceed to Pass 2.
+
+---
+
 ## Pass 1: Audit
 
 ### Step 1: Collect Lint Diagnostics
@@ -148,12 +168,45 @@ Print the declaration name before each audit. Check ALL items — do not skip.
 
 **CHECK 4: Formatting**
 - 2-space indentation in tactic blocks
-- Lines ≤100 chars (break at parameters, operators)
 - `by` at end of preceding line, never alone on its own line
 - `fun` over `λ`, `<|` over `$`
 - Proper whitespace around operators and colons
 - No empty lines inside declarations
 - Each issue → `-- FIXME: [FORMAT] ...`
+
+**CHECK 4b: Line Length — MAXIMIZE to 100 chars (CRITICAL)**
+
+Lines must be ≤100 chars, but equally important: **fill lines to ~100 chars**. Do NOT break lines at 50-60 characters when there is room. Short lines waste vertical space.
+
+Flag lines that break too early:
+- **Signatures**: Multiple parameters should be on the same line until ~100 chars
+  `-- FIXME: [FORMAT] pack parameters onto fewer lines — currently breaking at ~60 chars`
+- **`simp only` lists**: Pack lemma names to fill the line, not 2-3 per line
+  `-- FIXME: [FORMAT] pack simp list to fill lines to ~100 chars`
+- **Expressions**: Keep `have`, `rw`, `show` expressions on one line when they fit
+  `-- FIXME: [FORMAT] expression fits on one line — remove unnecessary line breaks`
+- **Return types**: Keep conclusion on `:` line when it fits
+  `-- FIXME: [FORMAT] return type fits on signature line — merge`
+
+Example of what to flag:
+```lean
+-- BAD: breaks at ~50 chars, wastes 5 lines
+  simp only [ne_eq, mul_eq_zero,
+    OfNat.ofNat_ne_zero, not_false_eq_true,
+    ofReal_eq_zero, Real.pi_ne_zero,
+    I_ne_zero, or_self]
+-- Should be 2 lines:
+  simp only [ne_eq, mul_eq_zero, OfNat.ofNat_ne_zero, not_false_eq_true, ofReal_eq_zero,
+    Real.pi_ne_zero, I_ne_zero, or_self]
+
+-- BAD: one parameter per line when they fit together
+theorem foo
+    (S : Finset UpperHalfPlane)
+    (hS : ∀ p ∈ S, p ∈ 𝒟)
+    (hS_complete : ...) :
+-- Should be:
+theorem foo (S : Finset UpperHalfPlane) (hS : ∀ p ∈ S, p ∈ 𝒟) (hS_complete : ...) :
+```
 
 **CHECK 5: Comments & Docstrings**
 - Any inline comments in proofs → `-- FIXME: [COMMENT] remove inline comments`
