@@ -106,150 +106,158 @@ Print this list. This is your audit roadmap.
 
 ### Step 4: Audit Each Declaration (THE CORE LOOP)
 
-For EACH declaration, go through ALL checks below. **Do NOT fix anything yet.**
+For EACH declaration, run through the mandatory audit procedure below.
 
-For each issue found:
-- Add a `-- FIXME: [CATEGORY] description` comment **ABOVE** the declaration
-- If the change affects OTHER declarations (rename, remove, replace with mathlib), add to the **REFACTORING LIST** instead
+**Do NOT fix anything.** Only add `-- FIXME:` comments and REFACTORING LIST entries.
 
-#### FIXME Comment Format
+**You MUST print the structured audit report for each declaration.** This is not optional. The report forces you to actually check each item. If you skip the report, you will miss issues.
 
-```lean
--- FIXME: [LINT] unused variable `hp0_ne_i` — remove from signature and call sites
--- FIXME: [NAMING] rename to `foo_bar` — snake_case for lemmas returning Prop
--- FIXME: [FORMAT] `by` on own line (line 48) — move to end of preceding line
--- FIXME: [GOLF] inline `have h1 := lemma1 x` (line 52) — single-use, no proof block
--- FIXME: [GOLF] try `grind` on lines 54-60 — multi-step case analysis
--- FIXME: [COMMENT] remove inline comments (lines 50-51, 53)
--- FIXME: [VISIBILITY] make `private` — only used within this file
--- FIXME: [STRUCTURE] proof is 45 lines — flag for /decompose-proof
-theorem fooBar (x : ℝ) (hp0_ne_i : ...) : ... := by
-  ...
+---
+
+#### Per-Declaration Audit Procedure
+
+For every declaration, print a report in EXACTLY this format. Every line MUST have an answer — either the issues found or "OK".
+
+```
+### Auditing: `declaration_name` (lines N-M, K lines)
+
+1. LINT WARNINGS: [list each warning from Step 1 in this range, or "none"]
+2. HAVE SCAN: [list EVERY `have` in the proof — see detailed procedure below, or "no haves"]
+3. NAMING: [OK / needs rename to `X` — reason]
+4. LINE PACKING: [list lines that break too early, or "all lines filled to ~100"]
+5. BY PLACEMENT: [list any `by` on own line, or "OK"]
+6. FORMAT OTHER: [λ→fun, $→<|, show→change, empty lines, indentation, or "OK"]
+7. COMMENTS: [list inline comments/section markers, or "clean"]
+8. DOCSTRING: [needs adding / needs removing / needs shortening / "OK"]
+9. TERM MODE: [list `by exact`, `by rfl`, eta-reducible, or "none"]
+10. AUTOMATION: [list multi-step blocks where grind/fun_prop/omega might work, or "none spotted"]
+11. VISIBILITY: [should be private / needs _aux / "OK"]
+12. STRUCTURE: [proof length, ∧ in statement, branches >10 lines, maxHeartbeats, or "OK"]
+13. MATHLIB: [could replace with mathlib? / "checked, no replacement"]
+
+FIXMEs to add: [numbered list of all FIXME comments to add above this declaration]
+REFACTORING: [any items for the refactoring list, or "none"]
 ```
 
-#### Refactoring List Format
+After printing this report, add ALL listed FIXME comments above the declaration in the file.
 
-Track these separately (NOT as code comments). Print after auditing all declarations:
+---
+
+#### Item 2: HAVE SCAN (Most Commonly Missed — Do This Carefully)
+
+**This is the #1 most skipped check. You MUST do it for every declaration.**
+
+For each `have` statement in the proof, you must explicitly list it and classify it:
+
+```
+2. HAVE SCAN:
+   - line 52: `have h1 := lemma1 x` — NO by, used 1x at line 55 → INLINE
+   - line 53: `have h2 : T := foo y` — NO by, used 1x at line 58 → INLINE
+   - line 55: `have h3 := by exact bar` — HAS by → KEEP
+   - line 60: `have h4 := baz z` — NO by, used 2x at lines 62,65 → KEEP (multi-use)
+   - line 63: `have h5 : T := by linarith` — HAS by → KEEP
+```
+
+**Classification rules (apply mechanically):**
+
+| Pattern | Has `by`? | Used how many times? | Action |
+|---------|-----------|---------------------|--------|
+| `have h := expr` | NO | 1 | **INLINE** → FIXME |
+| `have h : T := expr` | NO | 1 | **INLINE** → FIXME |
+| `have h := expr` | NO | 2+ | KEEP |
+| `have h := by ...` | YES | any | KEEP |
+| `have h : T := by ...` | YES | any | KEEP |
+| `haveI ...` | — | — | KEEP (instance) |
+
+**How to check usage count**: Search for the variable name in the rest of the proof. Count occurrences after the `have` line. If it appears exactly once → INLINE.
+
+**FIXME format for each inlinable have:**
+```
+-- FIXME: [GOLF] inline `have h1 := lemma1 x` (line 52) — single-use, replace `h1` with `lemma1 x` at line 55
+```
+
+---
+
+#### Item 4: LINE PACKING (Second Most Commonly Missed)
+
+**Lines must fill to ~100 characters. Do NOT break lines at 50-60 chars when there is room.**
+
+Check each of these:
+
+**Signatures**: Can parameters be packed onto fewer lines?
+```lean
+-- BAD: 4 lines at ~40 chars each
+theorem foo
+    (S : Finset UpperHalfPlane)
+    (hS : ∀ p ∈ S, p ∈ 𝒟)
+    (hS_complete : ...) :
+-- GOOD: 2 lines at ~90 chars each
+theorem foo (S : Finset UpperHalfPlane) (hS : ∀ p ∈ S, p ∈ 𝒟)
+    (hS_complete : ...) :
+```
+
+**`simp only` / `rw` lists**: Can lemma names be packed tighter?
+```lean
+-- BAD: 4 lines at ~40 chars
+  simp only [ne_eq, mul_eq_zero,
+    OfNat.ofNat_ne_zero, not_false_eq_true,
+    ofReal_eq_zero, Real.pi_ne_zero,
+    I_ne_zero, or_self]
+-- GOOD: 2 lines at ~90 chars
+  simp only [ne_eq, mul_eq_zero, OfNat.ofNat_ne_zero, not_false_eq_true, ofReal_eq_zero,
+    Real.pi_ne_zero, I_ne_zero, or_self]
+```
+
+**Expressions**: Can `have`, `rw [show ...]`, etc. fit on fewer lines?
+
+**Return types**: Does the conclusion fit on the `:` line?
+
+For each line that breaks too early:
+```
+-- FIXME: [FORMAT] pack lines N-M to fill to ~100 chars (currently ~55 chars)
+```
+
+---
+
+#### Items 3, 5-13: Remaining Checks
+
+**3. NAMING**: lemma/theorem→`snake_case`, def→`lowerCamelCase`, structure→`UpperCamelCase`. Follow `conclusion_of_hypothesis`. If rename needed → REFACTORING LIST.
+
+**5. BY PLACEMENT**: `by` must be at end of preceding line, never alone. Each violation → `-- FIXME: [FORMAT] ...`
+
+**6. FORMAT OTHER**: `fun` over `λ`, `<|` over `$`, `change` over `show`, 2-space indent, no empty lines inside declarations.
+
+**7. COMMENTS**: Remove ALL inline comments in proofs. No commented-out code. No section markers.
+
+**8. DOCSTRING**: Public theorem/def needs ONE-SENTENCE docstring. Private/helper needs NO docstring. Verbose docstrings need shortening.
+
+**9. TERM MODE**: `by exact h` → `h`. `by rfl` → `rfl`. `fun x => f x` → `f`. `constructor; exact a; exact b` → `⟨a, b⟩`.
+
+**10. AUTOMATION**: Could `grind`, `fun_prop`, `omega`, `ring`, `aesop` close any multi-step block? `rw [...]; exact h` → `rwa`. `simp; exact h` → `simpa using h`. Consecutive `rw` → merge.
+
+**11. VISIBILITY**: Only used in file → `private`. Helper → `private` + `_aux`.
+
+**12. STRUCTURE**: Proof >30 lines → flag for `/decompose-proof`. `∧` in statement → split. Branch >10 lines → extract. `set_option maxHeartbeats` → decompose instead.
+
+**13. MATHLIB**: Could this def/lemma be replaced by mathlib? If so → REFACTORING LIST.
+
+---
+
+#### FIXME Comment Syntax
+
+```lean
+-- FIXME: [CATEGORY] description
+```
+
+Categories: `LINT`, `GOLF`, `FORMAT`, `COMMENT`, `VISIBILITY`, `STRUCTURE`
+
+Cross-cutting changes go to REFACTORING LIST instead (renames, removals, mathlib replacements).
 
 ```
 REFACTORING LIST:
 1. RENAME `fooBar` → `foo_bar` — update usages at lines 80, 95, 120
 2. REMOVE `def myHelper` (line 40) — duplicates `Mathlib.Foo.bar`. Update sites: 70, 85
-3. MATHLIB `def customCondition` (line 15) — replace with `[DiscreteTopology S]`
 ```
-
----
-
-#### The Audit Checklist
-
-Print the declaration name before each audit. Check ALL items — do not skip.
-
-**CHECK 0: Lint Warnings**
-- List ALL lint warnings from Step 1 within this declaration's line range
-- Each becomes `-- FIXME: [LINT] ...`
-- Common: unused variables (remove entirely), unused have/suffices, long lines, `$`→`<|`, `λ`→`fun`, `show`→`change`
-
-**CHECK 1: Mathlib-First**
-- Could this `def` be replaced by a mathlib definition? Quick search with `exact?` or Loogle
-- If yes → add to REFACTORING LIST (affects call sites)
-- For simple 1-3 line compositions → note preference for `local notation` or direct mathlib use
-
-**CHECK 2: Naming**
-- `lemma`/`theorem` (returns Prop) → must be `snake_case`
-- `def` (returns data) → must be `lowerCamelCase`
-- `structure`/`inductive` → must be `UpperCamelCase`
-- Theorem name should follow `conclusion_of_hypothesis` pattern
-- American English (`Factorization` not `Factorisation`)
-- If rename needed → add to REFACTORING LIST (must update all usages file-wide)
-
-**CHECK 3: Unused Variables**
-- Parameters with unused lint warnings → `-- FIXME: [LINT] unused variable 'x' — remove from signature and all call sites`
-- Do NOT prefix with `_` — remove entirely
-
-**CHECK 4: Formatting**
-- 2-space indentation in tactic blocks
-- `by` at end of preceding line, never alone on its own line
-- `fun` over `λ`, `<|` over `$`
-- Proper whitespace around operators and colons
-- No empty lines inside declarations
-- Each issue → `-- FIXME: [FORMAT] ...`
-
-**CHECK 4b: Line Length — MAXIMIZE to 100 chars (CRITICAL)**
-
-Lines must be ≤100 chars, but equally important: **fill lines to ~100 chars**. Do NOT break lines at 50-60 characters when there is room. Short lines waste vertical space.
-
-Flag lines that break too early:
-- **Signatures**: Multiple parameters should be on the same line until ~100 chars
-  `-- FIXME: [FORMAT] pack parameters onto fewer lines — currently breaking at ~60 chars`
-- **`simp only` lists**: Pack lemma names to fill the line, not 2-3 per line
-  `-- FIXME: [FORMAT] pack simp list to fill lines to ~100 chars`
-- **Expressions**: Keep `have`, `rw`, `show` expressions on one line when they fit
-  `-- FIXME: [FORMAT] expression fits on one line — remove unnecessary line breaks`
-- **Return types**: Keep conclusion on `:` line when it fits
-  `-- FIXME: [FORMAT] return type fits on signature line — merge`
-
-Example of what to flag:
-```lean
--- BAD: breaks at ~50 chars, wastes 5 lines
-  simp only [ne_eq, mul_eq_zero,
-    OfNat.ofNat_ne_zero, not_false_eq_true,
-    ofReal_eq_zero, Real.pi_ne_zero,
-    I_ne_zero, or_self]
--- Should be 2 lines:
-  simp only [ne_eq, mul_eq_zero, OfNat.ofNat_ne_zero, not_false_eq_true, ofReal_eq_zero,
-    Real.pi_ne_zero, I_ne_zero, or_self]
-
--- BAD: one parameter per line when they fit together
-theorem foo
-    (S : Finset UpperHalfPlane)
-    (hS : ∀ p ∈ S, p ∈ 𝒟)
-    (hS_complete : ...) :
--- Should be:
-theorem foo (S : Finset UpperHalfPlane) (hS : ∀ p ∈ S, p ∈ 𝒟) (hS_complete : ...) :
-```
-
-**CHECK 5: Comments & Docstrings**
-- Any inline comments in proofs → `-- FIXME: [COMMENT] remove inline comments`
-- Commented-out code → `-- FIXME: [COMMENT] remove commented-out code`
-- Section markers (`/-! ## ... -/`) → `-- FIXME: [COMMENT] remove section marker`
-- Missing docstring on important public theorem/def → `-- FIXME: [COMMENT] add one-sentence docstring`
-- Docstring on helper/private lemma → `-- FIXME: [COMMENT] remove docstring from helper`
-- Verbose multi-paragraph docstring → `-- FIXME: [COMMENT] shorten docstring to one sentence`
-
-**CHECK 6: Proof Structure** (flag for `/decompose-proof`, don't fix here)
-- `set_option maxHeartbeats` → `-- FIXME: [STRUCTURE] remove maxHeartbeats — decompose proof instead`
-- Proof >30 lines → `-- FIXME: [STRUCTURE] proof is N lines — needs /decompose-proof`
-- `∧` in theorem statement → `-- FIXME: [STRUCTURE] split ∧ into separate lemmas`
-- Any constructor/by_cases/rcases branch >10 lines → `-- FIXME: [STRUCTURE] branch (lines X-Y) >10 lines — extract to helper`
-
-**CHECK 7: Proof Golf**
-
-Go through the proof line by line. For each golfing opportunity:
-
-- Single-use `have foo := bar` (no `by`) → `-- FIXME: [GOLF] inline have 'foo' (line N) — single-use, no proof block`
-- Single-use `have foo : T := bar` (no `by`) → same
-- `by exact h` → `-- FIXME: [GOLF] 'by exact h' → 'h' (line N)`
-- `by rfl` → `-- FIXME: [GOLF] 'by rfl' → 'rfl' (line N)`
-- `fun x => f x` → `-- FIXME: [GOLF] eta-reduce (line N)`
-- `rw [...]; exact h` → `-- FIXME: [GOLF] use rwa (line N)`
-- `simp; exact h` → `-- FIXME: [GOLF] use simpa (line N)`
-- `constructor; exact a; exact b` → `-- FIXME: [GOLF] use ⟨a, b⟩ (line N)`
-- `intro h; exact f h` → `-- FIXME: [GOLF] eta-reduce to f (line N)`
-- Consecutive `rw` → `-- FIXME: [GOLF] merge rw calls (lines N-M)`
-- Multi-step tactic block that automation might close → `-- FIXME: [GOLF] try grind/fun_prop/omega on lines N-M`
-- Redundant tactic → `-- FIXME: [GOLF] redundant tactic (line N)`
-- Trailing comma in simp list → `-- FIXME: [GOLF] trailing comma (line N)`
-
-**`have` inlining decision tree:**
-1. `have h := bar` (no type, no `by`) → **INLINE** unless used 2+ times
-2. `have h : T := bar` (typed, no `by`) → **INLINE** unless used 2+ times
-3. `have h := by ...` or `have h : T := by ...` → **KEEP** (has proof content)
-4. Any `have` used 2+ times → **KEEP**
-
-**CHECK 8: Visibility**
-- Only used within this file → `-- FIXME: [VISIBILITY] make private`
-- Helper for one result → `-- FIXME: [VISIBILITY] make private, add _aux suffix`
-- Already private but missing `_aux` suffix → `-- FIXME: [VISIBILITY] add _aux suffix`
 
 ---
 
