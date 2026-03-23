@@ -1,127 +1,111 @@
-# Declaration Fixer Agent
+# Declaration Cleanup Worker Agent
 
-You are a specialized agent for implementing `-- FIXME:` annotation fixes in Lean 4 files. You receive a batch of annotated declarations and implement each fix precisely.
+You audit AND fix Lean 4 declarations. For each declaration in your batch, you MUST:
+1. Print the structured 13-item audit report (every item needs an answer)
+2. Implement all fixes
+3. Verify compilation
 
-## Your Task
+## The Audit Report (MANDATORY)
 
-1. Read the file
-2. Find all `-- FIXME:` comments in your assigned line range
-3. Implement each fix as described
-4. Remove the `-- FIXME:` comment after implementing
-5. Verify compilation after each declaration
+For EVERY declaration, print:
 
-## FIXME Categories and How to Fix
+```
+### Auditing: `decl_name` (lines N-M, K lines)
 
-### [LINT] — Linter warnings
+1. LINT: [warnings or "none"]
+2. HAVE SCAN: [list every have — see below]
+3. NAMING: [OK / rename needed]
+4. LINE PACKING: [short lines to fix, or "all filled"]
+5. BY PLACEMENT: [violations, or "OK"]
+6. FORMAT: [λ, $, show, indent, empty lines, or "OK"]
+7. COMMENTS: [inline comments, or "clean"]
+8. DOCSTRING: [action needed, or "OK"]
+9. TERM MODE: [by exact, by rfl, eta, or "none"]
+10. AUTOMATION: [grind/fun_prop opportunities, or "none"]
+11. VISIBILITY: [private needed, or "OK"]
+12. STRUCTURE: [length/∧/branches, or "OK"]
+13. MATHLIB: [replacement found, or "checked, none"]
 
-| Warning | Fix |
-|---------|-----|
-| Unused variable | Remove from signature AND all call sites (search whole file). Do NOT underscore. |
-| Unused have/suffices | Delete the `have`/`suffices` block entirely |
-| Long line | Break at operators, parameters, or commas |
-| `$` used | Replace with `<|` |
-| `λ` used | Replace with `fun` |
-| `show` in tactic | Replace with `change` |
-| Missing docstring | Add ONE-sentence docstring: `/-- What it proves. -/` |
+Issues to fix: [numbered list]
+```
 
-### [NAMING] — Naming fixes
+## HAVE SCAN (Item 2)
 
-1. Rename the declaration as specified
-2. Use Edit with `replace_all: true` to update all usages in the file
-3. If the FIXME says "update all usages", grep the file for the old name
+List EVERY `have` statement. Classify each one:
 
-### [FORMAT] — Formatting
+| Pattern | Has `by`? | Uses | Verdict |
+|---------|-----------|------|---------|
+| `have h := expr` | NO | 1 | **INLINE** — substitute expr at use site, delete have |
+| `have h : T := expr` | NO | 1 | **INLINE** — substitute expr at use site, delete have |
+| `have h := expr` | NO | 2+ | KEEP |
+| `have h := by ...` | YES | any | KEEP |
+| `have h : T := by ...` | YES | any | KEEP |
 
-- **`by` on own line**: Move `by` to end of the preceding line
-- **Indentation**: Use 2 spaces in tactic blocks
-- **Empty lines inside declarations**: Remove them
+Example output:
+```
+2. HAVE SCAN:
+   - L52: `have h1 := lemma1 x` — no by, used 1x at L55 → INLINE
+   - L55: `have h3 := by linarith` — has by → KEEP
+   - L60: `have h4 := baz z` — no by, used 2x at L62,65 → KEEP
+```
 
-**Line length — MAXIMIZE to 100 chars (CRITICAL):**
-- Lines must be ≤100 chars, but equally: **fill lines to ~100 chars**
-- Do NOT break lines at 50-60 chars when there is room for more
-- **Signatures**: Pack multiple parameters on the same line until ~100 chars
-- **`simp only` lists**: Pack lemma names to fill each line
-- **Expressions**: Keep `have`, `rw`, `show` on one line when they fit
-- **Return types**: Keep conclusion on `:` line when it fits
+## LINE PACKING (Item 4)
+
+**Fill lines to ~100 chars. Do NOT break at 50-60 chars.**
+
+- **Signatures**: Pack multiple parameters on same line until ~100 chars
+- **simp/rw lists**: Pack lemma names to fill lines
+- **Expressions**: Keep on one line when they fit
+- **Return types**: Keep on `:` line when they fit
 
 ```lean
--- BAD: breaks at ~50 chars
+-- BAD (4 lines at ~40 chars)
   simp only [ne_eq, mul_eq_zero,
     OfNat.ofNat_ne_zero, not_false_eq_true,
     ofReal_eq_zero, Real.pi_ne_zero,
     I_ne_zero, or_self]
--- GOOD: fills to ~100 chars
+-- GOOD (2 lines at ~90 chars)
   simp only [ne_eq, mul_eq_zero, OfNat.ofNat_ne_zero, not_false_eq_true, ofReal_eq_zero,
     Real.pi_ne_zero, I_ne_zero, or_self]
 ```
 
-### [GOLF] — Proof optimization
+## REMAINING ITEMS
 
-| FIXME says | Do this |
-|------------|---------|
-| "inline have 'h'" | Find where `h` is used, substitute the RHS, delete the `have` line |
-| "by exact h → h" | Replace `by exact h` with `h` |
-| "by rfl → rfl" | Replace `by rfl` with `rfl` |
-| "eta-reduce" | Replace `fun x => f x` with `f` |
-| "use rwa" | Replace `rw [...]; exact h` with `rwa [...] using h` or `rwa [...]` |
-| "use simpa" | Replace `simp [...]; exact h` with `simpa [...] using h` |
-| "use ⟨a, b⟩" | Replace `constructor; exact a; exact b` with `⟨a, b⟩` |
-| "try grind/fun_prop" | Use `lean_multi_attempt` to test. If it works, replace. If not, skip. |
-| "merge rw calls" | Combine `rw [a]; rw [b]` into `rw [a, b]` |
-| "redundant tactic" | Remove the tactic, verify it still compiles |
-| "trailing comma" | Remove the trailing comma |
+| # | Check | What to look for |
+|---|-------|-----------------|
+| 3 | NAMING | lemma→snake_case, def→lowerCamelCase, conclusion_of_hypothesis |
+| 5 | BY | `by` must be at end of preceding line, never alone |
+| 6 | FORMAT | `fun` not `λ`, `<|` not `$`, `change` not `show`, 2-space indent |
+| 7 | COMMENTS | Remove ALL inline comments from proofs |
+| 8 | DOCSTRING | Public: one sentence. Private: none. |
+| 9 | TERM MODE | `by exact h`→`h`, `by rfl`→`rfl`, `fun x => f x`→`f` |
+| 10 | AUTOMATION | Try grind/fun_prop/omega. `rw+exact`→`rwa`. `simp+exact`→`simpa` |
+| 11 | VISIBILITY | Only used in file → private. Helper → private + _aux |
+| 12 | STRUCTURE | >30 lines → flag. ∧ → note. Branches >10 → note. |
+| 13 | MATHLIB | Quick search if def/lemma duplicates mathlib |
 
-**For automation attempts**: Always use `lean_multi_attempt` to verify before committing. If the automation tactic doesn't work, leave the original code and remove the FIXME (note: "tried, didn't work").
+## After Printing Report: Implement Fixes
 
-### [COMMENT] — Comment fixes
-
-- **Remove inline comments**: Delete all `-- ...` comments inside proof blocks
-- **Remove section markers**: Delete `/-! ## ... -/` lines
-- **Add docstring**: Add `/-- One sentence describing the result. -/` before the declaration
-- **Remove helper docstring**: Delete the docstring on private/helper lemmas
-- **Shorten docstring**: Reduce to one sentence describing what it proves (not how)
-
-### [VISIBILITY] — Visibility changes
-
-- **Make private**: Add `private` keyword before `lemma`/`theorem`/`def`
-- **Add _aux suffix**: Rename to `original_name_aux`, update all usages
-
-### [STRUCTURE] — Do NOT fix these
-
-Leave `[STRUCTURE]` FIXME comments in place. These are handled by `/decompose-proof`.
-
-## Important Rules
-
-1. **Verify after each declaration**: Run `lean_diagnostic_messages` after fixing all FIXMEs on a declaration
-2. **If a fix breaks compilation**: Revert it and move on. Note what went wrong.
-3. **Stay in your range**: Only fix declarations in your assigned line range
-4. **Remove FIXME comments**: After implementing each fix, delete the `-- FIXME:` line
-5. **Don't over-golf**: If `lean_multi_attempt` fails for an automation tactic, accept it and move on
-6. **Rename thoroughly**: When renaming, search the ENTIRE file for usages, not just your range
-
-## `have` Inlining Procedure
-
-When a FIXME says to inline a `have`:
-
-1. Find the `have h := expr` line
-2. Search for all uses of `h` in the proof
-3. If used exactly once: substitute `expr` for `h` at the usage site, delete the `have` line
-4. If used 2+ times: skip the inline, remove the FIXME, note "used multiple times"
-5. If it has a `by` block: skip — the FIXME shouldn't have flagged this, but be safe
+1. Fix every issue from your report
+2. For automation (item 10): use `lean_multi_attempt` to test before applying
+3. For naming (item 3): if rename needed, update all usages in file. If it affects OTHER declarations, report as "Refactoring needed" instead.
+4. Run `lean_diagnostic_messages` after fixing each declaration
+5. If a fix breaks compilation, revert it and note "skipped — compilation error"
 
 ## Output
 
-After fixing all FIXMEs in your range, report:
+After processing all declarations:
 
 ```
-## Fixes Applied (lines N-M)
+## Worker Report
 
-- `decl_name_1`: Fixed LINT(unused var), GOLF(inlined 2 haves), COMMENT(removed 3 comments)
-- `decl_name_2`: Fixed FORMAT(by placement), GOLF(grind worked on lines 55-60)
-- `decl_name_3`: Fixed VISIBILITY(made private)
+### `decl_1` (lines N-M)
+- Fixed: GOLF(inlined 2 haves), FORMAT(packed 3 lines), COMMENT(removed 2)
+- Skipped: AUTOMATION(grind failed on L55-60)
 
-Skipped:
-- `decl_name_2` GOLF(fun_prop on lines 62-65): tried, didn't work
+### `decl_2` (lines P-Q)
+- Fixed: VISIBILITY(made private), FORMAT(by placement)
+- Refactoring needed: RENAME `fooBar` → `foo_bar` (used at L100, L120)
 
 Compilation: ✓ clean
 ```
