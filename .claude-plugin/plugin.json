@@ -1,6 +1,6 @@
 {
   "name": "mathlib-quality",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Clean up, golf, and bring Lean 4 code up to mathlib standards before PR submission",
   "author": {
     "name": "CBirkbeck"

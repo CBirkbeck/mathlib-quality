@@ -14,19 +14,20 @@ For EVERY declaration, print:
 
 1. LINT: [warnings or "none"]
 2. HAVE SCAN: [list every have — see below]
-3. NAMING: [OK / rename needed]
-4. LINE PACKING: [short lines to fix, or "all filled"]
-5. BY PLACEMENT: [violations, or "OK"]
-6. FORMAT: [λ, $, show, indent, empty lines, or "OK"]
-7. COMMENTS: [inline comments, or "clean"]
-8. DOCSTRING: [action needed, or "OK"]
-9. TERM MODE: [by exact, by rfl, eta, or "none"]
-10. AUTOMATION: [grind/fun_prop opportunities, or "none"]
-11. VISIBILITY: [private needed, or "OK"]
-12. STRUCTURE: [length/∧/branches, or "OK"]
-13. MATHLIB: [replacement found, or "checked, none"]
+3. SET_OPTION: [any set_option maxHeartbeats/maxRecDepth? MUST remove — see below]
+4. NAMING: [OK / rename needed]
+5. LINE PACKING: [short lines to fix, or "all filled to ~100"]
+6. BY PLACEMENT: [violations, or "OK"]
+7. FORMAT: [λ, $, show, indent, empty lines, or "OK"]
+8. COMMENTS: [inline comments, or "clean"]
+9. DOCSTRING: [action needed, or "OK"]
+10. TERM MODE: [by exact, by rfl, eta, or "none"]
+11. AUTOMATION: [grind/fun_prop opportunities, or "none"]
+12. VISIBILITY: [private needed, or "OK"]
+13. STRUCTURE: [length/∧/branches — attempt fix, don't just flag]
+14. MATHLIB: [replacement found, or "checked, none"]
 
-Issues to fix: [numbered list]
+Issues to fix: [numbered list — concrete actions, not "flag for later"]
 ```
 
 ## HAVE SCAN (Item 2)
@@ -69,28 +70,49 @@ Example output:
     Real.pi_ne_zero, I_ne_zero, or_self]
 ```
 
+## ITEM 3: SET_OPTION (MUST Remove — No Exceptions)
+
+`set_option maxHeartbeats` and `set_option maxRecDepth` are NOT acceptable in mathlib.
+
+1. Delete the `set_option` line
+2. Run `lean_diagnostic_messages` — if proof times out:
+   a. Try automation (grind, fun_prop, omega) on the proof
+   b. Inline haves and simplify (often reduces heartbeats enough)
+   c. Extract largest `have ... := by` blocks (>8 lines) as private helpers above the theorem
+   d. If STILL timing out: report "needs /decompose-proof" but the set_option MUST still be deleted
+
+## ITEM 13: STRUCTURE (Attempt Fix, Don't Just Flag)
+
+**Do NOT write "flag for later." Attempt the fix first.**
+
+- **Proof >30 lines**: After all golfing, if still >30, extract largest `have := by` blocks as helpers.
+- **∧ in statement**: Split into `_left` and `_right` lemmas, combine with `⟨left, right⟩`.
+- **Branch >10 lines**: Extract each branch as private helper.
+- If too complex after attempting: report "needs /decompose-proof (N lines after golfing)".
+
 ## REMAINING ITEMS
 
 | # | Check | What to look for |
 |---|-------|-----------------|
-| 3 | NAMING | lemma→snake_case, def→lowerCamelCase, conclusion_of_hypothesis |
-| 5 | BY | `by` must be at end of preceding line, never alone |
-| 6 | FORMAT | `fun` not `λ`, `<|` not `$`, `change` not `show`, 2-space indent |
-| 7 | COMMENTS | Remove ALL inline comments from proofs |
-| 8 | DOCSTRING | Public: one sentence. Private: none. |
-| 9 | TERM MODE | `by exact h`→`h`, `by rfl`→`rfl`, `fun x => f x`→`f` |
-| 10 | AUTOMATION | Try grind/fun_prop/omega. `rw+exact`→`rwa`. `simp+exact`→`simpa` |
-| 11 | VISIBILITY | Only used in file → private. Helper → private + _aux |
-| 12 | STRUCTURE | >30 lines → flag. ∧ → note. Branches >10 → note. |
-| 13 | MATHLIB | Quick search if def/lemma duplicates mathlib |
+| 4 | NAMING | lemma→snake_case, def→lowerCamelCase, conclusion_of_hypothesis |
+| 6 | BY | `by` must be at end of preceding line, never alone |
+| 7 | FORMAT | `fun` not `λ`, `<|` not `$`, `change` not `show`, 2-space indent |
+| 8 | COMMENTS | Remove ALL inline comments from proofs |
+| 9 | DOCSTRING | Public: one sentence. Private: none. |
+| 10 | TERM MODE | `by exact h`→`h`, `by rfl`→`rfl`, `fun x => f x`→`f` |
+| 11 | AUTOMATION | Try grind/fun_prop/omega. `rw+exact`→`rwa`. `simp+exact`→`simpa` |
+| 12 | VISIBILITY | Only used in file → private. Helper → private + _aux |
+| 14 | MATHLIB | Quick search if def/lemma duplicates mathlib |
 
 ## After Printing Report: Implement Fixes
 
-1. Fix every issue from your report
-2. For automation (item 10): use `lean_multi_attempt` to test before applying
-3. For naming (item 3): if rename needed, update all usages in file. If it affects OTHER declarations, report as "Refactoring needed" instead.
-4. Run `lean_diagnostic_messages` after fixing each declaration
-5. If a fix breaks compilation, revert it and note "skipped — compilation error"
+1. Fix EVERY issue from your report — no skipping, no "flag for later"
+2. For automation (item 11): use `lean_multi_attempt` to test before applying
+3. For set_option (item 3): MUST delete the line, then deal with consequences
+4. For structure (item 13): MUST attempt the fix before reporting "too complex"
+5. For naming (item 4): if rename needed, update all usages in file. If it affects OTHER declarations, report as "Refactoring needed" instead.
+6. Run `lean_diagnostic_messages` after fixing each declaration
+7. If a fix breaks compilation, revert it and note "skipped — compilation error"
 
 ## Output
 

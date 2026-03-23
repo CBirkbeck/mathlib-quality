@@ -77,19 +77,20 @@ You MUST print this report. Every item MUST have an answer.
 
 1. LINT: [warnings in this range from diagnostics, or "none"]
 2. HAVE SCAN: [see procedure below — list EVERY have]
-3. NAMING: [OK / rename to X — reason]
-4. LINE PACKING: [lines breaking too early, or "all lines ≥80 chars"]
-5. BY PLACEMENT: [any `by` on own line, or "OK"]
-6. FORMAT: [λ→fun, $→<|, show→change, indent, empty lines, or "OK"]
-7. COMMENTS: [inline comments in proof, or "clean"]
-8. DOCSTRING: [needs adding/removing/shortening, or "OK"]
-9. TERM MODE: [`by exact h`, `by rfl`, eta-reducible, or "none"]
-10. AUTOMATION: [blocks where grind/fun_prop/omega might work, or "none"]
-11. VISIBILITY: [should be private / needs _aux, or "OK"]
-12. STRUCTURE: [>30 lines / ∧ in statement / branches >10 lines, or "OK"]
-13. MATHLIB: [could replace with mathlib, or "no replacement found"]
+3. SET_OPTION: [any `set_option maxHeartbeats` / `set_option maxRecDepth`? — MUST remove, see below]
+4. NAMING: [OK / rename to X — reason]
+5. LINE PACKING: [lines breaking too early, or "all lines filled to ~100"]
+6. BY PLACEMENT: [any `by` on own line, or "OK"]
+7. FORMAT: [λ→fun, $→<|, show→change, indent, empty lines, or "OK"]
+8. COMMENTS: [inline comments in proof, or "clean"]
+9. DOCSTRING: [needs adding/removing/shortening, or "OK"]
+10. TERM MODE: [`by exact h`, `by rfl`, eta-reducible, or "none"]
+11. AUTOMATION: [blocks where grind/fun_prop/omega might work, or "none"]
+12. VISIBILITY: [should be private / needs _aux, or "OK"]
+13. STRUCTURE: [proof length, ∧ in statement, branches >10 lines — see actions below]
+14. MATHLIB: [could replace with mathlib, or "no replacement found"]
 
-Issues to fix: [numbered list]
+Issues to fix: [numbered list — every issue MUST have a concrete action, not "flag for later"]
 Refactoring needed: [cross-declaration changes, or "none"]
 ```
 
@@ -165,22 +166,50 @@ Expressions — keep on one line when they fit:
       2 * ↑Real.pi * I * (-((k : ℂ) / 12 - (orderAtCusp' f : ℂ))) from by ring] at h_eq
 ```
 
+## ITEM 3: SET_OPTION (MUST Remove)
+
+**`set_option maxHeartbeats` and `set_option maxRecDepth` are NOT acceptable in mathlib.**
+
+If you find one:
+1. Delete the `set_option` line
+2. Run `lean_diagnostic_messages` — if the proof now times out:
+   a. Try `grind` or other automation on the proof (use lean_multi_attempt)
+   b. Try inlining haves and simplifying first (often reduces heartbeats enough)
+   c. If still timing out: extract the largest `have` blocks (>8 lines) into private helper
+      lemmas above the theorem — this splits the elaboration work
+   d. If STILL timing out after extraction: report as "needs /decompose-proof" but
+      the `set_option` line must STILL be deleted — do not leave it in
+3. The `set_option` line must be gone when you're done. No exceptions.
+
 ## REMAINING ITEMS (Quick Reference)
 
-3. NAMING: lemma/theorem→snake_case, def→lowerCamelCase, structure→UpperCamelCase.
+4. NAMING: lemma/theorem→snake_case, def→lowerCamelCase, structure→UpperCamelCase.
    conclusion_of_hypothesis pattern. American English.
-5. BY PLACEMENT: `by` at end of preceding line, NEVER alone on own line.
-6. FORMAT: `fun` not `λ`, `<|` not `$`, `change` not `show`, 2-space indent, no empty lines in decls.
-7. COMMENTS: Remove ALL inline comments from proofs. No commented-out code.
-8. DOCSTRING: Public theorem/def → one sentence. Private/helper → none.
-9. TERM MODE: `by exact h`→`h`, `by rfl`→`rfl`, `fun x => f x`→`f`,
-   `constructor; exact a; exact b`→`⟨a, b⟩`, `intro h; exact f h`→`f`.
-10. AUTOMATION: Try grind/fun_prop/omega/ring on multi-step blocks (use lean_multi_attempt).
+6. BY PLACEMENT: `by` at end of preceding line, NEVER alone on own line.
+7. FORMAT: `fun` not `λ`, `<|` not `$`, `change` not `show`, 2-space indent, no empty lines in decls.
+8. COMMENTS: Remove ALL inline comments from proofs. No commented-out code.
+9. DOCSTRING: Public theorem/def → one sentence. Private/helper → none.
+10. TERM MODE: `by exact h`→`h`, `by rfl`→`rfl`, `fun x => f x`→`f`,
+    `constructor; exact a; exact b`→`⟨a, b⟩`, `intro h; exact f h`→`f`.
+11. AUTOMATION: Try grind/fun_prop/omega/ring on multi-step blocks (use lean_multi_attempt).
     `rw[..]; exact h`→`rwa`. `simp; exact h`→`simpa using h`. Merge consecutive rw.
-11. VISIBILITY: Only used in file → private. Helper → private + _aux.
-12. STRUCTURE: >30 lines → add `-- FIXME: [STRUCTURE]` (for /decompose-proof later).
-    ∧ in statement → note. Branches >10 lines → note.
-13. MATHLIB: Quick search if def/lemma duplicates mathlib.
+12. VISIBILITY: Only used in file → private. Helper → private + _aux.
+14. MATHLIB: Quick search if def/lemma duplicates mathlib.
+
+## ITEM 13: STRUCTURE (Attempt Fixes, Don't Just Flag)
+
+**Do NOT just write "flag for later." Attempt the fix.**
+
+- **Proof >30 lines**: After applying all other golfing (have inline, automation, term mode, line packing),
+  re-count. If still >30 lines, extract the largest `have ... := by` blocks as private helpers above
+  the theorem. Report remaining length.
+- **∧ in theorem statement**: Split into `foo_left` and `foo_right` lemmas, combine with `⟨foo_left, foo_right⟩`.
+- **Branch >10 lines** (constructor/by_cases/rcases): Extract each branch as a private helper lemma.
+- **`set_option maxHeartbeats`**: See ITEM 3 above — MUST remove.
+
+If a structural fix is too complex for this pass (e.g., 80-line proof needs deep mathematical decomposition),
+report it clearly: "STRUCTURE: proof is N lines after golfing — needs /decompose-proof (too complex for cleanup pass)".
+But you must have TRIED the simpler fixes first (golf, extract large haves, split ∧).
 
 ## CROSS-DECLARATION CHANGES
 
