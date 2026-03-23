@@ -61,10 +61,12 @@ A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up
 | `scripts/style_checker.sh` | Local Lean file style validation |
 
 ## Commands Available
-- `/cleanup` - Full file cleanup + golfing (two-pass: audit with FIXME annotations → parallel agent fixes → refactoring)
+- `/cleanup` - Full file cleanup + golfing (workers audit + fix each declaration with 14-item checklist)
 - `/decompose-proof` - Break long proofs into helpers (two-pass: analysis with DECOMPOSE plans → parallel agent decomposition)
+- `/overview` - Project declaration inventory — lists every def/lemma/theorem with descriptions, dependencies, and consolidation analysis
 - `/golf-proof` - Single-proof optimization (quick, non-systematic)
 - `/check-style` - Style validation (non-destructive)
+- `/check-mathlib` - Find mathlib equivalents to avoid duplication
 - `/pre-submit` - Pre-PR submission checklist
 - `/fix-pr-feedback` - Address reviewer comments
 - `/bump-mathlib` - Bump mathlib version and fix resulting breakage

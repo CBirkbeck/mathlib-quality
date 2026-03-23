@@ -43,6 +43,8 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | `/check-style` | Validate without making changes |
 | `/golf-proof` | Optimize specific proofs |
 | `/decompose-proof` | Break long proofs into helper lemmas |
+| `/overview` | Project declaration inventory for consolidation analysis |
+| `/check-mathlib` | Find mathlib equivalents to avoid duplication |
 | `/split-file` | Split large files (>1500 lines) into focused modules |
 | `/pre-submit` | Pre-PR submission checklist |
 | `/bump-mathlib` | Bump mathlib version and fix resulting breakage |
@@ -369,16 +371,13 @@ Use `/teach` to explicitly record project-specific patterns:
 
 ### When Preparing a PR
 
-1. **Cleanup + Golf**: Run `/cleanup` — two-pass approach that audits every declaration for style, naming, formatting, and golfing issues, then dispatches agents to fix them
-2. **Decompose**: Run `/decompose-proof` — two-pass approach that analyzes long proofs, plans decomposition, then dispatches agents to extract helpers
-3. **Final check**: Run `/pre-submit` before creating PR
+1. **Overview**: Run `/overview` to generate a full declaration inventory (`PROJECT_OVERVIEW.md`). Review it to find generalization opportunities, junk definitions, and missing API.
+2. **High-level cleanup**: Address consolidation opportunities found in the overview (merge similar lemmas, remove junk, add missing API).
+3. **Per-file cleanup + golf**: Run `/cleanup` on each file — workers audit and fix each declaration with the 14-item checklist.
+4. **Decompose**: Run `/decompose-proof` on files with long proofs.
+5. **Final check**: Run `/pre-submit` before creating PR.
 
-**How the two-pass commands work:**
-- **Pass 1 (Audit/Analysis)**: Goes declaration by declaration, checks EVERY rule, annotates the code with `-- FIXME:` or `/- DECOMPOSE: -/` comments. Nothing is changed yet.
-- **Pass 2 (Fix/Decompose)**: Dispatches parallel agents, each handling a batch of annotated declarations. Agents implement the fixes and remove the annotation comments.
-- This ensures nothing is forgotten or skipped.
-
-**For quick single-proof golfing**: Use `/golf-proof [theorem_name]` to golf one proof without the full file audit.
+**For quick single-proof golfing**: Use `/golf-proof [theorem_name]`.
 
 ### When Handling PR Feedback
 
