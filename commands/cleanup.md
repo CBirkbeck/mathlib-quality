@@ -78,17 +78,18 @@ You MUST print this report. Every item MUST have an answer.
 1. LINT: [warnings in this range from diagnostics, or "none"]
 2. HAVE SCAN: [see procedure below — list EVERY have]
 3. SET_OPTION: [any `set_option maxHeartbeats` / `set_option maxRecDepth`? — MUST remove, see below]
-4. NAMING: [OK / rename to X — reason]
-5. LINE PACKING: [lines breaking too early, or "all lines filled to ~100"]
-6. BY PLACEMENT: [any `by` on own line, or "OK"]
-7. FORMAT: [λ→fun, $→<|, show→change, indent, empty lines, or "OK"]
-8. COMMENTS: [inline comments in proof, or "clean"]
-9. DOCSTRING: [needs adding/removing/shortening, or "OK"]
-10. TERM MODE: [`by exact h`, `by rfl`, eta-reducible, or "none"]
-11. AUTOMATION: [blocks where grind/fun_prop/omega might work, or "none"]
-12. VISIBILITY: [should be private / needs _aux, or "OK"]
-13. STRUCTURE: [proof length, ∧ in statement, branches >10 lines — see actions below]
-14. MATHLIB: [could replace with mathlib, or "no replacement found"]
+4. SIMP SQUEEZE: [any `simp` without `only`? any `simp only` with bad formatting? — see procedure below]
+5. NAMING: [OK / rename to X — reason]
+6. LINE PACKING: [lines breaking too early, or "all lines filled to ~100"]
+7. BY PLACEMENT: [any `by` on own line, or "OK"]
+8. FORMAT: [λ→fun, $→<|, show→change, indent, empty lines, or "OK"]
+9. COMMENTS: [inline comments in proof, or "clean"]
+10. DOCSTRING: [needs adding/removing/shortening, or "OK"]
+11. TERM MODE: [`by exact h`, `by rfl`, eta-reducible, or "none"]
+12. AUTOMATION: [blocks where grind/fun_prop/omega might work, or "none"]
+13. VISIBILITY: [should be private / needs _aux, or "OK"]
+14. STRUCTURE: [proof length, ∧ in statement, branches >10 lines — see actions below]
+15. MATHLIB: [could replace with mathlib, or "no replacement found"]
 
 Issues to fix: [numbered list — every issue MUST have a concrete action, not "flag for later"]
 Refactoring needed: [cross-declaration changes, or "none"]
@@ -181,20 +182,72 @@ If you find one:
       the `set_option` line must STILL be deleted — do not leave it in
 3. The `set_option` line must be gone when you're done. No exceptions.
 
+## ITEM 4: SIMP SQUEEZE (Use simp? — Do Not Manually Format)
+
+**Do NOT manually arrange `simp only` lemma lists. Use `simp?` and apply its suggestion.**
+
+Lean's `simp?` tactic produces a `simp only [...]` call that is:
+- Correctly squeezed (minimal set of lemmas)
+- Correctly formatted (proper line packing to ~100 chars)
+
+### Procedure
+
+For each `simp` call in the proof:
+
+**A. Bare `simp` (no `only`) — non-terminal:**
+Non-terminal `simp` without `only` is NOT allowed in mathlib. MUST squeeze.
+1. Temporarily replace `simp` with `simp?` in the file
+2. Run `lean_diagnostic_messages` — look for info message "Try this: simp only [...]"
+3. Replace `simp?` with the suggestion exactly as formatted
+4. Verify compilation
+
+**B. Bare `simp` — terminal (closing the goal):**
+Terminal `simp` is acceptable but check if `grind` or `simp_all` is shorter.
+If reformatting is needed, use `simp?` to get the properly formatted version.
+
+**C. Existing `simp only [...]` with bad formatting (lines too short, awkward breaks):**
+1. Temporarily replace `simp only [...]` with `simp?`
+2. Run `lean_diagnostic_messages` to get the suggestion
+3. Replace with the suggestion — it will have correct formatting
+4. Verify compilation
+
+**D. `simp only [...]` that looks correct:**
+Leave it alone.
+
+### How to get simp? output
+
+The `simp?` suggestion appears as an info-level diagnostic (severity 3) from
+`lean_diagnostic_messages`. Look for lines containing "Try this:".
+
+Example:
+```
+l45c4-l45c9, severity: 3
+Try this: simp only [ne_eq, mul_eq_zero, OfNat.ofNat_ne_zero, not_false_eq_true,
+  ofReal_eq_zero, Real.pi_ne_zero, I_ne_zero, or_self]
+```
+
+Copy the "Try this:" content exactly — it's already formatted correctly.
+
+### Same approach for other `?` tactics
+
+- `exact?` → produces correctly formatted `exact` call
+- `rw?` → produces correctly formatted `rw` call
+- These are less common but use the same principle: let the tool format it.
+
 ## REMAINING ITEMS (Quick Reference)
 
-4. NAMING: lemma/theorem→snake_case, def→lowerCamelCase, structure→UpperCamelCase.
+5. NAMING: lemma/theorem→snake_case, def→lowerCamelCase, structure→UpperCamelCase.
    conclusion_of_hypothesis pattern. American English.
-6. BY PLACEMENT: `by` at end of preceding line, NEVER alone on own line.
-7. FORMAT: `fun` not `λ`, `<|` not `$`, `change` not `show`, 2-space indent, no empty lines in decls.
-8. COMMENTS: Remove ALL inline comments from proofs. No commented-out code.
-9. DOCSTRING: Public theorem/def → one sentence. Private/helper → none.
-10. TERM MODE: `by exact h`→`h`, `by rfl`→`rfl`, `fun x => f x`→`f`,
+7. BY PLACEMENT: `by` at end of preceding line, NEVER alone on own line.
+8. FORMAT: `fun` not `λ`, `<|` not `$`, `change` not `show`, 2-space indent, no empty lines in decls.
+9. COMMENTS: Remove ALL inline comments from proofs. No commented-out code.
+10. DOCSTRING: Public theorem/def → one sentence. Private/helper → none.
+11. TERM MODE: `by exact h`→`h`, `by rfl`→`rfl`, `fun x => f x`→`f`,
     `constructor; exact a; exact b`→`⟨a, b⟩`, `intro h; exact f h`→`f`.
-11. AUTOMATION: Try grind/fun_prop/omega/ring on multi-step blocks (use lean_multi_attempt).
+12. AUTOMATION: Try grind/fun_prop/omega/ring on multi-step blocks (use lean_multi_attempt).
     `rw[..]; exact h`→`rwa`. `simp; exact h`→`simpa using h`. Merge consecutive rw.
-12. VISIBILITY: Only used in file → private. Helper → private + _aux.
-14. MATHLIB: Quick search if def/lemma duplicates mathlib.
+13. VISIBILITY: Only used in file → private. Helper → private + _aux.
+15. MATHLIB: Quick search if def/lemma duplicates mathlib.
 
 ## ITEM 13: STRUCTURE (Attempt Fixes, Don't Just Flag)
 

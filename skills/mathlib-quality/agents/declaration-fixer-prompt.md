@@ -15,17 +15,18 @@ For EVERY declaration, print:
 1. LINT: [warnings or "none"]
 2. HAVE SCAN: [list every have — see below]
 3. SET_OPTION: [any set_option maxHeartbeats/maxRecDepth? MUST remove — see below]
-4. NAMING: [OK / rename needed]
-5. LINE PACKING: [short lines to fix, or "all filled to ~100"]
-6. BY PLACEMENT: [violations, or "OK"]
-7. FORMAT: [λ, $, show, indent, empty lines, or "OK"]
-8. COMMENTS: [inline comments, or "clean"]
-9. DOCSTRING: [action needed, or "OK"]
-10. TERM MODE: [by exact, by rfl, eta, or "none"]
-11. AUTOMATION: [grind/fun_prop opportunities, or "none"]
-12. VISIBILITY: [private needed, or "OK"]
-13. STRUCTURE: [length/∧/branches — attempt fix, don't just flag]
-14. MATHLIB: [replacement found, or "checked, none"]
+4. SIMP SQUEEZE: [any bare `simp`? any `simp only` with bad formatting? — use simp?, see below]
+5. NAMING: [OK / rename needed]
+6. LINE PACKING: [short lines to fix, or "all filled to ~100"]
+7. BY PLACEMENT: [violations, or "OK"]
+8. FORMAT: [λ, $, show, indent, empty lines, or "OK"]
+9. COMMENTS: [inline comments, or "clean"]
+10. DOCSTRING: [action needed, or "OK"]
+11. TERM MODE: [by exact, by rfl, eta, or "none"]
+12. AUTOMATION: [grind/fun_prop opportunities, or "none"]
+13. VISIBILITY: [private needed, or "OK"]
+14. STRUCTURE: [length/∧/branches — attempt fix, don't just flag]
+15. MATHLIB: [replacement found, or "checked, none"]
 
 Issues to fix: [numbered list — concrete actions, not "flag for later"]
 ```
@@ -81,7 +82,35 @@ Example output:
    c. Extract largest `have ... := by` blocks (>8 lines) as private helpers above the theorem
    d. If STILL timing out: report "needs /decompose-proof" but the set_option MUST still be deleted
 
-## ITEM 13: STRUCTURE (Attempt Fix, Don't Just Flag)
+## ITEM 4: SIMP SQUEEZE (Use simp? — Do Not Manually Format)
+
+**Do NOT manually arrange `simp only` lemma lists.** Use `simp?` and apply its suggestion.
+Lean's formatter already handles line packing correctly.
+
+For each `simp` call in the proof:
+
+**Bare `simp` (non-terminal)** — MUST squeeze:
+1. Replace `simp` with `simp?` in the file
+2. Run `lean_diagnostic_messages` — find the info message "Try this: simp only [...]"
+3. Replace `simp?` with the suggestion exactly as formatted
+4. Verify compilation
+
+**Existing `simp only [...]` with bad formatting** (lines breaking too early):
+1. Replace the `simp only [...]` with `simp?`
+2. Get the "Try this:" suggestion from diagnostics
+3. Apply it — it's already formatted with correct line packing
+
+**Terminal `simp` (closing the goal):** acceptable, but try `grind` or `simp_all` first.
+
+The `simp?` suggestion appears as severity 3 (info) in `lean_diagnostic_messages`:
+```
+l45c4-l45c9, severity: 3
+Try this: simp only [ne_eq, mul_eq_zero, OfNat.ofNat_ne_zero, not_false_eq_true,
+  ofReal_eq_zero, Real.pi_ne_zero, I_ne_zero, or_self]
+```
+Copy the "Try this:" content exactly.
+
+## ITEM 14: STRUCTURE (Attempt Fix, Don't Just Flag)
 
 **Do NOT write "flag for later." Attempt the fix first.**
 
@@ -94,15 +123,15 @@ Example output:
 
 | # | Check | What to look for |
 |---|-------|-----------------|
-| 4 | NAMING | lemma→snake_case, def→lowerCamelCase, conclusion_of_hypothesis |
-| 6 | BY | `by` must be at end of preceding line, never alone |
-| 7 | FORMAT | `fun` not `λ`, `<|` not `$`, `change` not `show`, 2-space indent |
-| 8 | COMMENTS | Remove ALL inline comments from proofs |
-| 9 | DOCSTRING | Public: one sentence. Private: none. |
-| 10 | TERM MODE | `by exact h`→`h`, `by rfl`→`rfl`, `fun x => f x`→`f` |
-| 11 | AUTOMATION | Try grind/fun_prop/omega. `rw+exact`→`rwa`. `simp+exact`→`simpa` |
-| 12 | VISIBILITY | Only used in file → private. Helper → private + _aux |
-| 14 | MATHLIB | Quick search if def/lemma duplicates mathlib |
+| 5 | NAMING | lemma→snake_case, def→lowerCamelCase, conclusion_of_hypothesis |
+| 7 | BY | `by` must be at end of preceding line, never alone |
+| 8 | FORMAT | `fun` not `λ`, `<|` not `$`, `change` not `show`, 2-space indent |
+| 9 | COMMENTS | Remove ALL inline comments from proofs |
+| 10 | DOCSTRING | Public: one sentence. Private: none. |
+| 11 | TERM MODE | `by exact h`→`h`, `by rfl`→`rfl`, `fun x => f x`→`f` |
+| 12 | AUTOMATION | Try grind/fun_prop/omega. `rw+exact`→`rwa`. `simp+exact`→`simpa` |
+| 13 | VISIBILITY | Only used in file → private. Helper → private + _aux |
+| 15 | MATHLIB | Quick search if def/lemma duplicates mathlib |
 
 ## After Printing Report: Implement Fixes
 
