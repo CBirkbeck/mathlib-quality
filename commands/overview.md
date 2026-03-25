@@ -104,7 +104,127 @@ Add a cross-file dependency section:
 After the inventory is complete, perform each analysis step below. For each step, read through
 the ENTIRE inventory and think about the mathematics. Do not skim.
 
-### Step 4: Deep Duplication Detection
+### Step 4: Mathlib API Audit (MOST IMPORTANT STEP)
+
+**Goal: Ensure every definition and concept uses the best mathlib API.**
+
+This is the single most impactful analysis. Mathlib often has MULTIPLE ways to express the same
+concept, and choosing the right one determines how much API is available. **Using the wrong
+abstraction means you have to prove things manually that would be automatic with the right one.**
+
+#### 4a: For EVERY definition in the project
+
+Search mathlib exhaustively for the concept. Use ALL of these:
+
+1. **lean_loogle** — search by type signature
+2. **lean_leansearch** — search by natural language description
+3. **lean_local_search** — search by name patterns
+4. **WebSearch** — search "mathlib4 [concept]" or "lean4 mathlib [concept]"
+
+For each definition, answer:
+- Does mathlib already define this? (exact match)
+- Does mathlib have a MORE GENERAL version? (e.g., for groups instead of just ℤ)
+- Are there MULTIPLE mathlib options? If so, which has the most API?
+
+#### 4b: Choose the API-rich version
+
+When mathlib offers multiple ways to express something, **always choose the one with the most
+lemmas, simp rules, and tactic support.** This is a critical design decision.
+
+**Common examples of API-rich vs API-poor choices:**
+
+| API-poor (avoid) | API-rich (use instead) | Why |
+|-------------------|----------------------|-----|
+| `limUnder` / `Filter.limUnder` | `Filter.Tendsto` | `Tendsto` has massive API: `Tendsto.comp`, `Tendsto.mono`, `tendsto_nhds`, etc. |
+| Custom `IsBounded` predicate | `Bornology.IsBounded` or `Metric.Bounded` | Mathlib's version connects to `IsCompact`, `TotallyBounded`, etc. |
+| Custom `IsDiscrete` predicate | `DiscreteTopology` (as instance) | Instance = automatic inference + hundreds of lemmas |
+| `∃ M, ∀ x, ‖f x‖ ≤ M` | `BoundedContinuousFunction` or `NNNorm` API | Structure gives `norm_le`, `dist_le`, etc. for free |
+| `Set.Finite S` alone | `Finset` or `[Fintype S]` when possible | `Finset` has `sum`, `prod`, `card` API; `Fintype` has decidability |
+| Manual filter limit | `ContinuousAt` / `ContinuousOn` | These are `Tendsto` in disguise but with huge specialized API |
+| `fun x => f x + g x` | `f + g` (pointwise) with `Pi.instAdd` | Pointwise ops have `Continuous.add`, `Measurable.add`, etc. |
+| `∀ x ∈ S, P x` with manual S | Subtypes `{x // x ∈ S}` or `↥S` | Subtype API gives `Subtype.val`, coercions, topology |
+| Custom `Summable` condition | `Summable` / `HasSum` from mathlib | Connects to `tsum`, `NNReal`, `Integrable`, etc. |
+
+#### 4c: Check how definitions interact with mathlib API
+
+For each project definition, ask:
+- Can `fun_prop` prove continuity/measurability of this? If not, why not? (Missing `@[fun_prop]` tag?)
+- Can `simp` simplify expressions involving this? If not, add `@[simp]` lemmas.
+- Can typeclass inference find instances involving this? If not, register instances.
+- Does this definition compose well with mathlib's algebraic hierarchy?
+
+#### 4d: Look for hand-rolled versions of mathlib abstractions
+
+Search every proof for patterns that should be using mathlib API instead:
+
+```lean
+-- BAD: hand-rolling a limit
+∀ ε > 0, ∃ N, ∀ n ≥ N, dist (f n) L < ε
+-- GOOD: use Tendsto
+Filter.Tendsto f atTop (𝓝 L)
+
+-- BAD: hand-rolling continuity
+∀ ε > 0, ∃ δ > 0, ∀ x, dist x a < δ → dist (f x) (f a) < ε
+-- GOOD: use ContinuousAt
+ContinuousAt f a
+
+-- BAD: hand-rolling compactness
+∀ U : Set (Set X), (∀ u ∈ U, IsOpen u) → S ⊆ ⋃₀ U → ∃ F ⊆ U, F.Finite ∧ S ⊆ ⋃₀ F
+-- GOOD: use IsCompact
+IsCompact S
+
+-- BAD: hand-rolling uniform convergence
+∀ ε > 0, ∃ N, ∀ n ≥ N, ∀ x ∈ S, dist (f n x) (g x) < ε
+-- GOOD: use TendstoUniformlyOn
+TendstoUniformlyOn f g atTop S
+```
+
+**Output format:**
+
+```markdown
+### Mathlib API Audit
+
+#### Definitions to Replace with Mathlib
+
+1. **`def myDiscrete` → use `DiscreteTopology` instance**
+   - Current: custom predicate `∀ s ∈ S, ∃ ε > 0, ball s ε ∩ S = {s}`
+   - Mathlib: `DiscreteTopology` as a typeclass instance
+   - Impact: Unlocks `DiscreteTopology.isOpen_of_subset`, automatic `Fintype` derivation, etc.
+   - **Action**: Replace with `[DiscreteTopology S]` in hypotheses
+
+2. **`def myLimit` → use `Filter.Tendsto`**
+   - Current: hand-rolled ε-N definition
+   - Mathlib: `Filter.Tendsto f atTop (𝓝 L)` has 200+ lemmas
+   - Impact: Can use `Tendsto.comp`, `Tendsto.add`, `tendstoUniformly_iff`, etc.
+   - **Action**: Redefine in terms of `Tendsto`, or delete and use `Tendsto` directly
+
+#### API Choice Improvements
+
+1. **Using `limUnder` → switch to `Tendsto`**
+   - Files: Foo.lean lines 45, 80, 120
+   - `limUnder` has ~20 lemmas; `Tendsto` has ~200
+   - Many proofs are doing manual limit arguments that `Tendsto` API handles
+   - **Action**: Refactor limit statements to use `Tendsto`
+
+2. **Using `Set.Finite` → switch to `Finset` where possible**
+   - Files: Bar.lean lines 30, 55
+   - `Set.Finite` requires manual cardinality; `Finset` gives `card`, `sum`, `prod`
+   - **Action**: Where the set is constructively finite, use `Finset` instead
+
+#### Hand-Rolled Patterns to Replace
+
+1. **Manual ε-δ continuity** (File1.lean:90, File2.lean:45)
+   - Pattern: `∀ ε > 0, ∃ δ > 0, ...` → `ContinuousAt f a`
+   - Would eliminate 8-10 lines per occurrence
+
+2. **Manual dominated convergence setup** (File1.lean:150)
+   - Pattern: manual bound + pointwise convergence
+   - Mathlib: `MeasureTheory.tendsto_integral_of_dominated_convergence`
+```
+
+---
+
+### Step 5: Deep Duplication Detection (was Step 4 before Mathlib Audit)
 
 **Goal: Find lemmas that are morally the same and should be unified.**
 
@@ -146,7 +266,7 @@ For EACH pair of lemmas in the project, ask:
    - **Action**: Delete, use `norm_add_le` directly
 ```
 
-### Step 5: Generalization Analysis
+### Step 6: Generalization Analysis
 
 **Goal: Find where results could be stated more generally.**
 
@@ -201,7 +321,7 @@ Mathlib wants the most general version of every result. For each definition and 
    - **Difficulty**: Medium
 ```
 
-### Step 6: API Design Review
+### Step 7: API Design Review
 
 **Goal: Find where creating good API would simplify multiple proofs.**
 
@@ -264,7 +384,7 @@ Read through all the proofs in the project. Look for:
    - No `@[ext]` lemma
 ```
 
-### Step 7: Junk Identification
+### Step 8: Junk Identification
 
 **Goal: Find declarations that should be removed.**
 
@@ -326,17 +446,20 @@ Generated: [date]
 ## Part 2: Cross-File Dependencies
 [Import graph and cross-file usage]
 
-## Part 3: Moral Duplications
-[From Step 4 — deep duplication analysis]
+## Part 3: Mathlib API Audit (MOST IMPORTANT)
+[From Step 4 — definitions to replace, API choices, hand-rolled patterns]
 
-## Part 4: Generalization Opportunities
-[From Step 5 — with literature references]
+## Part 4: Moral Duplications
+[From Step 5 — deep duplication analysis]
 
-## Part 5: API Improvements
-[From Step 6 — missing lemmas, instances, completeness]
+## Part 5: Generalization Opportunities
+[From Step 6 — with literature references]
 
-## Part 6: Junk / Removable
-[From Step 7 — with clear action items]
+## Part 6: API Improvements
+[From Step 7 — missing lemmas, instances, completeness]
+
+## Part 7: Junk / Removable
+[From Step 8 — with clear action items]
 
 ---
 
