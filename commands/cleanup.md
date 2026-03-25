@@ -77,10 +77,10 @@ You MUST print this report. Every item MUST have an answer.
 
 1. LINT: [warnings in this range from diagnostics, or "none"]
 2. HAVE SCAN: [see procedure below — list EVERY have]
-3. SET_OPTION: [any `set_option maxHeartbeats` / `set_option maxRecDepth`? — MUST remove, see below]
-4. SIMP SQUEEZE: [any `simp` without `only`? any `simp only` with bad formatting? — see procedure below]
+3. SET_OPTION: [any `set_option maxHeartbeats` / `set_option maxRecDepth`? — MUST remove]
+4. SIMP SQUEEZE: [any bare `simp`? any badly formatted `simp only`? — use simp?]
 5. NAMING: [OK / rename to X — reason]
-6. LINE PACKING: [lines breaking too early, or "all lines filled to ~100"]
+6. LINE PACKING: [lines breaking too early? use #check as reference — see below]
 7. BY PLACEMENT: [any `by` on own line, or "OK"]
 8. FORMAT: [λ→fun, $→<|, show→change, indent, empty lines, or "OK"]
 9. COMMENTS: [inline comments in proof, or "clean"]
@@ -88,7 +88,7 @@ You MUST print this report. Every item MUST have an answer.
 11. TERM MODE: [`by exact h`, `by rfl`, eta-reducible, or "none"]
 12. AUTOMATION: [blocks where grind/fun_prop/omega might work, or "none"]
 13. VISIBILITY: [should be private / needs _aux, or "OK"]
-14. STRUCTURE: [proof length, ∧ in statement, branches >10 lines — see actions below]
+14. STRUCTURE: [proof length, ∧ in statement, branches >10 lines — attempt fix]
 15. MATHLIB: [could replace with mathlib, or "no replacement found"]
 
 Issues to fix: [numbered list — every issue MUST have a concrete action, not "flag for later"]
@@ -126,43 +126,51 @@ Rules:
 
 To inline: delete the have line, substitute the RHS where h was used.
 
-## ITEM 4: LINE PACKING (Enforce This)
+## ITEM 6: LINE PACKING (Use Lean's Formatting As Guide)
 
 **Fill lines to ~100 chars. Do NOT break at 50-60 chars.**
 
-Signatures — pack parameters:
+Lean's pretty-printer (`format.width`, default 120) fills lines to the target width, breaking at
+natural boundaries. We use 100 chars (mathlib convention). Follow the same principle: **fill to ~100,
+break at parameter/comma boundaries.**
+
+### Signatures — use `#check` as a reference
+
+If you're unsure how to pack a signature, temporarily add `#check @theorem_name` after the
+declaration, run `lean_diagnostic_messages`, and look at how Lean formats the type. Match that
+compactness in the declaration syntax.
+
 ```lean
--- BAD (4 lines at ~40 chars)
+-- Lean's #check output for reference (shows how compact the type can be):
+-- foo : ∀ (S : Finset UpperHalfPlane), (∀ p ∈ S, p ∈ 𝒟) → ... → ∃ H₀ : ℝ, ...
+
+-- BAD: breaks lines way too early (~40 chars each)
 theorem foo
     (S : Finset UpperHalfPlane)
     (hS : ∀ p ∈ S, p ∈ 𝒟)
     (hS_complete : ...) :
--- GOOD (2 lines at ~90 chars)
+
+-- GOOD: fills to ~100 chars, matching the compactness of #check output
 theorem foo (S : Finset UpperHalfPlane) (hS : ∀ p ∈ S, p ∈ 𝒟)
     (hS_complete : ...) :
 ```
 
-simp/rw lists — pack lemma names:
-```lean
--- BAD (4 lines)
-  simp only [ne_eq, mul_eq_zero,
-    OfNat.ofNat_ne_zero, not_false_eq_true,
-    ofReal_eq_zero, Real.pi_ne_zero,
-    I_ne_zero, or_self]
--- GOOD (2 lines)
-  simp only [ne_eq, mul_eq_zero, OfNat.ofNat_ne_zero, not_false_eq_true, ofReal_eq_zero,
-    Real.pi_ne_zero, I_ne_zero, or_self]
-```
+**Packing rules for signatures:**
+- Put as many parameters on each line as fit within ~100 chars
+- Break BETWEEN `)(` parameter boundaries, not within parameters
+- Continuation lines indent 4 spaces
+- Return type on `:` line if it fits, otherwise next line indented 4
 
-Expressions — keep on one line when they fit:
+### Expressions — keep on fewer lines when they fit
+
 ```lean
--- BAD (4 lines)
+-- BAD (4 lines at ~55 chars)
   rw [show -(2 * ↑Real.pi * I *
       ((k : ℂ) / 12 - (orderAtCusp' f : ℂ))) =
     2 * ↑Real.pi * I *
       (-((k : ℂ) / 12 - (orderAtCusp' f : ℂ)))
     from by ring] at h_eq
--- GOOD (2 lines)
+-- GOOD (2 lines at ~95 chars)
   rw [show -(2 * ↑Real.pi * I * ((k : ℂ) / 12 - (orderAtCusp' f : ℂ))) =
       2 * ↑Real.pi * I * (-((k : ℂ) / 12 - (orderAtCusp' f : ℂ))) from by ring] at h_eq
 ```
@@ -247,6 +255,7 @@ Copy the "Try this:" content exactly — it's already formatted correctly.
 12. AUTOMATION: Try grind/fun_prop/omega/ring on multi-step blocks (use lean_multi_attempt).
     `rw[..]; exact h`→`rwa`. `simp; exact h`→`simpa using h`. Merge consecutive rw.
 13. VISIBILITY: Only used in file → private. Helper → private + _aux.
+14. STRUCTURE: See procedure below — attempt fix, don't just flag.
 15. MATHLIB: Quick search if def/lemma duplicates mathlib.
 
 ## ITEM 13: STRUCTURE (Attempt Fixes, Don't Just Flag)

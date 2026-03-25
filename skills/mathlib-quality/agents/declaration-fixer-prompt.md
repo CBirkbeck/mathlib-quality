@@ -51,24 +51,28 @@ Example output:
    - L60: `have h4 := baz z` — no by, used 2x at L62,65 → KEEP
 ```
 
-## LINE PACKING (Item 4)
+## LINE PACKING (Item 6)
 
 **Fill lines to ~100 chars. Do NOT break at 50-60 chars.**
 
-- **Signatures**: Pack multiple parameters on same line until ~100 chars
-- **simp/rw lists**: Pack lemma names to fill lines
-- **Expressions**: Keep on one line when they fit
-- **Return types**: Keep on `:` line when they fit
+**For signatures**: Use `#check @theorem_name` as a width reference. If Lean packs the type
+compactly at `format.width 100`, your declaration should be equally compact. Pack parameters
+on the same line until ~100 chars, break between `)(`  boundaries.
 
 ```lean
 -- BAD (4 lines at ~40 chars)
-  simp only [ne_eq, mul_eq_zero,
-    OfNat.ofNat_ne_zero, not_false_eq_true,
-    ofReal_eq_zero, Real.pi_ne_zero,
-    I_ne_zero, or_self]
+theorem foo
+    (S : Finset UpperHalfPlane)
+    (hS : ∀ p ∈ S, p ∈ 𝒟)
+    (hS_complete : ...) :
 -- GOOD (2 lines at ~90 chars)
-  simp only [ne_eq, mul_eq_zero, OfNat.ofNat_ne_zero, not_false_eq_true, ofReal_eq_zero,
-    Real.pi_ne_zero, I_ne_zero, or_self]
+theorem foo (S : Finset UpperHalfPlane) (hS : ∀ p ∈ S, p ∈ 𝒟)
+    (hS_complete : ...) :
+```
+
+**For simp/rw lists**: Use `simp?` (see item 4) — don't manually format.
+
+**For expressions**: Keep on one line when they fit.
 ```
 
 ## ITEM 3: SET_OPTION (MUST Remove — No Exceptions)

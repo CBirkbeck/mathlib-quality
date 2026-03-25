@@ -86,6 +86,16 @@ For enhanced suggestions based on 4,600+ real mathlib PR reviews, run `/setup-ra
 
 **Rule**: Pack as much as fits on each line, up to the 100-character limit. Only break when you must.
 
+Lean's own pretty-printer (`format.width`, default 120 cols) follows the same principle — fill to
+the target width, break at natural boundaries. Mathlib uses 100 chars. Match the compactness that
+Lean's formatter would produce at width 100.
+
+**Formatting tools to use:**
+- **`simp only` lists**: Use `simp?` and apply its "Try this:" suggestion — Lean formats it correctly
+- **Theorem signatures**: Use `#check @theorem_name` as a width reference — if Lean packs the type
+  compactly, your declaration syntax should be equally compact
+- **`exact`/`rw` calls**: Use `exact?`/`rw?` when available for correct formatting
+
 **Signatures**: Put multiple parameters on the same line. Only break to a new line when the next parameter would exceed 100 chars.
 
 ```lean
