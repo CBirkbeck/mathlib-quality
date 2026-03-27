@@ -72,6 +72,11 @@ For each file:
 
 Dispatch an agent using the `Agent` tool with `subagent_type="general-purpose"`.
 
+**IMPORTANT — Batch mechanical replacements first:** The agent must do ALL `show→change`,
+`λ→fun`, `$→<|` replacements in ONE batch pass (using `Edit` with `replace_all: true`)
+BEFORE starting per-declaration audits. Do NOT do these one at a time — the Lean LSP rebuilds
+the file between edits and can revert individual changes. See Step 1c in cleanup.md.
+
 **The agent prompt MUST include the FULL cleanup worker instructions.** Read the contents of
 `commands/cleanup.md` — find the worker prompt section (starting with "Your declarations") and
 include it verbatim. Do NOT summarize or abbreviate the rules.

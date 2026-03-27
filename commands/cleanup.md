@@ -34,7 +34,39 @@ Run `lean_diagnostic_messages` on the file. Group warnings by line number and pr
 
 Fix file-level issues now: copyright header, import order, module docstring.
 
-### 1c: Build Declaration List
+### 1c: Batch Mechanical Replacements (Do This BEFORE Per-Declaration Work)
+
+**Do all global find-replace operations in ONE pass, using `Edit` with `replace_all: true`.**
+Do NOT do these one at a time during per-declaration audits — they get reverted by the LSP
+rebuilding the file between edits.
+
+Run these replacements on the ENTIRE file in sequence:
+
+1. `show` → `change` (in tactic mode — be careful not to replace `show` in term mode)
+2. `λ` → `fun` (if any remain after linter)
+3. `$` → `<|` (if any remain after linter)
+
+**Procedure:**
+```
+1. Read the file
+2. For each replacement: use Edit with replace_all: true
+3. After ALL replacements are done: run lean_diagnostic_messages ONCE
+4. Fix any compilation errors from the replacements
+5. Do NOT run lean_diagnostic_messages between individual replacements
+```
+
+**Why batch?** The Lean LSP rebuilds the file after each edit. If you make 312 individual
+`show→change` replacements with diagnostic checks between each one, the rebuilds can interfere
+with pending edits. Doing them all at once avoids this.
+
+**For `show` → `change` specifically:**
+- Only replace in tactic mode (after `by`, inside tactic blocks)
+- Do NOT replace `show` in term mode or in docstrings
+- If unsure, grep for `show` and check each occurrence before bulk replacing
+- Use a pattern like: replace `\n  show ` with `\n  change ` (with leading whitespace + newline
+  to avoid term-mode `show`)
+
+### 1d: Build Declaration List
 
 List every declaration with line numbers and proof length:
 
@@ -82,7 +114,7 @@ You MUST print this report. Every item MUST have an answer.
 5. NAMING: [OK / rename to X — reason]
 6. LINE PACKING: [lines breaking too early? use #check as reference — see below]
 7. BY PLACEMENT: [any `by` on own line, or "OK"]
-8. FORMAT: [λ→fun, $→<|, show→change, indent, empty lines, or "OK"]
+8. FORMAT: [indent, empty lines, other formatting, or "OK" — NOTE: show→change, λ→fun, $→<| are already done in Step 1c batch pass]
 9. COMMENTS: [inline comments in proof, or "clean"]
 10. DOCSTRING: [needs adding/removing/shortening, or "OK"]
 11. TERM MODE: [`by exact h`, `by rfl`, eta-reducible, or "none"]
@@ -247,7 +279,7 @@ Copy the "Try this:" content exactly — it's already formatted correctly.
 5. NAMING: lemma/theorem→snake_case, def→lowerCamelCase, structure→UpperCamelCase.
    conclusion_of_hypothesis pattern. American English.
 7. BY PLACEMENT: `by` at end of preceding line, NEVER alone on own line.
-8. FORMAT: `fun` not `λ`, `<|` not `$`, `change` not `show`, 2-space indent, no empty lines in decls.
+8. FORMAT: 2-space indent, no empty lines in decls. (show→change, λ→fun, $→<| done in Step 1c batch)
 9. COMMENTS: Remove ALL inline comments from proofs. No commented-out code.
 10. DOCSTRING: Public theorem/def → one sentence. Private/helper → none.
 11. TERM MODE: `by exact h`→`h`, `by rfl`→`rfl`, `fun x => f x`→`f`,
