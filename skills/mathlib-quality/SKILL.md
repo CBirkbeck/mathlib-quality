@@ -40,6 +40,7 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | Command | Description |
 |---------|-------------|
 | `/cleanup` | Full file cleanup to mathlib standards |
+| `/cleanup-all` | Run /cleanup on every file in the project, tracked file by file |
 | `/check-style` | Validate without making changes |
 | `/golf-proof` | Optimize specific proofs |
 | `/decompose-proof` | Break long proofs into helper lemmas |
