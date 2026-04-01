@@ -1,549 +1,327 @@
 # Proof Golf Patterns
 
-## Overview
+Data-driven golfing rules extracted from 3,772 merged mathlib4 PRs,
+7,273 before/after reviewer suggestions, and 14,063 reviewer comments.
 
-"Golfing" proofs means making them shorter and cleaner while maintaining correctness and readability. This guide covers common patterns for optimizing Lean 4 proofs.
+## Workflow
 
-## Automation Tactics
+Two phases: file-wide scan first, then theorem-by-theorem. Verify each
+edit compiles before moving on.
 
-### `simp` Best Practices
+### Phase 1: File-wide
 
-**In library code, always use `simp only`:**
+1. **Extract helpers for duplicated proof skeletons** — the single
+   highest-ROI technique. If 2+ proofs differ only in the lemma applied,
+   extract the skeleton into a parameterized helper. Also look for `wlog`
+   (symmetric cases), `suffices` (symmetric case splits), and
+   `by_cases` hoisting.
+
+2. **Replace with mathlib or derive from neighbours** — use `exact?`,
+   `apply?`, or Loogle with the type signature. Reviewers' most common
+   comment: "there's already a lemma for this."
+
+3. **Check mechanical patterns** — run through the instant-win table
+   below to catch low-hanging fruit across the file.
+
+### Phase 2: Theorem-by-theorem
+
+Work through each declaration. Apply the rules below in order.
+
+---
+
+## The Cardinal Rule: Terminal vs Nonterminal `simp`
+
+This is the single most enforced rule in mathlib code review (282+ reviewer comments).
+
+- **Terminal `simp` must NOT be squeezed.** Leave it as `simp` or `simp [lemmas]`.
+  Squeezing terminal simp adds maintenance cost for no benefit.
+- **Nonterminal `simp` MUST be squeezed** to `simp only [...]`.
+  Use `simp?` to find the minimal lemma set.
+- **`simp; rfl` counts as terminal** — no need to squeeze.
+- **`simp_all` is preferred** over `simp_all only` for closing goals.
+
 ```lean
--- Bad: bare simp (can break with mathlib updates)
-theorem foo : a + 0 = a := by simp
-
--- Good: explicit lemmas
+-- WRONG: squeezing terminal simp
 theorem foo : a + 0 = a := by simp only [add_zero]
 
--- Good: with configuration
-theorem foo : ... := by simp only [add_zero, mul_one, ← sub_eq_add_neg]
+-- RIGHT: terminal simp left unsqueezed
+theorem foo : a + 0 = a := by simp
+
+-- RIGHT: nonterminal simp squeezed
+theorem foo : a + 0 = a ∧ True := by
+  simp only [add_zero]  -- nonterminal: must squeeze
+  trivial
 ```
 
-**Use `simp?` to find lemmas:**
-```lean
--- In development, use simp? to discover what simp uses
-theorem foo : a + 0 = a := by simp?
--- Outputs: Try this: simp only [add_zero]
-```
+---
 
-### `ring` / `ring_nf`
-```lean
--- Solves polynomial equalities
-example (a b : ℤ) : (a + b)^2 = a^2 + 2*a*b + b^2 := by ring
+## Instant Wins (always apply, zero risk)
 
--- ring_nf normalizes without closing
-example (a b : ℤ) : (a + b)^2 = a^2 + 2*a*b + b^2 := by ring_nf; rfl
-```
+| Before | After | Occurrences |
+|--------|-------|-------------|
+| `:= by exact term` | `:= term` | very common |
+| `rw [h]; exact e` | `rwa [h]` | common |
+| `simp [...]; exact h` | `simpa [...] using h` | 86 |
+| `ext x; rfl` | `rfl` | common |
+| `simp; rfl` | `simp` | 71 |
+| `constructor; exact a; exact b` | `exact ⟨a, b⟩` | common |
+| `apply f; exact h` | `exact f h` | common |
+| `by_contra h; push_neg at h` | `by_contra!` | common |
+| `intro x; exact f x` | `fun x => f x` or `f` | 25 |
+| `have h := x; exact h` | `exact x` | 21 |
+| `apply X; intro y; ...` | `refine X fun y => ?_` | common |
 
-### `linarith` / `nlinarith`
-```lean
--- Linear arithmetic over ordered rings
-example (a b : ℝ) (h1 : a < b) (h2 : b < 2) : a < 2 := by linarith
+---
 
--- Nonlinear (limited)
-example (a : ℝ) (h : 0 < a) : a * a > 0 := by nlinarith [sq_nonneg a]
-```
+## Tactic Priority Ladder
 
-### `omega`
-```lean
--- Integer/natural number arithmetic with quantifier-free formulas
-example (n : ℕ) (h : n > 5) : n ≥ 6 := by omega
-example (a b : ℤ) (h : a + b = 10) (h2 : a = 3) : b = 7 := by omega
-```
+When closing a goal, try these in order (most automated first):
 
-### `decide` / `native_decide`
-```lean
--- For decidable propositions
-example : 2 + 2 = 4 := by decide
-example : Nat.Prime 17 := by native_decide
-```
+| Priority | Tactic | Use for | Notes |
+|----------|--------|---------|-------|
+| 1 | `grind` | General closing | Subsumes many tactic chains (104 examples) |
+| 2 | `simp` / `simpa` | Simplification + closing | #1 tactic in mathlib reviews |
+| 3 | `aesop` | Logic, membership, set goals | 93 examples |
+| 4 | `fun_prop` | Continuity, differentiability, measurability | 80 examples; use `(disch := grind)` |
+| 5 | `positivity` | `0 < x`, `0 ≤ x` goals | 60 examples |
+| 6 | `gcongr` | Monotonicity, congruence in inequalities | 67 examples |
+| 7 | `omega` / `lia` | Nat/Int linear arithmetic | `lia` preferred over `omega` in new code |
+| 8 | `norm_num` / `norm_cast` | Numeric computation, cast goals | 14 examples |
+| 9 | `ring` / `ring_nf` | Polynomial equalities | |
+| 10 | `field_simp; ring` | Equalities with denominators | 6 examples |
+| 11 | `linarith` / `nlinarith` | Linear/nonlinear arithmetic | `nlinarith [hint]` for nonlinear |
+| 12 | `decide` / `native_decide` | Decidable propositions | 12 examples; use `decide +kernel` for large |
+| 13 | `linear_combination` | Ring goals needing hypotheses | Try when `ring` fails but hyps available |
 
-### `aesop`
-```lean
--- Automated proof search
-example (h : P ∧ Q) : Q ∧ P := by aesop
+---
 
--- With configuration
-example : ... := by aesop (add norm simp [my_lemma])
-```
+## High-Volume Patterns (data-backed)
 
-### `grind`
-```lean
--- Powerful automation combining multiple strategies
--- Great for case analysis with Finset/card lemmas
-example (hs : s.card = 1) : ∃ a, s = {a} := by grind
+### 1. Inline single-use `have` blocks (highest-volume technique)
 
--- With hints for specific lemmas
-example : castSucc i ≠ 0 := by grind [castSucc_ne_zero_iff]
-
--- For distance/metric goals
-example : dist a b < ε := by grind [Real.dist_eq]
-
--- For cardinality/emptiness
-example (h : n.primeFactors = ∅) : n ≤ 1 := by
-  grind [Finset.card_eq_zero, primeFactors_eq_empty]
-```
-
-## Quick Reference: Pattern Savings
-
-| Pattern | Savings | Risk | Priority |
-|---------|---------|------|----------|
-| `by rfl` → `rfl` | 1 line | Zero | ⭐⭐⭐⭐⭐ |
-| `by exact h` → `h` | 1 line | Zero | ⭐⭐⭐⭐⭐ |
-| Eta-reduction `fun x => f x` → `f` | Tokens | Zero | ⭐⭐⭐⭐⭐ |
-| `rw; exact` → `rwa` | 50% | Zero | ⭐⭐⭐⭐⭐ |
-| `rw; simp_rw` → `rw; simpa` | 1 line | Zero | ⭐⭐⭐⭐⭐ |
-| `.mpr` over `rwa` for trivial | 1 line | Zero | ⭐⭐⭐⭐⭐ |
-| `ext + rfl` → `rfl` | 67% | Low | ⭐⭐⭐⭐⭐ |
-| intro-dsimp-exact → lambda | 75% | Low | ⭐⭐⭐⭐⭐ |
-| Dot notation `.rfl`/`.symm` | Tokens | Zero | ⭐⭐⭐⭐⭐ |
-| Inline `show` in `rw` | 50-70% | Zero | ⭐⭐⭐⭐⭐ |
-| Transport `▸` for rewrites | 1-2 lines | Zero | ⭐⭐⭐⭐⭐ |
-| let+have+exact inline | 60-80% | Medium | ⭐⭐⭐⭐⭐ |
-| calc → .trans chains | 2-3 lines | Low | ⭐⭐⭐⭐ |
-| Single-use `have` inline | 30-50% | Low | ⭐⭐⭐⭐ |
-| Redundant `ext` before `simp` | 50% | Medium | ⭐⭐⭐⭐ |
-| `congr; ext; rw` → `simp only` | 67% | Medium | ⭐⭐⭐⭐ |
-| Multi-pattern match | 7 lines | Low | ⭐⭐⭐ |
-| Symmetric cases with `<;>` | 11 lines | Low | ⭐⭐⭐ |
-
-**ROI Strategy:** Do ⭐⭐⭐⭐⭐ first (instant wins), then ⭐⭐⭐⭐ (quick with testing).
-
-## Mandatory Structural Decomposition
-
-**These rules MUST be applied before any other golfing:**
-
-### Rule 1: No `∧` in Theorem Statements
-
-Split theorems with conjunctions into separate lemmas, then combine:
+The most common reviewer suggestion (109 "remove have" comments, 94 "inline/merge" comments).
 
 ```lean
--- BAD
-theorem main : P ∧ Q := by
-  constructor
-  · -- proof of P
-  · -- proof of Q
+-- BEFORE
+have h := foo x
+exact h.bar
 
--- GOOD
-lemma main_left : P := by ...
-lemma main_right : Q := by ...
-theorem main : P ∧ Q := ⟨main_left, main_right⟩
+-- AFTER
+exact (foo x).bar
 ```
-
-### Rule 2: Extract Large `constructor` Branches (>10 lines)
 
 ```lean
--- BAD: Either branch >10 lines
-theorem foo : A ∧ B := by
-  constructor
-  · -- 15 lines
-  · -- 20 lines
+-- BEFORE
+have hf : Continuous f := by fun_prop
+exact hf.comp hg
 
--- GOOD: Extract both branches
-private lemma foo_fst : A := by -- 15 lines, now independently golfable
-private lemma foo_snd : B := by -- 20 lines, now independently golfable
-theorem foo : A ∧ B := ⟨foo_fst, foo_snd⟩
+-- AFTER
+exact (by fun_prop : Continuous f).comp hg
+-- or even better:
+exact fun_prop |>.comp hg
 ```
 
-### Rule 3: Extract Large Case Branches (>10 lines)
+**Caveat:** `grind` and `omega` are context-sensitive — keep standalone
+`have` blocks when inlining causes timeouts.
+
+### 2. `grind` subsumption (104 examples)
+
+`grind` often subsumes preceding tactics — try deleting what comes before:
 
 ```lean
--- BAD: Any branch >10 lines
-theorem bar : P := by
-  by_cases h : cond
-  · -- 25 lines
-  · -- 30 lines
+-- These all simplify to just `grind`:
+rw [h]; grind          →  grind     -- when h is a local hyp
+congr 1; grind         →  grind
+simp; grind            →  grind
+simp [lemmas] <;> grind →  grind [lemmas]
+rw [ht]; omega         →  grind     -- when ht is a substitution
 
--- GOOD: Extract all branches
-private lemma bar_pos (h : cond) : P := by -- 25 lines
-private lemma bar_neg (h : ¬cond) : P := by -- 30 lines
-theorem bar : P := by
-  by_cases h : cond
-  · exact bar_pos h
-  · exact bar_neg h
+-- grind handles symmetry internally:
+grind [lemma.symm]     →  grind [lemma]
 ```
 
-**The 10-line threshold applies to:**
-- `constructor` branches
-- `by_cases` / `rcases` branches
-- `match` arms
-- `induction` cases
-- Individual `have` blocks
+### 3. `simpa ... using` (86 examples)
 
-## Common Golfing Patterns
-
-### Eliminate Unnecessary `have` Blocks
-
-**Aggressively inline trivial haves.** Consecutive lines of `have h := ...` (no type annotation, just applying a lemma) are a code smell. Only keep `have` where the RHS is a nontrivial proof (e.g., `have h : P := by ...` with actual tactic work).
+When `simp` simplifies the goal enough that the proof finishes with
+`exact h` or `assumption`:
 
 ```lean
--- BAD: consecutive trivial haves
-have h1 := foo x
-have h2 := bar y
-have h3 := baz h1 h2
-exact qux h3
+-- BEFORE
+simp only [mem_inf, orthogonal_toSubmodule_eq]
+exact fun hx ho => inner_self_eq_zero.1 (ho x hx)
 
--- GOOD: inline trivial applications
-exact qux (baz (foo x) (bar y))
-
--- ACCEPTABLE: have with nontrivial proof
-have h : P := by
-  apply complicated_lemma
-  · exact first_step
-  · exact second_step
-exact use_h h
+-- AFTER
+simpa using fun hx ho => inner_self_eq_zero.1 (ho x hx)
 ```
 
-### Use Term Mode for Simple Proofs
+### 4. `fun_prop` for function property proofs (80 examples)
+
+Replaces manual continuity/differentiability/measurability chains:
 
 ```lean
--- Verbose tactic proof
-theorem and_comm : P ∧ Q → Q ∧ P := by
-  intro h
-  constructor
-  · exact h.2
-  · exact h.1
+-- BEFORE
+exact (continuousAt_fst.sub continuousAt_snd.norm).div
+  (continuousAt_fst.sub continuousAt_const) (by linarith)
 
--- Golfed term proof
-theorem and_comm : P ∧ Q → Q ∧ P := fun ⟨hp, hq⟩ => ⟨hq, hp⟩
-
--- Even shorter with And.symm
-theorem and_comm : P ∧ Q → Q ∧ P := And.symm
+-- AFTER
+exact by fun_prop (disch := grind)
 ```
 
-### Chain Applications
+### 5. `gcongr` for inequality congruence (67 examples)
+
+Replaces manual monotonicity reasoning in `calc` blocks:
 
 ```lean
--- Verbose
-theorem foo : A → D := by
-  intro ha
-  have hb := f ha
-  have hc := g hb
-  exact h hc
+-- BEFORE
+calc _ ≤ 2 * (M + ‖f 0‖) * ‖z‖ / (R - ‖z‖) + ‖f 0‖ := by
+  apply add_le_add_right
+  apply div_le_div_of_nonneg_right
+  apply mul_le_mul_of_nonneg_right ...
 
--- Golfed
-theorem foo : A → D := h ∘ g ∘ f
-
--- Or
-theorem foo : A → D := fun ha => h (g (f ha))
+-- AFTER
+calc _ ≤ 2 * (M + ‖f 0‖) * ‖z‖ / (R - ‖z‖) + ‖f 0‖ := by gcongr
 ```
 
-### Use `exact?` and `apply?`
+### 6. `positivity` for positivity goals (60 examples)
 
 ```lean
--- When stuck, use search tactics
-theorem foo : P := by
-  apply?  -- Suggests: exact my_lemma h₁ h₂
-  -- or
-  exact?  -- Searches for exact match
+-- BEFORE
+mul_le_mul_iff_right (show (0 : ℝ) < 2 * π from by linarith [pi_pos])
+
+-- AFTER
+mul_le_mul_iff_right (by positivity)
 ```
 
-### Combine with `<;>`
+### 7. `aesop` for structure fields and simple logic (93 examples)
 
 ```lean
--- Verbose
-theorem foo : P ∧ Q ∧ R := by
-  constructor
-  · exact hp
-  constructor
-  · exact hq
-  · exact hr
+-- BEFORE
+zero' := by intro x; simp [map_zero]
+add' := by intro x y; simp [map_add]
+neg' := by intro x; simp [map_neg]
 
--- Golfed with <;>
-theorem foo : P ∧ Q ∧ R := by
-  refine ⟨?_, ?_, ?_⟩ <;> assumption
+-- AFTER
+zero' := by aesop
+add' := by aesop
+neg' := by aesop
 ```
 
-### Use `_root_` Sparingly
+### 8. `wlog` for symmetric cases (8 examples, high savings)
+
+Eliminates one branch entirely when cases are symmetric:
 
 ```lean
--- Only when necessary to disambiguate
-theorem foo : _root_.id x = x := rfl
+-- BEFORE
+rcases le_or_gt 0 x with h | h
+· <proof for x ≥ 0>
+· <symmetric proof for x < 0>
+
+-- AFTER
+wlog! h : 0 ≤ x
+· simpa [T_eval_neg, abs_mul] using @this n (-x) (by grind) (by grind)
+· exact one_le_eval_T_real n (abs_of_nonneg h) ...
 ```
 
-## Structural Patterns
+### 9. `linear_combination` for algebraic goals with hypotheses
 
-### `obtain` vs `rcases` vs Pattern Matching
+Try on EVERY proof that ends in `ring` or `ring_nf` when hypotheses
+are in context. Closes goals that `ring` can't when hypotheses are needed.
 
 ```lean
--- All equivalent, choose based on readability
-theorem foo (h : ∃ x, P x) : Q := by
-  obtain ⟨x, hx⟩ := h
-  ...
+-- BEFORE
+linear_combination (norm := (push_cast; ring_nf)) h₁ + (n + 2) * h₂
 
-theorem foo (h : ∃ x, P x) : Q := by
-  rcases h with ⟨x, hx⟩
-  ...
-
-theorem foo : (∃ x, P x) → Q
-  | ⟨x, hx⟩ => ...
+-- AFTER (when simpler combination exists)
+linear_combination (norm := (push_cast; ring_nf)) h
 ```
 
-### `refine` for Partial Terms
+### 10. Squeeze bare `simp` in nonterminal position (20 examples)
 
 ```lean
--- Fill in some parts, leave others for tactics
-theorem foo : ∃ x, x > 0 ∧ x < 10 := by
-  refine ⟨5, ?_, ?_⟩
-  · norm_num
-  · norm_num
+-- BEFORE (nonterminal simp — fragile)
+simp
+exact foo
 
--- Even shorter
-theorem foo : ∃ x, x > 0 ∧ x < 10 := ⟨5, by norm_num, by norm_num⟩
+-- AFTER
+simp only [relevant_lemma₁, relevant_lemma₂]
+exact foo
 ```
 
-### `suffices` for Backward Reasoning
+---
 
-```lean
--- Verbose
-theorem foo (h : P → Q) : Q := by
-  have hp : P := ...
-  exact h hp
+## API Shortcuts
 
--- Using suffices
-theorem foo (h : P → Q) : Q := by
-  suffices P by exact h this
-  ...
-```
+| Verbose | Short | When |
+|---------|-------|------|
+| `continuity` / `measurability` | `fun_prop` | Always prefer `fun_prop` |
+| `field_simp` then `ring` | `field_simp; ring` | Denominators + ring eq |
+| `push_cast; ring` | `push_cast; ring` | ℝ→ℂ or ℕ→ℤ cast goals |
+| `apply foo; exact bar` | `exact foo bar` | Direct application |
+| `calc a ≤ b := h1; _ ≤ c := h2` | `le_trans h1 h2` | Two-step calc |
+| `refine ⟨..., ?_, ?_⟩ <;> grind` | — | Close multiple similar goals |
+| `simp only [def] at h ⊢` | — | Replace `unfold + rw` chains |
+| `(by fun_prop : Continuous _).foo` | — | Inline continuity proof |
 
-## Specific Domain Patterns
+---
 
-### Set Theory
-```lean
--- Use ext for set equality
-theorem foo : s ∪ t = t ∪ s := Set.union_comm s t
+## Anti-Patterns (from reviewer feedback)
 
--- Use mem_* lemmas
-theorem bar (h : x ∈ s ∪ t) : x ∈ t ∨ x ∈ s := by
-  simp only [Set.mem_union] at h ⊢
-  exact h.symm
-```
+### Don't do these
 
-### Algebra
-```lean
--- Use ring for polynomial identities
--- Use group for group identities (when available)
--- Use field_simp for field expressions
+| Anti-pattern | Why | Fix |
+|-------------|-----|-----|
+| `by exact term` | No-op tactic wrapper | `:= term` |
+| Squeeze terminal `simp` | Maintenance cost, no benefit | Leave as `simp` |
+| Semicolons in multiline proofs | Banned in mathlib style | Separate lines |
+| `repeat` in proofs | Unpredictable behavior | Explicit steps |
+| Define data in tactic mode | Poor practice | Use term mode |
+| Unfold APIs manually | Fragile | Use named lemmas |
+| `erw` when `rw` works | Heavier than needed | Try `rw` first |
+| Redundant `show` | Goal is already right type | Remove it (60 examples) |
+| Massive `simp only [...]` lists | Hard to maintain | Use `simp` (if terminal) or find better API |
 
-example (a : ℚ) (ha : a ≠ 0) : a / a = 1 := by field_simp
-```
+### Don't use these when better tactics exist
 
-### Analysis - `fun_prop`
+| Don't use | Use instead | When |
+|-----------|-------------|------|
+| `omega` | `lia` | New code (mathlib is migrating) |
+| `continuity` | `fun_prop` | Always |
+| `measurability` | `fun_prop` | Always |
+| Manual `mono` | `gcongr` | Inequality congruence |
+| Manual case splits on decidable props | `decide` | Small computations |
+| `by_contra; push_neg` | `by_contra!` | Always |
 
-**`fun_prop` is the modern, preferred tactic for continuity, differentiability, and measurability:**
+---
 
-```lean
--- Preferred: fun_prop handles most cases
-example : Continuous (fun x => x^2 + 1) := by fun_prop
-example : Differentiable ℝ (fun x => x^2 + 3*x) := by fun_prop
-example : Measurable (fun x => x^2) := by fun_prop
+## Style Notes from Reviewers
 
--- IMPORTANT: fun_prop needs to see the function structure
--- If F is defined elsewhere, unfold it first:
-def F (x : ℝ) := x^2 + 3*x
+- **Dot notation is preferred**: `h.mono_left` over `mono_left h` (frequent reviewer comment)
+- **Use `<|` to avoid trailing parentheses**: `f <| by simp` over `f (by simp)`
+- **`rcases ... with rfl` auto-substitutes**: no need for subsequent `simp [h]`
+- **Register lemmas for automation**: `@[simp]`, `@[grind =]`, `@[fun_prop]`, `@[aesop]`
+- **Prefer `obtain ⟨a, b⟩ :=`** over `have h := ...; h.1, h.2`
+- **Use `convert`** when the goal is close to a known lemma but not exact
 
-example : Continuous F := by
-  simp only [F]  -- unfold so fun_prop can see structure
-  fun_prop
+---
 
--- For composed functions, unfold outer definitions:
-example : Continuous (fun x => F (x + 1)) := by
-  simp only [F]
-  fun_prop
-```
+## What Doesn't Golf Well
 
-**When `fun_prop` fails:**
-1. Check if definitions need unfolding with `simp [MyDef]`
-2. Check if required instances are available
-3. Fall back to explicit lemmas like `Continuous.add`, `Differentiable.mul`
+From reviewing thousands of PRs, these resist compression:
 
-**Legacy tactics (still work but prefer `fun_prop`):**
-```lean
--- These are being replaced by fun_prop
-example : Continuous (fun x => x^2 + 1) := by continuity
-example : Measurable (fun x => x^2) := by measurability
-```
+- **Analysis boilerplate** — integrability/measurability/continuity proofs
+  need new API to simplify further
+- **`grind` limitations** — rarely closes goals with `zpow`, `Even`/`Odd`,
+  or cast arithmetic
+- **Dominated convergence proofs** — each sub-proof (bound, summability,
+  pointwise convergence) is already near-minimal
+- **Modular form proofs** — specialized API doesn't simplify further
 
-## Anti-Patterns to Avoid
+---
 
-### Don't Add Comments to Proofs
+## Minimum Value Filter
 
-```lean
--- Bad: ANY inline comments
-theorem foo : P := by
-  -- Step 1: Show A
-  have hA : A := lemma_a
-  -- Step 2: Use A to get B
-  have hB : B := lemma_b hA
-  -- Step 3: Conclude
-  exact hB
+1-line savings are only worth making if:
+- (a) Zero-risk syntax cleanup (e.g., `by exact` → term), OR
+- (b) They also improve clarity or performance
 
--- Good: no comments, self-documenting through structure
-theorem foo : P := by
-  have hA : A := lemma_a
-  have hB : B := lemma_b hA
-  exact hB
-```
-
-### Golf Aggressively
-
-```lean
--- Good: maximally golfed
-theorem foo : P := by simp only [a, b, c, d, e, f] <;> (try ring) <;> linarith
-
--- Also good: single tactic if possible
-theorem foo : P := by simp [a, b, c]; linarith
-
--- Acceptable but could be shorter
-theorem foo : P := by
-  simp only [a, b, c]
-  ring_nf
-  linarith
-```
-
-**Goal:** Reduce proof to fewest possible lines/tactics. One-liners are ideal.
-
-### Don't Use `decide` for Large Computations
-
-```lean
--- Bad: slow compilation
-example : (List.range 10000).sum = 49995000 := by native_decide
-
--- Better: prove it mathematically
-example : (List.range 10000).sum = 49995000 := by
-  simp only [List.sum_range_id]
-  norm_num
-```
-
-### Avoid Redundant Tactics
-
-```lean
--- Bad: redundant rfl
-theorem foo : a = a := by rfl; rfl
-
--- Good
-theorem foo : a = a := rfl
-```
-
-## Measuring Proof Quality
-
-Good proofs should be:
-1. **Correct** - Obviously
-2. **Short** - Minimize lines and tactics; one-liners are ideal
-3. **Maintainable** - Won't break with mathlib updates
-4. **Efficient** - Compiles in reasonable time
-5. **Comment-free** - No inline comments; use docstrings for documentation
-
-**Brevity is king.** When golfing, the ultimate goal is to reduce proof length. A cryptic one-liner is preferred over a longer, more readable proof. If a proof can be reduced to `by simp`, `by ring`, `by aesop`, or a single `exact`, do it.
-
-## High-Impact Golf Transformations
-
-### Term Mode Conversions
-
-**`by exact` → term mode:**
-```lean
--- Before
-theorem foo : card (s + t) = card s + card t :=
-  Quotient.inductionOn₂ s t length_append
-
--- After (with eta-reduced lambda)
-theorem foo : card (s + t) = card s + card t :=
-  Quotient.inductionOn₂ s t fun _ _ => length_append
-```
-
-**`obtain + exact` → direct:**
-```lean
--- Before
-obtain ⟨a, rfl⟩ := Finset.card_eq_one.mp hs
-exact ⟨a, rfl⟩
-
--- After
-grind
-```
-
-### Powerful Automation Replacements
-
-**Multi-step proofs → `grind`:**
-```lean
--- Before
-simp_rw [isPrimePow_iff_factorization_eq_single, ← Nat.support_factorization,
-  Finsupp.card_support_eq_one', pos_iff_ne_zero]
-
--- After
-grind [Finset.card_eq_zero, primeFactors_eq_empty]
-```
-
-**Case analysis → `grind`:**
-```lean
--- Before
-simp only [mem_support, swap_apply_def, mul_apply, f.injective.eq_iff] at *
-grind
-
--- After (simpler setup)
-intro; grind
-```
-
-**Finset/card proofs → `grind`:**
-```lean
--- Before (multi-line)
-have : 1 < g.support.card := by ...
-obtain ⟨b, c, hb, hc, hbc⟩ := Finset.one_lt_card_iff.mp this
-
--- After
-have : 1 < g.supportᶜ.card := by grind [Finset.card_compl, Nat.card_eq_fintype_card]
-obtain ⟨b, c, hb, hc, hbc⟩ := Finset.one_lt_card_iff.mp this
-```
-
-### Simp Cleanup Patterns
-
-**Trailing commas/noise:**
-```lean
--- Before
-simp only [Function.comp_apply,]
-
--- After
-simp only [Function.comp_apply]
-```
-
-**`fin_cases` + `simp` → `simp_all`:**
-```lean
--- Before
-fun i j h ↦ by fin_cases i <;> fin_cases j <;> simp [E₈] at h ⊢
-
--- After
-rcases this with h | h <;> simp_all [G₂]
-```
-
-### Redundant Code Removal
-
-**Unnecessary setup:**
-```lean
--- Before
-have : x = (fun ε : ℝ => mulExpNegMulSq ε x) 0 := by
-    simp only [mulExpNegMulSq, zero_mul, neg_zero, exp_zero, mul_one]
-  nth_rw 2 [this]
-  apply Continuous.tendsto (Continuous.mul continuous_const (by fun_prop))
-
--- After
-apply Continuous.tendsto (by fun_prop)
-```
-
-**Verbose lambda → point-free:**
-```lean
--- Before
-fun s t ht ↦ h_indep s fun i hi ↦ h_le i (t i) <| ht i hi
-
--- After (if possible)
-fun t1 t2 ht1 ht2 => h_indep t1 t2 ht1 (h32 _ ht2)
-```
-
-## Common Reviewer Suggestions
-
-From real mathlib PR reviews:
-
-1. **Replace manual proofs with automation** - If `grind`, `aesop`, or `simp` can do it, use them
-2. **Eliminate intermediate `have`** - Inline single-use values
-3. **Use `fun_prop`** - Replace `continuity`/`measurability` with `fun_prop`
-4. **Remove redundant setup** - Often continuity/tendsto proofs don't need explicit witnesses
-5. **Prefer term mode** - `by exact h` should be `h`
+Don't churn code for marginal compression.

@@ -65,9 +65,8 @@ cd /path/to/mathlib-quality
 
 | Command | Description |
 |---------|-------------|
-| `/cleanup` | Full file cleanup to mathlib standards |
+| `/cleanup` | Audit + golf (whole file or single declaration) |
 | `/check-style` | Validate code against style rules (non-destructive) |
-| `/golf-proof` | Optimize and shorten proofs |
 | `/decompose-proof` | Break long proofs into helper lemmas |
 | `/split-file` | Split large files (>1500 lines) into focused modules |
 | `/check-mathlib` | Find mathlib equivalents to avoid duplication |
@@ -83,11 +82,11 @@ cd /path/to/mathlib-quality
 # 1. Check style issues (no changes made)
 /check-style MyFile.lean
 
-# 2. Apply automatic fixes
+# 2. Cleanup + golf entire file
 /cleanup MyFile.lean
 
-# 3. Optimize proofs
-/golf-proof theorem_name
+# 3. Or golf a single declaration
+/cleanup MyFile.lean theorem_name
 
 # 4. Final verification before submitting
 /pre-submit MyFile.lean
@@ -174,7 +173,6 @@ mathlib-quality/
 ├── commands/                    # Slash command implementations
 │   ├── cleanup.md
 │   ├── check-style.md
-│   ├── golf-proof.md
 │   ├── decompose-proof.md
 │   ├── split-file.md
 │   ├── check-mathlib.md

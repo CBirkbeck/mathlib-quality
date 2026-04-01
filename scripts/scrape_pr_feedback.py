@@ -119,8 +119,8 @@ def get_merged_prs(limit: int = 1000) -> list[int]:
         page += 1
         time.sleep(0.5)  # Rate limiting
 
-        # Safety limit - 20 pages = 2000 PRs max
-        if page > 20:
+        # Safety limit - 40 pages = 4000 PRs max
+        if page > 40:
             break
 
     return pr_numbers[:limit]
@@ -449,7 +449,7 @@ def main():
 
     # Get PR list
     print("\nFetching merged PR numbers...")
-    pr_numbers = get_merged_prs(limit=1500)  # Increased limit for more suggestions
+    pr_numbers = get_merged_prs(limit=3000)  # Fetch more for broader coverage
 
     # Deduplicate and filter already processed
     pr_numbers = [p for p in dict.fromkeys(pr_numbers) if p not in processed_prs]

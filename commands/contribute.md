@@ -30,7 +30,7 @@ If the file doesn't exist or is empty:
 ```
 No learnings found in `.mathlib-quality/learnings.jsonl`.
 
-Run some commands (/cleanup, /golf-proof, /teach) first to accumulate learnings,
+Run some commands (/cleanup, /teach) first to accumulate learnings,
 then come back to contribute them.
 ```
 
@@ -150,7 +150,7 @@ gh pr create \
 
 ### Source
 - Project: [anonymized identifier]
-- Commands used: cleanup, golf-proof, teach, ...
+- Commands used: cleanup, teach, ...
 - Date range: [first entry timestamp] to [last entry timestamp]
 
 ---

@@ -86,42 +86,97 @@ include it verbatim. Do NOT summarize or abbreviate the rules.
 ```
 You are running /cleanup on [file_path]. This is file [X] of [N] in a project-wide cleanup.
 
-IMPORTANT: This file gets your FULL attention. Do not rush. Do every check on every declaration.
+IMPORTANT: This file gets your FULL attention. Do not rush.
 
 Step 1: Run lean_diagnostic_messages on the file. Print all warnings.
 
 Step 2: Fix the file header (copyright, imports, module docstring).
 
-Step 3: List every declaration with line numbers.
+Step 3: Batch mechanical replacements (show→change, λ→fun, $→<|) with replace_all.
 
-Step 4: For EACH declaration, do the following:
+Step 4: List every declaration with line numbers.
 
-  A. Print the mandatory 15-item audit report:
+Step 5: For EACH declaration, dispatch a dedicated worker agent (one per declaration).
+Each worker gets the full rules below and focuses deeply on finding the cleanest
+possible proof for that ONE declaration. Multiple workers can run in parallel.
 
-  ### Auditing: `decl_name` (lines N-M, K lines)
+Worker prompt for each declaration:
+
+  You are cleaning up a SINGLE Lean 4 declaration in [file_path]: `decl_name` (lines N-M).
+  Give it your full attention. Think deeply about the cleanest, shortest proof possible.
+  The goal is to minimize tactics — ideally find a one-liner or term-mode proof.
+
+  A. Print the audit report (every item must have an answer):
 
   1. LINT: [warnings or "none"]
   2. HAVE SCAN: [list EVERY have — classify as INLINE or KEEP]
   3. SET_OPTION: [any set_option? MUST remove]
-  4. SIMP SQUEEZE: [any bare simp? badly formatted simp only? use simp?]
+  4. SIMP SQUEEZE: [any bare simp? badly formatted simp only?]
   5. NAMING: [OK / rename needed]
-  6. LINE PACKING: [lines breaking too early? use #check as reference]
+  6. LINE PACKING: [lines breaking too early?]
   7. BY PLACEMENT: [violations or "OK"]
-  8. FORMAT: [λ, $, show, indent, empty lines, or "OK"]
+  8. FORMAT: [indent, empty lines, or "OK"]
   9. COMMENTS: [inline comments or "clean"]
   10. DOCSTRING: [action needed or "OK"]
-  11. TERM MODE: [by exact, by rfl, eta, or "none"]
-  12. AUTOMATION: [grind/fun_prop opportunities or "none"]
-  13. VISIBILITY: [private needed or "OK"]
-  14. STRUCTURE: [>30 lines, ∧, branches >10 — attempt fix]
-  15. MATHLIB: [replacement found or "checked, none"]
+  11. VISIBILITY: [private needed or "OK"]
+  12. STRUCTURE: [>30 lines, ∧, branches >10 — attempt fix]
+  13. MATHLIB: [replacement found or "checked, none"]
 
   Issues to fix: [numbered list]
 
-  B. Implement ALL fixes from the report.
-  C. Verify with lean_diagnostic_messages after each declaration.
+  B. Deep golf — apply rules checklist:
 
-Step 5: After all declarations, run lean_diagnostic_messages on the full file.
+  INSTANT WINS (always apply if pattern matches):
+  - `:= by exact term` → `:= term`
+  - `:= by rfl` → `:= rfl`
+  - `rw [h]; exact e` → `rwa [h]`
+  - `simp [...]; exact h` → `simpa [...] using h`
+  - `simp [...]; rfl` → just `simp [...]`
+  - `constructor; exact a; exact b` → `exact ⟨a, b⟩`
+  - `apply f; exact h` → `exact f h`
+  - `by_contra h; push_neg at h` → `by_contra! h`
+  - `fun x => f x` → `f` (eta-reduce)
+  - Single-use `have h := x` → inline x at use site
+  - `apply X; intro y` → `refine X fun y => ?_`
+  - Redundant `show T` → remove
+  - `have h := ...; h.1, h.2` → `obtain ⟨a, b⟩ := ...`
+  - Consecutive `rw [a]; rw [b]` → `rw [a, b]`
+  - Terminal `simp only [...]` → unsqueeze to `simp` (don't squeeze terminal simp!)
+  - Nonterminal bare `simp` → squeeze via `simp?`
+  - Dot notation: `Foo.bar h` → `h.bar`
+  - `f (by simp)` → `f <| by simp`
+
+  AUTOMATION UPGRADES (try each on multi-line blocks, keep if compiles):
+  1. `grind` / `grind [lemmas]` on whole proof
+  2. Delete tactics before `grind` (it subsumes preceding steps)
+  3. `fun_prop` / `fun_prop (disch := grind)` for Continuous/Differentiable/Measurable
+  4. `positivity` for `0 < x`, `0 ≤ x`
+  5. `gcongr` for inequality congruence
+  6. `lia` for Nat/Int arithmetic (preferred over omega)
+  7. `aesop` for logic/membership
+  8. `field_simp; ring` for denominator equalities
+  9. `wlog` for symmetric cases
+  10. `refine ⟨?_, ?_⟩ <;> grind` for multiple similar goals
+
+  CLEANUP:
+  - `erw` → `rw`; `continuity`/`measurability` → `fun_prop`
+  - `omega` → `lia`; `simp_all only` → `simp_all`
+  - Remove `set_option maxHeartbeats` (fix the proof instead)
+
+  STEP BACK AND THINK:
+  After mechanical rules, look at the proof holistically:
+  - Can the ENTIRE proof be one tactic? (grind, simp, aesop, decide)
+  - Is there a better mathlib lemma that makes this trivial?
+  - Is there a term-mode proof shorter than the tactic proof?
+  - Can have blocks be composed into a single expression?
+  - Would a completely different proof strategy be shorter?
+  - Try `exact?` or `apply?` if stuck.
+
+  C. Implement ALL fixes from the audit report.
+  D. Verify with lean_diagnostic_messages.
+  E. Report before/after line counts.
+
+Step 6: After all declarations, run lean_diagnostic_messages on the full file.
   Report: original warnings vs remaining warnings.
 
 [INCLUDE THE FULL ITEM 2 (HAVE SCAN), ITEM 4 (SIMP SQUEEZE), ITEM 6 (LINE PACKING),
@@ -216,4 +271,4 @@ After ALL files are processed:
 ## Reference
 
 - `commands/cleanup.md` — the per-file cleanup procedure (items 2, 3, 4, 6, 14 procedures)
-- `skills/mathlib-quality/agents/declaration-fixer-prompt.md` — agent rules reference
+- `skills/mathlib-quality/references/golfing-rules.md` — full golfing rules checklist

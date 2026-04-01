@@ -39,10 +39,9 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 
 | Command | Description |
 |---------|-------------|
-| `/cleanup` | Full file cleanup to mathlib standards |
+| `/cleanup` | Audit + golf (whole file or single declaration) |
 | `/cleanup-all` | Run /cleanup on every file in the project, tracked file by file |
 | `/check-style` | Validate without making changes |
-| `/golf-proof` | Optimize specific proofs |
 | `/decompose-proof` | Break long proofs into helper lemmas |
 | `/overview` | Project declaration inventory for consolidation analysis |
 | `/check-mathlib` | Find mathlib equivalents to avoid duplication |
@@ -353,7 +352,7 @@ Exceptions (suffixes, like atoms): `_injective`, `_surjective`, `_bijective`, `_
 The skill learns from every use and gets better over time. There are three layers:
 
 ### 1. Automatic Local Capture
-Every command (`/cleanup`, `/golf-proof`, `/check-style`, etc.) automatically records significant learnings to `.mathlib-quality/learnings.jsonl` in your project. This captures:
+Every command (`/cleanup`, `/check-style`, etc.) automatically records significant learnings to `.mathlib-quality/learnings.jsonl` in your project. This captures:
 - Proof golfing patterns that worked (before/after code)
 - Style corrections applied
 - Mathlib lemmas discovered that replaced custom code
@@ -388,7 +387,7 @@ Use `/teach` to explicitly record project-specific patterns:
 4. **Decompose**: Run `/decompose-proof` on files with long proofs.
 5. **Final check**: Run `/pre-submit` before creating PR.
 
-**For quick single-proof golfing**: Use `/golf-proof [theorem_name]`.
+**For quick single-proof golfing**: Use `/cleanup file.lean theorem_name`.
 
 ### When Handling PR Feedback
 

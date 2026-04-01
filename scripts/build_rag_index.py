@@ -223,6 +223,11 @@ def main():
         'proof_golf_feedback.json',
         'style_feedback.json',
         'general_feedback.json',
+        'api_design_feedback.json',
+        'naming_feedback.json',
+        'imports_feedback.json',
+        'documentation_feedback.json',
+        'performance_feedback.json',
     ]
 
     for filename in feedback_files:

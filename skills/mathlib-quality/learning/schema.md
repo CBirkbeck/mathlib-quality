@@ -8,7 +8,7 @@ All learning entries are stored as JSONL (one JSON object per line) in `.mathlib
 {
   "id": "string (short unique identifier, e.g. 'abc123')",
   "timestamp": "string (ISO 8601, e.g. '2026-02-28T14:30:00Z')",
-  "command": "string (cleanup | check-style | golf-proof | decompose-proof | split-file | pre-submit | fix-pr-feedback | check-mathlib | teach)",
+  "command": "string (cleanup | check-style | decompose-proof | split-file | pre-submit | fix-pr-feedback | check-mathlib | teach)",
   "type": "string (golf_pattern | style_correction | naming_fix | decomposition | file_split | mathlib_discovery | failed_pattern | user_teaching)",
   "before_code": "string (original lean code, max 500 chars, optional)",
   "after_code": "string (resulting lean code, max 500 chars, optional)",
@@ -34,7 +34,7 @@ A short unique identifier. Generated at write time (e.g., first 8 chars of a UUI
 
 | Type | Description | Typical Commands |
 |------|-------------|------------------|
-| `golf_pattern` | Proof was shortened or simplified | golf-proof, cleanup |
+| `golf_pattern` | Proof was shortened or simplified | cleanup |
 | `style_correction` | Formatting or style fix applied | check-style, cleanup |
 | `naming_fix` | Declaration renamed to follow conventions | cleanup, fix-pr-feedback |
 | `decomposition` | Long proof was broken into helpers | decompose-proof |
