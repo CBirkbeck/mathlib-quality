@@ -15,14 +15,183 @@ project planning to proof execution to periodic cleanup.
 ## Usage
 
 ```
-/prove                              # Start planning a new development
-/prove --continue                   # Resume from existing tickets
+/prove                              # Auto-detect: new, resume, or takeover
+/prove --continue                   # Resume from existing tickets (skip audit)
 /prove --status                     # Show current ticket board
+/prove --takeover                   # Force takeover mode on existing code
 ```
 
 ---
 
-## Phase 1: Project Planning (Super Agent)
+## Mode Detection
+
+On startup, `/prove` determines the mode automatically:
+
+1. Check for `.mathlib-quality/tickets.md` — if it exists, this is a **resume**
+2. Check for `.lean` files with `sorry` — if found without tickets, this is a **takeover**
+3. Otherwise, this is a **new project** — go to Phase 1
+
+For `--continue`: skip mode detection, go straight to resume.
+For `--status`: just print the ticket board and exit.
+
+---
+
+## Resume Mode
+
+When tickets already exist (from a previous `/prove` session or another agent):
+
+### R1: Deep Scan
+
+Thoroughly assess the current state of the project:
+
+1. **Read the plan** — `.mathlib-quality/plan.md`
+2. **Read the ticket board** — `.mathlib-quality/tickets.md`
+3. **Scan every `.lean` file** in the project:
+   - Count remaining `sorry` declarations
+   - Run `lean_diagnostic_messages` on each file — note errors and warnings
+   - List every definition, lemma, and theorem with line counts
+   - Check what compiles and what doesn't
+4. **Cross-reference tickets with reality:**
+   - Are tickets marked `done` actually done? (no `sorry`, compiles)
+   - Are tickets marked `in_progress` still being worked on or abandoned?
+   - Are there declarations in the code not covered by any ticket?
+   - Are there tickets for declarations that no longer exist?
+5. **Check mathlib** — have any of our definitions/lemmas been added to
+   mathlib since the plan was made? (especially after a mathlib bump)
+
+### R2: Status Report
+
+Present findings to the user:
+
+```markdown
+## Project Status: [Title]
+
+### Progress
+| Status | Count |
+|--------|-------|
+| Done | D |
+| In Progress | P |
+| Open | O |
+| Blocked | B |
+| Stale (needs update) | S |
+
+### Current State
+- Files: N .lean files, M compiling, K with errors
+- Sorries remaining: X total across Y files
+- Errors: [list any compilation errors]
+
+### Discrepancies Found
+- [T005] marked done but `fooBar_comm` still has sorry on line 45
+- [T008] marked in_progress but file hasn't changed since [date]
+- `helper_lemma` on Defs.lean:120 exists but has no ticket
+- [T012] depends on [T009] which was expanded — dependency may be stale
+
+### Tickets Needing Update
+- [T005]: should be reopened (sorry remains)
+- [T008]: likely abandoned — should be reset to open
+- NEW: need ticket for `helper_lemma` (uncovered declaration)
+```
+
+### R3: Update Plan with User
+
+Discuss findings with the user:
+
+```
+## Proposed Updates
+
+1. Reopen [T005] — sorry still present
+2. Reset [T008] to open — appears abandoned
+3. Add new ticket for `helper_lemma`
+4. [T012] dependency chain updated after [T009] expansion
+5. Remove [T014] — `bar_mono` now exists in mathlib (added in recent bump)
+
+Shall I apply these updates? Anything else to change?
+```
+
+Wait for user confirmation, then update `.mathlib-quality/tickets.md`.
+
+### R4: Continue Execution
+
+After updating, proceed to Phase 2 (Execution) — pick up the next available ticket.
+
+---
+
+## Takeover Mode
+
+When there's existing Lean code but no ticket system (e.g., taking over a project
+started manually, by another agent, or from a template):
+
+### T1: Full Project Audit
+
+Scan everything thoroughly:
+
+1. **Read every `.lean` file** — understand the mathematical content
+   - What definitions exist? What are they doing mathematically?
+   - What theorems are stated? Which are proved, which have `sorry`?
+   - What's the dependency structure between files?
+   - What imports from mathlib are used?
+2. **Read any documentation** — `README.md`, docstrings, comments
+3. **Check compilation** — `lean_diagnostic_messages` on each file, then `lake build`
+4. **Assess quality:**
+   - Naming conventions followed?
+   - API completeness for each definition?
+   - Generality level appropriate?
+   - Any one-off definitions that should be inlined or given API?
+
+### T2: Present Understanding to User
+
+```markdown
+## Project Takeover: [directory name]
+
+### What I Found
+- N .lean files with M definitions, L lemmas/theorems
+- X sorry declarations remaining
+- K compilation errors
+
+### Mathematical Content
+[1-2 paragraph summary of what this project is about mathematically,
+based on reading the code and any documentation]
+
+### File Structure
+| File | Defs | Lemmas | Sorries | Compiles? |
+|------|------|--------|---------|-----------|
+| Defs.lean | 5 | 12 | 0 | ✓ |
+| Basic.lean | 0 | 8 | 3 | ✗ (depends on sorry) |
+| Main.lean | 0 | 2 | 5 | ✗ |
+
+### Quality Assessment
+- Naming: [mostly good / needs fixes — list]
+- Generality: [appropriate / could be more general — list]
+- API completeness: [good / gaps — list]
+- One-off definitions: [none / list ones that need API or inlining]
+- Mathlib overlap: [none found / list definitions that duplicate mathlib]
+
+### Questions for You
+1. Is my understanding of the mathematical goal correct?
+2. Are there references I should follow for the remaining proofs?
+3. Any specific approach you want for [specific sorry]?
+4. Should I generalize [specific definition] from X to Y?
+```
+
+### T3: Create Plan and Tickets
+
+After the user confirms understanding:
+
+1. Create `.mathlib-quality/plan.md` capturing the project state and goals
+2. Create `.mathlib-quality/tickets.md` with tickets for:
+   - Each remaining `sorry` (with proof approach if discernible)
+   - Each quality issue found (naming, generality, API gaps)
+   - CLEANUP tickets for files with quality issues
+   - Any structural work needed (file splits, import cleanup)
+3. Get user approval on the ticket board
+
+### T4: Continue to Execution
+
+Proceed to Phase 2 (Execution).
+
+---
+
+## Phase 1: New Project Planning (Super Agent)
 
 The planner runs ONCE at the start to create the full development plan. This is the
 most important phase — a good plan prevents wasted work.
