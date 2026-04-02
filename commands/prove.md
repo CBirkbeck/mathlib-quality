@@ -421,6 +421,52 @@ For each `sorry`, run cycles until filled:
      new tickets** for the helper lemma and its API. Do not just prove
      it inline as a one-off `have`.
 
+#### Proof Length Check (ENFORCED — run after every proof is filled)
+
+**No proof may exceed 50 lines.** Count the lines after filling each sorry.
+If a proof exceeds 50 lines, you MUST decompose it before moving on.
+
+**Decomposition procedure:**
+
+1. **Identify extractable blocks** — look for:
+   - `have` blocks with `by` proofs longer than 8 lines
+   - Case branches (`by_cases`, `rcases`, `match`) longer than 10 lines
+   - `constructor` branches longer than 10 lines
+   - `calc` chains longer than 15 lines
+   - Any self-contained reasoning step that could be stated independently
+
+2. **Extract as helper lemmas** — for each block:
+   - State it as a separate `private lemma` or `lemma` above the theorem
+   - Name it properly: `mainTheorem_aux_description` or a standalone name
+     if it's reusable
+   - Give it the most general type signature possible
+   - If it's reusable beyond this file, make it public and add API tickets
+
+3. **Rebuild the main proof** — the main theorem should read as a clear
+   outline, composing the helpers:
+   ```lean
+   theorem mainResult : P := by
+     have h1 := helper_step1 ...
+     have h2 := helper_step2 h1 ...
+     exact final_composition h1 h2
+   ```
+   **Target: main theorems should be 5-15 lines**, reading like a proof sketch.
+
+4. **Add tickets for extracted helpers** — if any helper is substantial
+   (>5 lines, reusable), add it to the ticket board with proper naming
+   and API. Don't leave unnamed `private` helpers that could be useful API.
+
+5. **Verify** — `lean_diagnostic_messages` on all modified declarations.
+
+**Why this matters:** Monolithic proofs are:
+- Hard to maintain (one mathlib change breaks everything)
+- Hard to parallelize (other workers can't help with sub-parts)
+- Hard to review (reviewers reject walls of tactics)
+- Hard to reuse (helper results buried inside a proof are invisible)
+
+**The 50-line rule applies to the PROOF BODY only** (from `:= by` to the end),
+not the statement. A 10-line statement with a 5-line proof is fine.
+
 **Generality rule:** If you find yourself proving a `have` block that's
 more than 5 lines, ask: should this be its own lemma? If it's reusable,
 extract it as a new ticket with proper naming and API.
@@ -428,7 +474,9 @@ extract it as a new ticket with proper naming and API.
 #### Verify
 1. `lean_diagnostic_messages` — no errors
 2. Check all `sorry` stubs are filled for this ticket
-3. Run through the /cleanup audit mentally:
+3. **Proof length check** — every proof must be ≤50 lines. If any proof
+   exceeds this, run the decomposition procedure above before continuing.
+4. Run through the /cleanup audit mentally:
    - No `by exact` wrappers
    - No single-use `have` blocks
    - Terminal simp not squeezed
