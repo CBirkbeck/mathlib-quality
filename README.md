@@ -65,6 +65,7 @@ cd /path/to/mathlib-quality
 
 | Command | Description |
 |---------|-------------|
+| `/prove` | Plan and prove a mathematical development with ticket management |
 | `/cleanup` | Audit + golf (whole file or single declaration) |
 | `/check-style` | Validate code against style rules (non-destructive) |
 | `/decompose-proof` | Break long proofs into helper lemmas |
@@ -75,6 +76,19 @@ cd /path/to/mathlib-quality
 | `/setup-rag` | Configure the RAG MCP server |
 
 ## Usage
+
+### Developing New Mathematics
+
+```
+# Plan and execute a full development
+/prove
+
+# Resume from existing tickets
+/prove --continue
+
+# Check ticket status
+/prove --status
+```
 
 ### Preparing Code for a PR
 
