@@ -473,14 +473,20 @@ extract it as a new ticket with proper naming and API.
 
 #### Verify
 1. `lean_diagnostic_messages` — no errors
-2. Check all `sorry` stubs are filled for this ticket
-3. **Proof length check** — every proof must be ≤50 lines. If any proof
+2. **No sorry remaining** — check all `sorry` stubs are filled. Grep the file
+   for `sorry`. If ANY remain, the ticket is not done.
+3. **No new axioms** — add `#print axioms decl_name` after each key declaration,
+   run `lean_diagnostic_messages`, check only `propext`, `Quot.sound`, and
+   `Classical.choice` appear. If `sorryAx` appears, a sorry is still hiding
+   somewhere (possibly in a dependency). Find and fill it.
+4. **Proof length check** — every proof must be ≤50 lines. If any proof
    exceeds this, run the decomposition procedure above before continuing.
-4. Run through the /cleanup audit mentally:
+5. Run through the /cleanup audit mentally:
    - No `by exact` wrappers
    - No single-use `have` blocks
    - Terminal simp not squeezed
    - Proper naming
+6. **Remove `#print axioms` lines** before committing — they were just for checking.
 
 ### 2c: Complete the Ticket
 
@@ -509,8 +515,13 @@ After all tickets are done:
 
 1. Run `lean_diagnostic_messages` on every file
 2. Run `lake build` to verify the full project
-3. Check for any remaining `sorry`
-4. Review the API: is it complete? Would a mathlib reviewer accept this?
+3. **Grep for `sorry`** across all files — none must remain
+4. **Check axioms** on every key theorem: `#print axioms theorem_name`.
+   Only `propext`, `Quot.sound`, `Classical.choice` are acceptable.
+   If `sorryAx` appears anywhere, find and fix the source.
+5. **Grep for `axiom` and `constant`** declarations — none should exist
+   unless explicitly discussed with the user
+6. Review the API: is it complete? Would a mathlib reviewer accept this?
 
 ### 3b: Final Cleanup
 
@@ -540,8 +551,10 @@ Run `/cleanup` on every file one more time.
 - [Summary of generality decisions made]
 
 ### Ready for PR?
-- [ ] All files compile
-- [ ] No sorry remaining
+- [ ] All files compile (`lake build` clean)
+- [ ] No `sorry` remaining (grep confirms)
+- [ ] No new axioms (`#print axioms` clean on all key theorems)
+- [ ] No `axiom` or `constant` declarations
 - [ ] /cleanup run on all files
 - [ ] Naming follows mathlib conventions
 - [ ] API is complete for all new definitions
@@ -599,7 +612,31 @@ Before creating ANY definition or lemma:
 3. If something close exists: generalize from it
 4. Only create new things when genuinely necessary
 
-### 4. Workers Escalate, Never Shortcut
+### 4. No Placeholders, No New Axioms
+
+**Never leave `sorry` as a placeholder.** Every declaration must be fully proved
+before a ticket is marked done. If you can't prove something:
+- Escalate by adding tickets (Principle 5)
+- Mark the ticket as `blocked` with a clear reason
+- Do NOT leave `sorry` in committed code
+
+**Never introduce new axioms.** This means:
+- No `axiom` declarations
+- No `constant` declarations (these are axioms in disguise)
+- No `Decidable.em` unless the proof genuinely requires classical logic
+  and is in a file that already uses it
+- No `sorry` — this is an axiom (`sorryAx`)
+- No `native_decide` on propositions that aren't actually decidable
+
+**Enforcement:** After every `lake build`, run `#print axioms mainTheorem` on
+each key theorem. The only acceptable axioms are:
+- `propext` (propositional extensionality)
+- `Quot.sound` (quotient soundness)
+- `Classical.choice` (if the proof genuinely needs classical logic)
+
+If ANY other axiom appears (especially `sorryAx`), the ticket is NOT done.
+
+### 5. Workers Escalate, Never Shortcut
 
 When a worker discovers a ticket needs more work than expected:
 1. **Do NOT take shortcuts** (e.g., adding `sorry`, using weaker hypotheses,
@@ -611,7 +648,7 @@ When a worker discovers a ticket needs more work than expected:
    - Identify what can be parallelized
 3. Continue with what CAN be done, leave the rest for other workers
 
-### 5. Periodic Cleanup
+### 6. Periodic Cleanup
 
 Cleanup tickets are inserted every 3-5 proof tickets. They ensure:
 - Code stays at mathlib quality throughout development
