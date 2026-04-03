@@ -39,7 +39,7 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 
 | Command | Description |
 |---------|-------------|
-| `/prove` | Plan and prove a mathematical development with ticket management |
+| `/develop` | Plan and prove a mathematical development with ticket management |
 | `/cleanup` | Audit + golf (whole file or single declaration) |
 | `/cleanup-all` | Run /cleanup on every file in the project, tracked file by file |
 | `/check-style` | Validate without making changes |
@@ -382,8 +382,8 @@ Use `/teach` to explicitly record project-specific patterns:
 
 ### When Developing New Mathematics
 
-Use `/prove` to plan and execute a mathematical development:
-1. **Plan**: `/prove` creates a comprehensive plan with ticket board
+Use `/develop` to plan and execute a mathematical development:
+1. **Plan**: `/develop` creates a comprehensive plan with ticket board
 2. **Execute**: Workers pick up tickets, prove lemmas, build API
 3. **Cleanup**: Periodic `/cleanup` tickets keep code at mathlib quality
 4. **Review**: Final review ensures everything compiles and is PR-ready

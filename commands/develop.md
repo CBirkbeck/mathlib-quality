@@ -1,31 +1,31 @@
 ---
-name: prove
-description: Plan and prove a mathematical development with ticket-based project management
+name: develop
+description: Plan and execute a mathematical development with ticket-based project management
 ---
 
-# /prove - Mathematical Development Engine
+# /develop - Mathematical Development Engine
 
 Plan and execute a mathematical development project. Creates a comprehensive plan,
 manages work via a ticket system, dispatches focused worker agents, and builds clean
 API along the way.
 
-**This is the default skill for proving new theorems.** It handles everything from
-project planning to proof execution to periodic cleanup.
+**This is the default skill for developing new mathematics.** It handles everything
+from project planning to proof execution to periodic cleanup.
 
 ## Usage
 
 ```
-/prove                              # Auto-detect: new, resume, or takeover
-/prove --continue                   # Resume from existing tickets (skip audit)
-/prove --status                     # Show current ticket board
-/prove --takeover                   # Force takeover mode on existing code
+/develop                            # Auto-detect: new, resume, or takeover
+/develop --continue                 # Resume from existing tickets (skip audit)
+/develop --status                   # Show current ticket board
+/develop --takeover                 # Force takeover mode on existing code
 ```
 
 ---
 
 ## Mode Detection
 
-On startup, `/prove` determines the mode automatically:
+On startup, `/develop` determines the mode automatically:
 
 1. Check for `.mathlib-quality/tickets.md` — if it exists, this is a **resume**
 2. Check for `.lean` files with `sorry` — if found without tickets, this is a **takeover**
@@ -38,7 +38,7 @@ For `--status`: just print the ticket board and exit.
 
 ## Resume Mode
 
-When tickets already exist (from a previous `/prove` session or another agent):
+When tickets already exist (from a previous `/develop` session or another agent):
 
 ### R1: Deep Scan
 

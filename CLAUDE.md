@@ -61,7 +61,7 @@ A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up
 | `scripts/style_checker.sh` | Local Lean file style validation |
 
 ## Commands Available
-- `/prove` - Plan and prove a mathematical development with ticket-based project management
+- `/develop` - Plan and execute a mathematical development with ticket-based project management
 - `/cleanup` - Audit + golf declarations (whole file or single declaration with golfing rules checklist)
 - `/cleanup-all` - Run /cleanup on every file in the project, one at a time, with progress tracking
 - `/decompose-proof` - Break long proofs into helpers (two-pass: analysis with DECOMPOSE plans → parallel agent decomposition)

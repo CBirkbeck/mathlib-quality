@@ -65,7 +65,7 @@ cd /path/to/mathlib-quality
 
 | Command | Description |
 |---------|-------------|
-| `/prove` | Plan and prove a mathematical development with ticket management |
+| `/develop` | Plan and prove a mathematical development with ticket management |
 | `/cleanup` | Audit + golf (whole file or single declaration) |
 | `/check-style` | Validate code against style rules (non-destructive) |
 | `/decompose-proof` | Break long proofs into helper lemmas |
@@ -81,13 +81,13 @@ cd /path/to/mathlib-quality
 
 ```
 # Plan and execute a full development
-/prove
+/develop
 
 # Resume from existing tickets
-/prove --continue
+/develop --continue
 
 # Check ticket status
-/prove --status
+/develop --status
 ```
 
 ### Preparing Code for a PR
