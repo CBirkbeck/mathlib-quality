@@ -4,7 +4,7 @@
 A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up to mathlib standards before PR submission.
 
 ## Current Status
-**Version:** 0.1.0 (Initial commit)
+**Version:** 0.11.0
 
 ### Completed
 - Plugin architecture with 5 commands defined in `commands/`
@@ -71,6 +71,7 @@ A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up
 - `/pre-submit` - Pre-PR submission checklist
 - `/fix-pr-feedback` - Address reviewer comments
 - `/bump-mathlib` - Bump mathlib version and fix resulting breakage
+- `/setup-chatgpt` - Set up ChatGPT MCP server for mathematical second opinions (requires ChatGPT desktop app + Plus/Pro)
 
 ## Next Steps
 1. ~~Run `scrape_pr_feedback.py` to collect real PR review data from mathlib4~~ ✅

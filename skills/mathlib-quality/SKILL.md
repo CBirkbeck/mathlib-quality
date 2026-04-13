@@ -51,6 +51,7 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | `/bump-mathlib` | Bump mathlib version and fix resulting breakage |
 | `/fix-pr-feedback` | Address reviewer comments |
 | `/setup-rag` | Set up RAG MCP server for PR feedback search |
+| `/setup-chatgpt` | Set up ChatGPT MCP server for mathematical second opinions |
 | `/teach` | Teach the skill a project-specific pattern or convention |
 | `/contribute` | Contribute local learnings back to the repo via PR |
 | `/integrate-learnings` | (Maintainers) Process community contributions into reference docs |
@@ -58,6 +59,8 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 ## First-Time Setup
 
 For enhanced suggestions based on 4,600+ real mathlib PR reviews, run `/setup-rag` to configure the RAG MCP server. This gives Claude Code access to searchable PR feedback examples for golfing and style.
+
+For mathematical second opinions from ChatGPT during formalization work, run `/setup-chatgpt`. This creates an MCP server that lets Claude Code query ChatGPT via the Codex CLI for proof strategies, Mathlib API hints, or verification of mathematical claims. Requires the ChatGPT desktop app and a Plus/Pro subscription.
 
 ## Core Style Rules (Quick Reference)
 

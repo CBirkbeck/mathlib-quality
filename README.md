@@ -65,12 +65,25 @@ The plugin includes a searchable index of PR review examples. To enable:
 
 ### Optional: ChatGPT MCP Server
 
-Get mathematical second opinions from ChatGPT during Lean 4 work. Requires
-the ChatGPT desktop app (Codex CLI) and a ChatGPT Plus/Pro subscription:
+Get mathematical second opinions from ChatGPT during Lean 4 work. After setup,
+Claude Code gains an `ask_chatgpt_math` tool for verifying claims, finding
+Mathlib API hints, or getting unstuck on formalization problems.
+
+**Requirements:**
+- [ChatGPT desktop app](https://chatgpt.com/download) (provides the Codex CLI binary)
+- ChatGPT Plus/Pro subscription
+- Node.js >= 18
+
+Run the setup command and it will walk you through everything:
 
 ```
 /setup-chatgpt
 ```
+
+The command locates the Codex CLI, creates an MCP server at
+`~/.claude/mcp-servers/chatgpt-math/`, installs dependencies, and adds the
+server to your project's `.mcp.json`. Restart Claude Code after setup to
+activate the new tool.
 
 ## Commands
 
@@ -219,7 +232,8 @@ mathlib-quality/
 │   ├── check-mathlib.md
 │   ├── pre-submit.md
 │   ├── fix-pr-feedback.md
-│   └── setup-rag.md
+│   ├── setup-rag.md
+│   └── setup-chatgpt.md         # ChatGPT MCP server setup
 ├── skills/mathlib-quality/
 │   ├── SKILL.md                 # Main skill definition
 │   └── references/              # Style, naming, golfing rules, proof patterns

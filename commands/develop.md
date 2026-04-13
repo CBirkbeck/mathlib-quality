@@ -23,6 +23,24 @@ from project planning to proof execution to periodic cleanup.
 
 ---
 
+## ChatGPT Second Opinion (Optional)
+
+If the `chatgpt-math` MCP server is configured (check for `ask_chatgpt_math` tool),
+`/develop` will consult ChatGPT at key moments for mathematical second opinions.
+This is **not required** — the command works without it — but catches errors earlier:
+
+- **Plan validation**: after drafting the plan, ask ChatGPT if the approach is sound
+- **Periodic checks**: every ~3 tickets, verify the overall direction is correct
+- **Stuck escalation**: when stuck on a proof, get a second opinion before giving up
+
+All ChatGPT questions must be **fully self-contained** — ChatGPT has no access to
+local files. Include all definitions, theorem statements, and reference citations
+inline in the question.
+
+If `ask_chatgpt_math` is not available, skip all ChatGPT steps silently.
+
+---
+
 ## Mode Detection
 
 On startup, `/develop` determines the mode automatically:
@@ -346,7 +364,39 @@ Create the ticket board at `.mathlib-quality/tickets.md`:
 - Include mathlib check result
 - Include precise naming following mathlib conventions
 
-### 1g: Get User Approval
+### 1g: Validate Plan with ChatGPT (if available)
+
+Before showing the plan to the user, ask ChatGPT for a sanity check. Call
+`ask_chatgpt_math` with a self-contained question:
+
+```
+I am planning a Lean 4 / Mathlib formalization project. Please review my plan
+for mathematical soundness.
+
+## Goal
+[Main theorem statement in natural language AND in Lean]
+
+## References
+[Explicit list: paper titles, theorem/section numbers, textbook chapters]
+
+## Planned Approach
+[Dependency graph: which definitions, which lemmas, in what order]
+
+## Key Decisions
+- [Generality choices: e.g., "Stating over CommMonoid rather than CommRing because..."]
+- [Definitions we plan to create vs. what we found in Mathlib]
+
+## Questions
+1. Is the overall proof strategy sound?
+2. Are we missing any key intermediate lemmas?
+3. Are our generality choices appropriate?
+4. Do you see any issues with the dependency ordering?
+```
+
+If ChatGPT flags issues, revise the plan before presenting to the user.
+Note any ChatGPT suggestions in the plan for transparency.
+
+### 1h: Get User Approval
 
 Show the plan and ticket board to the user. Ask:
 ```
@@ -413,13 +463,98 @@ For each `sorry`, run cycles until filled:
    - Try automation: `grind`, `simp`, `aesop`, `fun_prop`, `omega`
    - Try a different proof strategy
    - Try breaking into sub-goals with `have` or `suffices`
-7. If stuck after 3 attempts on the same sorry:
+7. If stuck after 3 attempts on the same sorry, escalate through tiers:
+
+   **Tier 1: Self-reflection**
    - Step back and reconsider the approach
    - Is the statement correct? Is it general enough?
    - Would a helper lemma make this easier?
    - If a helper lemma is needed: **go back to the ticket board and add
      new tickets** for the helper lemma and its API. Do not just prove
      it inline as a one-off `have`.
+
+   **Tier 2: Consult ChatGPT** (if `ask_chatgpt_math` available)
+
+   If self-reflection doesn't unstick you, formulate a **self-contained**
+   question for `ask_chatgpt_math`. The question MUST include:
+
+   ```
+   I am formalizing mathematics in Lean 4 / Mathlib and I am stuck on a proof.
+
+   ## References
+   [Explicit sources: "Following [Author, Title], Theorem X.Y" or
+   "Based on Section N of [Textbook]" — name every source being used]
+
+   ## Mathematical Context
+   [What we are building, in plain mathematics. Include all relevant
+   definitions — ChatGPT cannot see our files.]
+
+   ## Lean Statement
+   [Copy-paste the exact theorem/lemma statement from the .lean file]
+
+   ## Current Proof State
+   [Copy-paste the goal state from lean_goal]
+
+   ## What I Have Tried
+   - Approach 1: [what and why it failed]
+   - Approach 2: [what and why it failed]
+   - Approach 3: [what and why it failed]
+
+   ## Specific Question
+   [What exactly do you need help with? A proof strategy? A missing
+   lemma? Is the statement even correct?]
+   ```
+
+   Try ChatGPT's suggestion. If it works, continue. If not, move to Tier 3.
+
+   **Tier 3: Prepare question for human reviewer**
+
+   If still stuck after ChatGPT consultation, prepare a full-context
+   question for a human mathematician/reviewer. This person has **NO access
+   to the project files** but knows the mathematics and the references.
+
+   Write the question to the ticket's `blocked` annotation in
+   `.mathlib-quality/tickets.md`:
+
+   ```markdown
+   **BLOCKED — needs human input**
+
+   ## Background
+   [1-2 paragraphs: what this project is about mathematically,
+   written for someone encountering it fresh]
+
+   ## References Being Used
+   - [Paper/textbook 1]: [Author, Title, Year] — specifically Theorem X.Y / Section N
+   - [Paper/textbook 2]: [Author, Title, Year] — specifically Definition A.B
+   - [Mathlib source]: [Specific Mathlib file/declaration if relevant]
+   [List ALL references. Be explicit about theorem/section numbers.]
+
+   ## The Theorem (natural language)
+   [State the result in plain mathematical language]
+
+   ## The Theorem (Lean 4)
+   ```lean
+   [Copy-paste the exact Lean statement]
+   ```
+
+   ## Current Proof State
+   ```lean
+   [Copy-paste the goal state]
+   ```
+
+   ## Approaches Tried
+   1. [Approach + why it failed]
+   2. [Approach + why it failed]
+   3. [Approach + why it failed]
+   4. ChatGPT suggested: [summary] — this failed because: [reason]
+
+   ## Specific Help Needed
+   [Precisely what you need: a proof strategy? Is the statement wrong?
+   Is a different formulation needed? Is there a reference we're missing?]
+   ```
+
+   Mark the ticket as `blocked`, then **move on to the next available ticket**.
+   Do not stay stuck — there is always other work to do.
 
 #### Proof Length Check (ENFORCED — run after every proof is filled)
 
@@ -497,7 +632,42 @@ extract it as a new ticket with proper naming and API.
    - Note which new tickets can be parallelized
 3. Commit with a clear message: `feat: [ticket ID] description`
 
-### 2d: Cleanup Tickets
+### 2d: Periodic Approach Check (if `ask_chatgpt_math` available)
+
+Every **3 completed tickets** (or when transitioning to a new section of the
+dependency graph), pause and ask ChatGPT to verify the overall approach:
+
+```
+I am partway through a Lean 4 / Mathlib formalization. Please check that
+my approach is still on the right track.
+
+## Project Goal
+[Main theorem, in natural language]
+
+## References
+[Explicit list of all sources being followed]
+
+## What Has Been Proved So Far
+[List completed definitions and lemmas with brief descriptions]
+
+## What I Am About to Prove Next
+[Next 2-3 tickets, with their statements]
+
+## Questions
+1. Does the work so far look correct and on track?
+2. Is the approach to the next steps sound?
+3. Am I proving the right intermediate results, or should I restructure?
+4. Any mathematical concerns with the formalization strategy?
+```
+
+If ChatGPT raises concerns:
+- If it's a minor course correction: adjust the plan and continue
+- If it's a fundamental issue: stop, update `.mathlib-quality/plan.md`,
+  discuss with the user before continuing
+
+This check is cheap insurance against investing many tickets in a wrong direction.
+
+### 2e: Cleanup Tickets
 
 When a CLEANUP ticket comes up:
 1. Run `/cleanup` on the specified file
