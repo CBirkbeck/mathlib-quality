@@ -63,6 +63,15 @@ The plugin includes a searchable index of PR review examples. To enable:
 /setup-rag
 ```
 
+### Optional: ChatGPT MCP Server
+
+Get mathematical second opinions from ChatGPT during Lean 4 work. Requires
+the ChatGPT desktop app (Codex CLI) and a ChatGPT Plus/Pro subscription:
+
+```
+/setup-chatgpt
+```
+
 ## Commands
 
 | Command | Description |
@@ -77,6 +86,7 @@ The plugin includes a searchable index of PR review examples. To enable:
 | `/fix-pr-feedback` | Address PR reviewer comments |
 | `/bump-mathlib` | Bump mathlib version and fix breakage |
 | `/setup-rag` | Configure the RAG MCP server |
+| `/setup-chatgpt` | Configure ChatGPT MCP server for mathematical second opinions |
 
 ## Usage
 
