@@ -43,6 +43,14 @@ Audit and golf declarations against mathlib standards:
 /plugin install mathlib-quality
 ```
 
+Also install the [lean4-skills](https://github.com/cameronfreer/lean4-skills) plugin,
+which provides the Lean 4 theorem proving workflows that mathlib-quality builds on:
+
+```
+/plugin marketplace add cameronfreer/lean4-skills
+/plugin install lean4
+```
+
 ### Option 2: Local Clone
 
 ```bash
@@ -54,6 +62,34 @@ Then in Claude Code:
 ```
 /plugin marketplace add /path/to/mathlib-quality
 ```
+
+### Lean LSP MCP Server (Highly Recommended)
+
+Nearly all commands (`/develop`, `/cleanup`, `/decompose-proof`, etc.) depend on
+the [lean-lsp-mcp](https://github.com/oOo0oOo/lean-lsp-mcp) server for sub-second
+feedback instead of 30+ second `lake build` cycles. It provides tools like
+`lean_goal`, `lean_diagnostic_messages`, `lean_multi_attempt`, `lean_loogle`, and more.
+
+**Prerequisites:**
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
+- A Lean 4 project with `lakefile.lean`
+- Run `lake build` once in your project before starting (the LSP server needs oleans)
+
+**Setup** (run from your Lean project root):
+
+```bash
+# User-scoped (recommended) — available in all your projects
+claude mcp add --transport stdio --scope user lean-lsp -- uvx lean-lsp-mcp
+
+# Or project-scoped — shared via .mcp.json
+claude mcp add --transport stdio --scope project lean-lsp -- uvx lean-lsp-mcp
+```
+
+User-scoped (`--scope user`) is recommended — it is more reliable for keeping MCP
+tools visible inside subagents.
+
+Restart Claude Code after adding. Verify by checking that tools like `lean_goal`
+and `lean_diagnostic_messages` appear.
 
 ### Optional: RAG MCP Server
 
