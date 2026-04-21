@@ -742,17 +742,27 @@ rw [show (0 : ℂ) = cuspFunction 1 f 0 by
 rw [f.slash_action_eq' _ (MonoidHom.mem_range.mpr ⟨γ, rfl⟩)]
 ```
 
-### Prefer `have` over `haveI` with explicit type
+### Prefer `have`/`let` over `haveI`/`letI` with explicit type
+
+**Key insight**: In Lean 4, the `I` suffix on `haveI`/`letI` stands for **"inline"**, NOT "instance" (common Lean 3-ism that's still sticky). Plain `have :` and `let :` with an explicit type annotation work for instances. Since a recent Lean 4 version, **anonymous `have`/`let`** (no name, just a type) also works — Lean picks them up via typeclass resolution.
 
 ```lean
--- ❌ `haveI` not needed when you give an explicit type signature
+-- ❌ `haveI`/`letI` — Lean 3 habit
 haveI : ModularFormClass (ModularForm 𝒮ℒ 0) Γ(1) 0 :=
   Gamma_one_coe_eq_SL ▸ inferInstance
 
--- ✓ `have` with type annotation works fine
+letI : ModularFormClass (ModularForm 𝒮ℒ (0 * card)) 𝒮ℒ 0 := by
+  rw [zero_mul]; infer_instance
+
+-- ✓ Plain `have`/`let` with explicit type
 have : ModularFormClass (ModularForm 𝒮ℒ 0) Γ(1) 0 :=
   Gamma_one_coe_eq_SL ▸ inferInstance
+
+let : ModularFormClass (ModularForm 𝒮ℒ (0 * card)) 𝒮ℒ 0 := by
+  rw [zero_mul]; infer_instance
 ```
+
+Only use `haveI`/`letI` when you specifically want inlining-time elaboration; not for ordinary instance introduction.
 
 ### Anonymous constructor for `mem_range` proofs
 
