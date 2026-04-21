@@ -459,7 +459,7 @@ Call this after making significant changes to capture what was learned.
 Entries are stored in .mathlib-quality/learnings.jsonl in the project.
 
 Parameters:
-- command: Which command generated this (cleanup, golf-proof, etc.)
+- command: Which command generated this (cleanup, check-style, etc.)
 - type: Category (golf_pattern, style_correction, naming_fix, decomposition,
         file_split, mathlib_discovery, failed_pattern, user_teaching)
 - description: 1-2 sentence description of what was learned
@@ -623,50 +623,75 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return [TextContent(type="text", text=result)]
 
         elif name == "get_mathlib_quality_principles":
-            principles = """# Mathlib Quality Principles (from PR Reviews)
+            principles = """# Mathlib Quality Principles (from 3,772 PR Reviews, 7,273 suggestions)
 
 ## Core Philosophy
-1. **Brevity is king** - One-liners are ideal; shorter proofs are almost always better
-2. **Automation first** - Try `grind`, `aesop`, `simp`, `fun_prop` before manual proofs
-3. **Term mode preferred** - `by exact h` should just be `h`
-4. **No comments in proofs** - Proofs should be self-documenting
+1. **Brevity is king** — one-liners are ideal; shorter proofs are almost always better
+2. **Automation first** — try `grind`, `simp`, `aesop`, `fun_prop` before manual proofs
+3. **Term mode preferred** — `by exact h` should just be `h`
+4. **No comments in proofs** — proofs should be self-documenting
 
-## Tactical Preferences
+## The Cardinal Rule: Terminal vs Nonterminal simp
+- **Terminal simp must NOT be squeezed** — leave as `simp` or `simp [lemmas]`
+- **Nonterminal simp MUST be squeezed** to `simp only [...]`
+- `simp; rfl` counts as terminal
+- Prefer `simp_all` over `simp_all only` for closing goals
 
-### Replace with Automation
-- `obtain ⟨a, rfl⟩ := ...; exact ⟨a, rfl⟩` → `grind`
-- Multi-step case analysis → `grind [relevant_lemmas]`
-- Continuity/differentiability chains → `fun_prop`
-- Distance/metric goals → `grind [Real.dist_eq]`
-- Cardinality goals → `grind [Finset.card_eq_zero, ...]`
+## Instant Wins (always apply)
+- `:= by exact term` → `:= term`
+- `rw [h]; exact e` → `rwa [h]`
+- `simp [...]; exact h` → `simpa [...] using h` (86 examples)
+- `ext x; rfl` → `rfl`
+- `simp; rfl` → `simp` (71 examples)
+- `constructor; exact a; exact b` → `exact ⟨a, b⟩`
+- `apply f; exact h` → `exact f h`
+- `by_contra h; push_neg at h` → `by_contra!`
+- `intro x; exact f x` → `fun x => f x` or eta-reduce
+- `have h := x; exact h` → `exact x` (inline single-use have)
+- `apply X; intro y` → `refine X fun y => ?_`
+- `have h := ...; h.1, h.2` → `obtain ⟨a, b⟩ := ...`
 
-### Simplify Simp Usage
-- `simp; exact h` → `simpa using h`
-- Non-terminal `simp` → `simp only [...]`
-- `simp only [foo,]` → remove trailing comma
-- Repeated `simp` in cases → `simp_all`
+## Tactic Priority (try in order)
+1. `grind` — general closing, subsumes many tactic chains (104 examples)
+2. `simp` / `simpa` — the workhorse
+3. `aesop` — logic, membership, set goals (93 examples)
+4. `fun_prop` — continuity, differentiability, measurability (80 examples)
+5. `positivity` — `0 < x`, `0 ≤ x` goals (60 examples)
+6. `gcongr` — monotonicity/congruence in inequalities (67 examples)
+7. `lia` (preferred over `omega`) — Nat/Int linear arithmetic
+8. `norm_num` / `norm_cast` — numeric computation, cast goals
+9. `ring` / `field_simp; ring` — polynomial/field equalities
+10. `linarith` / `nlinarith` — linear/nonlinear arithmetic
+11. `decide` / `decide +kernel` — decidable propositions (12 examples)
+12. `linear_combination` — ring goals needing hypotheses
 
-### Inline and Reduce
-- Single-use `have h := foo; ... h` → inline `foo` directly
-- `by exact h` → `h`
-- `fun x => f x` → `f` (eta-reduce)
-- `rw [foo]; exact bar` → `rwa [foo]` if applicable
+## grind Subsumption
+`grind` often subsumes preceding tactics:
+- `rw [h]; grind` → `grind` (when h is local hyp)
+- `simp; grind` → `grind`
+- `simp [lemmas] <;> grind` → `grind [lemmas]`
+- `grind [lemma.symm]` → `grind [lemma]` (handles symmetry internally)
 
-### Code Structure
-- Max 100 chars per line
-- Max 50 lines per proof (target <15)
-- Helper lemmas: `private lemma foo_aux`
-- Naming: `snake_case` for lemmas, `lowerCamelCase` for defs
+## Anti-Patterns (things reviewers flag most)
+- Squeezing terminal simp (282 comments — DON'T squeeze terminal simp)
+- Unnecessary `have` blocks (109 "remove have" comments)
+- `by exact` wrapper (strong reviewer consensus — always remove)
+- Semicolons in multiline proofs (banned)
+- `repeat` in proofs (unpredictable)
+- Defining data in tactic mode (poor practice)
+- Unfolding APIs manually (use named lemmas)
+- `erw` when `rw` works (heavier than needed)
+- Redundant `show` (60 examples — remove when goal is already right type)
+- `omega` in new code (`lia` is preferred; mathlib is migrating)
+- `continuity`/`measurability` (use `fun_prop` instead)
 
-## What Reviewers Commonly Flag
-1. Verbose proofs that automation can handle
-2. Unnecessary `have` blocks
-3. Comments inside proofs
-4. Lines > 100 characters
-5. Non-mathlib naming conventions
-6. Trailing commas in simp lists
-7. `by exact` instead of term mode
-8. `continuity` instead of `fun_prop`
+## Style
+- Dot notation preferred: `h.mono_left` over `mono_left h`
+- Use `<|` to avoid trailing parens: `f <| by simp` over `f (by simp)`
+- `rcases ... with rfl` auto-substitutes
+- Register lemmas: `@[simp]`, `@[grind =]`, `@[fun_prop]`, `@[aesop]`
+- `wlog` for symmetric cases (eliminates entire branches)
+- Max 100 chars per line, target <15 lines per proof
 """
             return [TextContent(type="text", text=principles)]
 

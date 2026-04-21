@@ -4,6 +4,12 @@
       "command": "python3",
       "args": ["./mcp_server/mathlib_rag.py"],
       "description": "Mathlib quality RAG server - provides PR feedback examples for golfing and style"
+    },
+    "chatgpt-math": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/home/chris/.claude/mcp-servers/chatgpt-math/server.js"],
+      "env": {}
     }
   }
 }

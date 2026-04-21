@@ -39,9 +39,10 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 
 | Command | Description |
 |---------|-------------|
-| `/cleanup` | Full file cleanup to mathlib standards |
+| `/develop` | Plan and prove a mathematical development with ticket management |
+| `/cleanup` | Audit + golf (whole file or single declaration) |
+| `/cleanup-all` | Run /cleanup on every file in the project, tracked file by file |
 | `/check-style` | Validate without making changes |
-| `/golf-proof` | Optimize specific proofs |
 | `/decompose-proof` | Break long proofs into helper lemmas |
 | `/overview` | Project declaration inventory for consolidation analysis |
 | `/check-mathlib` | Find mathlib equivalents to avoid duplication |
@@ -50,6 +51,7 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | `/bump-mathlib` | Bump mathlib version and fix resulting breakage |
 | `/fix-pr-feedback` | Address reviewer comments |
 | `/setup-rag` | Set up RAG MCP server for PR feedback search |
+| `/setup-chatgpt` | Set up ChatGPT MCP server for mathematical second opinions |
 | `/teach` | Teach the skill a project-specific pattern or convention |
 | `/contribute` | Contribute local learnings back to the repo via PR |
 | `/integrate-learnings` | (Maintainers) Process community contributions into reference docs |
@@ -57,6 +59,8 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 ## First-Time Setup
 
 For enhanced suggestions based on 4,600+ real mathlib PR reviews, run `/setup-rag` to configure the RAG MCP server. This gives Claude Code access to searchable PR feedback examples for golfing and style.
+
+For mathematical second opinions from ChatGPT during formalization work, run `/setup-chatgpt`. This creates an MCP server that lets Claude Code query ChatGPT via the Codex CLI for proof strategies, Mathlib API hints, or verification of mathematical claims. Requires the ChatGPT desktop app and a Plus/Pro subscription.
 
 ## Core Style Rules (Quick Reference)
 
@@ -352,7 +356,7 @@ Exceptions (suffixes, like atoms): `_injective`, `_surjective`, `_bijective`, `_
 The skill learns from every use and gets better over time. There are three layers:
 
 ### 1. Automatic Local Capture
-Every command (`/cleanup`, `/golf-proof`, `/check-style`, etc.) automatically records significant learnings to `.mathlib-quality/learnings.jsonl` in your project. This captures:
+Every command (`/cleanup`, `/check-style`, etc.) automatically records significant learnings to `.mathlib-quality/learnings.jsonl` in your project. This captures:
 - Proof golfing patterns that worked (before/after code)
 - Style corrections applied
 - Mathlib lemmas discovered that replaced custom code
@@ -379,15 +383,22 @@ Use `/teach` to explicitly record project-specific patterns:
 
 ## Workflow Guidance
 
+### When Developing New Mathematics
+
+Use `/develop` to plan and execute a mathematical development:
+1. **Plan**: `/develop` creates a comprehensive plan with ticket board
+2. **Execute**: Workers pick up tickets, prove lemmas, build API
+3. **Cleanup**: Periodic `/cleanup` tickets keep code at mathlib quality
+4. **Review**: Final review ensures everything compiles and is PR-ready
+
 ### When Preparing a PR
 
-1. **Overview**: Run `/overview` to generate a full declaration inventory (`PROJECT_OVERVIEW.md`). Review it to find generalization opportunities, junk definitions, and missing API.
-2. **High-level cleanup**: Address consolidation opportunities found in the overview (merge similar lemmas, remove junk, add missing API).
-3. **Per-file cleanup + golf**: Run `/cleanup` on each file — workers audit and fix each declaration with the 14-item checklist.
-4. **Decompose**: Run `/decompose-proof` on files with long proofs.
-5. **Final check**: Run `/pre-submit` before creating PR.
+1. **Overview**: Run `/overview` to generate a full declaration inventory.
+2. **Cleanup + golf**: Run `/cleanup` on each file — one agent per declaration.
+3. **Decompose**: Run `/decompose-proof` on files with long proofs.
+4. **Final check**: Run `/pre-submit` before creating PR.
 
-**For quick single-proof golfing**: Use `/golf-proof [theorem_name]`.
+**For quick single-proof golfing**: Use `/cleanup file.lean theorem_name`.
 
 ### When Handling PR Feedback
 
