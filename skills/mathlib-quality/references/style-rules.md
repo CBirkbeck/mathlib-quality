@@ -646,3 +646,229 @@ throwError m!"error occurred:{indentD m!"{details}"}"
 - Don't use when recursive call conflicts with namespace declaration
 - Instead, add namespace to conflicting declaration
 - Root namespace conflicts: `nonrec` or `_root_.[...]` both acceptable
+
+## Structure Construction & `@[simps]`
+
+### Use `@[simps -fullyApplied]` for coe-level simp lemmas
+
+When defining a structure-building function, prefer `@[simps -fullyApplied]` over manually writing `_apply` simp lemmas. It auto-generates `⇑(foo f) = ⇑f` (coe-level) rather than `(foo f) z = f z` (fully-applied), which is usually what you want for rewriting.
+
+```lean
+-- ❌ Manual _apply lemma
+def ModularFormClass.modularForm (f : F) : ModularForm Γ k where ...
+
+@[simp]
+lemma ModularFormClass.modularForm_apply (f : F) (z : ℍ) :
+    ModularFormClass.modularForm f z = f z := rfl
+
+-- ✓ @[simps -fullyApplied] auto-generates ⇑(modularForm f) = ⇑f
+@[simps -fullyApplied]
+def ModularFormClass.modularForm (f : F) : ModularForm Γ k where ...
+```
+
+### Use `{ f with extra := ... }` for structure extension
+
+When building a subtype/extension from a parent, don't manually re-provide inherited fields:
+
+```lean
+-- ❌ Manual field copying
+def toCuspForm (f : ModularForm 𝒮ℒ k) (h : ...) : CuspForm 𝒮ℒ k where
+  toSlashInvariantForm := f.toSlashInvariantForm
+  holo' := f.holo'
+  zero_at_cusps' := isZeroAt_of_coeffZero_eq_zero f h
+
+-- ✓ `{ f with ... }` inherits parent fields
+def toCuspForm (f : ModularForm 𝒮ℒ k) (h : ...) : CuspForm 𝒮ℒ k :=
+  { f with zero_at_cusps' := isZeroAt_of_coeffZero_eq_zero f h }
+```
+
+### Add `Iff.rfl` simp lemmas for wrapped defs
+
+When a def wraps a proposition like `f ∈ submodule`, the def isn't reducible, so `simp` can't unfold it. Add an explicit `Iff.rfl` simp lemma:
+
+```lean
+def IsCuspForm (f : ModularForm Γ k) : Prop :=
+  f ∈ cuspFormSubmodule Γ k
+
+@[simp]
+lemma mem_cuspFormSubmodule_iff {f : ModularForm Γ k} :
+    f ∈ cuspFormSubmodule Γ k ↔ IsCuspForm f := Iff.rfl
+```
+
+### Don't build type-API on submodule terms
+
+When you have `cuspFormSubmodule : Submodule ℂ (ModularForm Γ k)` (a term) and a dedicated type `CuspForm Γ k` with an equiv between them, don't add `FunLike`/`CuspFormClass` instances to the submodule. Use the equiv instead. The term-coerced-as-type pattern is awkward when you already have a dedicated type.
+
+## Unify Related API via Defaults
+
+When two functions (`copy` and `ofSubgroupEq`) share most of their implementation, unify them via default arguments:
+
+```lean
+-- ❌ Two separate functions
+def ModularForm.copy (f : ModularForm Γ k) (f' : ℍ → ℂ) (h : f' = ⇑f) : ModularForm Γ k where ...
+def ofSubgroupEq {Γ'} (h : Γ = Γ') (f : ModularForm Γ k) : ModularForm Γ' k where ...
+
+-- ✓ Unified: `copy` with optional subgroup-equality arg
+protected def ModularForm.copy {Γ' : Subgroup (GL (Fin 2) ℝ)} (f : ModularForm Γ k) (f' : ℍ → ℂ)
+    (h : f' = ⇑f) (hΓ : Γ = Γ' := by rfl) : ModularForm Γ' k where ...
+-- Old callers: `f.copy f' h` still works (Γ' := Γ, hΓ := rfl defaults)
+-- Subgroup transport: `f.copy f rfl h` (where h : Γ = Γ')
+```
+
+## Drop Unnecessary Syntax
+
+### Drop type annotations on implicit binders when inferable
+
+```lean
+-- ❌
+IsCuspForm f ↔ ∀ {c : OnePoint ℝ}, IsCusp c Γ → c.IsZeroAt f k
+
+-- ✓ Type of c inferable from `IsCusp c Γ`
+IsCuspForm f ↔ ∀ {c}, IsCusp c Γ → c.IsZeroAt f k
+```
+
+### Remove `show X from by` — use `show X by` or drop entirely
+
+```lean
+-- ❌ `show X from by ...` — `from` is for term mode, `by` is tactic, redundant
+rw [show (0 : ℂ) = cuspFunction 1 f 0 from by
+  rw [cuspFunction_apply_zero f one_pos one_mem_strictPeriods_SL]; exact h.symm]
+
+-- ✓ `show X by ...` when you need tactics
+rw [show (0 : ℂ) = cuspFunction 1 f 0 by
+  rw [cuspFunction_apply_zero f one_pos one_mem_strictPeriods_SL]; exact h.symm]
+
+-- ✓ Or drop `show X from` if y already has type X
+rw [f.slash_action_eq' _ (MonoidHom.mem_range.mpr ⟨γ, rfl⟩)]
+```
+
+### Prefer `have` over `haveI` with explicit type
+
+```lean
+-- ❌ `haveI` not needed when you give an explicit type signature
+haveI : ModularFormClass (ModularForm 𝒮ℒ 0) Γ(1) 0 :=
+  Gamma_one_coe_eq_SL ▸ inferInstance
+
+-- ✓ `have` with type annotation works fine
+have : ModularFormClass (ModularForm 𝒮ℒ 0) Γ(1) 0 :=
+  Gamma_one_coe_eq_SL ▸ inferInstance
+```
+
+### Anonymous constructor for `mem_range` proofs
+
+```lean
+-- ❌ Verbose
+f.slash_action_eq' _ (MonoidHom.mem_range.mpr ⟨γ, rfl⟩)
+
+-- ✓ Anonymous constructor unfolds membership
+f.slash_action_eq' _ ⟨γ, rfl⟩
+```
+
+## Avoid `change` — Use `simp_rw` to Unfold
+
+If you're reaching for `change`, it's a strong hint that either:
+- API is missing, or
+- You can unfold definitions via `simp_rw`.
+
+```lean
+-- ❌ change + rw
+change Filter.Tendsto f atImInfty (𝓝 0)
+rw [show (0 : ℂ) = cuspFunction 1 f 0 by ...]
+
+-- ✓ simp_rw to unfold and rewrite in one step
+simp_rw [IsZeroAtImInfty, ZeroAtFilter, ← h,
+  ← cuspFunction_apply_zero f one_pos one_mem_strictPeriods_SL]
+```
+
+## Prefer `simp` over `change` + `rw`
+
+When you have `change X; rw [lemmas]` and `simp [lemmas]` works, prefer `simp`:
+
+```lean
+-- ❌
+theorem foo : ... := by
+  change (Gamma 1).map (mapGL ℝ) = (mapGL ℝ).range
+  rw [Gamma_one_top, MonoidHom.range_eq_map]
+
+-- ✓
+theorem foo : ... := by
+  simp [Gamma_one_top, MonoidHom.range_eq_map]
+```
+
+## `DFunLike` Helpers for Function-Like Equalities
+
+When working with equality of `FunLike` instances, use the helpers instead of manually chaining `congr_arg`/`congr_fun`:
+
+```lean
+-- ❌ Manual chain
+fun _ _ h ↦ DFunLike.ext _ _ fun z ↦ congr_fun (congr_arg DFunLike.coe h) z
+
+-- ✓ DFunLike.congr_fun does the job
+fun _ _ h ↦ DFunLike.ext _ _ fun z ↦ DFunLike.congr_fun h z
+
+-- ✓ Better: DFunLike.ext' when types unify
+fun _ _ h ↦ DFunLike.ext' (congr_arg DFunLike.coe h)
+
+-- ✓ Subtype version
+coe_injective' _ _ h := Subtype.ext (DFunLike.ext' h)
+```
+
+- `DFunLike.ext' : ⇑f = ⇑g → f = g` — one-arg extensionality
+- `DFunLike.congr_fun : f = g → ∀ x, ⇑f x = ⇑g x` — pointwise from extensional
+
+## `letI` for Instance Definitional Mismatches
+
+When `infer_instance` fails because of propositional-but-not-definitional equalities (e.g., `0 * n = 0` isn't syntactic), use `letI` to provide the instance:
+
+```lean
+-- ModularForm.norm has weight `0 * card` — no `[ModularFormClass _ _ 0]` instance found
+letI : ModularFormClass (ModularForm 𝒮ℒ (0 * Nat.card _)) 𝒮ℒ 0 := by
+  rw [zero_mul]; infer_instance
+obtain ⟨c, hc⟩ := ModularFormClass.levelOne_weight_zero_const
+  (ModularForm.norm 𝒮ℒ (f - .const (f I)))
+```
+
+`letI` registers the instance in the local typeclass scope for subsequent calls.
+
+## Maximal Generalization of Theorems
+
+State theorems with the weakest hypotheses possible. A theorem that holds for any `Γ` with `Fact (IsCusp ∞ Γ)` should be stated that way, not specialized to `𝒮ℒ`:
+
+```lean
+-- ❌ Specialized
+lemma isZeroAtImInfty_of_valueAtInfty_eq_zero
+    (f : ModularForm 𝒮ℒ k) (h : valueAtInfty f = 0) : IsZeroAtImInfty f
+
+-- ✓ General — works for any arithmetic subgroup via Fact instance
+lemma isZeroAtImInfty_of_valueAtInfty_eq_zero {F : Type*} [FunLike F ℍ ℂ]
+    [DiscreteTopology Γ] [Γ.HasDetPlusMinusOne] [Fact (IsCusp ∞ Γ)] [ModularFormClass F Γ k]
+    (f : F) (h : valueAtInfty f = 0) : IsZeroAtImInfty f
+```
+
+`Fact` instances get automatically synthesized for common concrete subgroups.
+
+## Eliminate Bridge Patterns with API Lemmas
+
+When you see `have : XClass Γ' := eq ▸ ‹_›` bridges repeated in multiple proof bodies, add an API lemma that bridges once:
+
+```lean
+-- ❌ Bridge at every use site
+lemma exists_one_half_le_im_and_norm_le ... :=
+  ⟨..., by
+    have : SlashInvariantFormClass F Γ(1) k := Gamma_one_coe_eq_SL ▸ ‹_›
+    simpa only [slash_action_eqn_SL'' _ (mem_Gamma_one γ), ...] using ...⟩
+
+-- ✓ Add API lemma that bridges once
+theorem slash_action_eqn_SL [SlashInvariantFormClass F 𝒮ℒ k]
+    (f : F) (γ : SL(2, ℤ)) (z : ℍ) :
+    f (γ • z) = (denom γ z) ^ k * f z :=
+  slash_action_eqn'' f (MonoidHom.mem_range.mpr ⟨γ, rfl⟩) z
+
+-- Callers use directly, no bridge
+lemma exists_one_half_le_im_and_norm_le ... :=
+  ⟨..., by simpa only [slash_action_eqn_SL _ γ, ...] using ...⟩
+```
+
+## Restate Over the Natural Subgroup
+
+Once conversion lemmas exist (like `Gamma_one_coe_eq_SL : ↑Γ(1) = 𝒮ℒ`), restate theorems over the more natural subgroup (`𝒮ℒ`) rather than forcing callers to bridge at every use site. The rule of thumb: the natural subgroup for mathematical content (like modular forms on GL(2, ℝ)) is usually `𝒮ℒ`; keep `Γ(1)` only where the SL(2, ℤ)-specific API (like `slash_action_eqn_SL''` or `mem_Gamma_one`) demands it, and bridge internally.
