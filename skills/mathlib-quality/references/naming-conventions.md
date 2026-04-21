@@ -384,3 +384,55 @@ end Nat
 - Don't abbreviate when it hurts clarity
 - New or uncommon terms should be spelled out
 - When in doubt, be explicit
+
+## Instance Naming for Type-to-Class Relationships
+
+When `X` has a `YClass X` instance, name it `X.instYClass`, NOT `YClass.x`. The namespace prefix matches the subject type (the thing that *has* the instance).
+
+```lean
+-- ❌ Misleading: the name suggests a constructor
+instance (priority := 100) ModularFormClass.modularForm :
+    ModularFormClass (ModularForm Γ k) Γ k where ...
+
+-- ✓ Correct: it's the statement "ModularForm is a ModularFormClass"
+instance (priority := 100) ModularForm.instModularFormClass :
+    ModularFormClass (ModularForm Γ k) Γ k where ...
+```
+
+The "X is a Y" name `X.instY` reserves `Y.x` for a true constructor (see next section).
+
+## Generic Constructors from Class-Parameterized Types
+
+For every class `XClass F` that produces a concrete type `X`, provide a generic constructor `XClass.x : (f : F) [XClass F] → X`. This is the *point* of having the class — don't write specific constructors for each instance type.
+
+```lean
+-- ❌ Specific constructor for each instance type
+def CuspForm.toModularForm (f : CuspForm Γ k) : ModularForm Γ k where ...
+def SomeOtherType.toModularForm (f : SomeOtherType Γ k) : ModularForm Γ k where ...
+
+-- ✓ One generic constructor, works for any F with the class
+def ModularFormClass.modularForm [FunLike F ℍ ℂ] [ModularFormClass F Γ k] (f : F) :
+    ModularForm Γ k where
+  toFun := f
+  slash_action_eq' := SlashInvariantFormClass.slash_action_eq f
+  holo' := ModularFormClass.holo f
+  bdd_at_cusps' := ModularFormClass.bdd_at_cusps f
+```
+
+This is the standard mathlib pattern — cf. `SlashInvariantFormClass.slashInvariantForm`, `RingHomClass.toRingHom`, etc.
+
+## `CoeTC` over `Coe` for Class-Parameterized Coercions
+
+When adding a coercion from a class-parameterized type `F` to a concrete structure, use `CoeTC`, NOT `Coe`:
+
+```lean
+-- ❌ Plain Coe can cause over-eager instance resolution
+instance [ModularFormClass F Γ k] : Coe F (ModularForm Γ k) :=
+  ⟨ModularFormClass.modularForm⟩
+
+-- ✓ CoeTC is the right class for class-parameterized coercions
+instance [FunLike F ℍ ℂ] [ModularFormClass F Γ k] : CoeTC F (ModularForm Γ k) :=
+  ⟨ModularFormClass.modularForm⟩
+```
+
+This matches the existing mathlib pattern (e.g., `SlashInvariantFormClass → SlashInvariantForm` via `CoeTC`). `CoeTC` participates in the transitive closure check at the right elaboration point.
