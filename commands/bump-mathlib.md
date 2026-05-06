@@ -65,7 +65,7 @@ lake update mathlib
    - For files modified in both: present conflicts to user for guidance
    - For files only modified locally: keep ours
 
-### Step 3: Fetch Cached Artifacts
+### Step 3: Fetch Cached Artifacts (verification gate)
 
 **CRITICAL: Always fetch the Mathlib cache before building**, otherwise compilation will take hours.
 
@@ -79,6 +79,21 @@ If `cache get` fails, try:
 ```bash
 lake exe cache get!   # Force re-download
 ```
+
+**Verification gate — do NOT skip:** before moving to Step 4 (build), verify the cache
+fetch actually completed. Print this block with the timestamp:
+
+```
+✓ Cache fetched at <ISO timestamp>
+  Last cache file mtime: <output of `find .lake/build -name "*.olean" -printf "%T+\n" | sort | tail -1`>
+  Cache size: <output of `du -sh .lake/build` or equivalent>
+```
+
+If the timestamp is stale (older than the start of this command run), or `cache get` exited
+non-zero, re-run before proceeding. A skipped cache fetch is the #1 cause of
+multi-hour-stuck bump runs.
+
+**If `cache get` fails with mismatched hashes** and the lakefile lists multiple dependencies (e.g. `mathlib` and `doc-gen4`) that share a transitive `Cli` requirement at different revisions: reorder so that `[[require]] mathlib` comes **last** in `lakefile.toml`. The last-listed `require` wins on transitive-version resolution, so Mathlib's pinned `Cli` version takes precedence and the cache hash matches. Re-run `lake update mathlib` then `lake exe cache get`.
 
 ### Step 4: Build and Collect Errors
 
@@ -231,10 +246,16 @@ Ensure zero errors. If errors remain, go back to Step 5.
 ### Common Bump Breakage Patterns
 
 1. **`simp` lemmas renamed** - Very common. Check changelog, often just a name change.
-2. **Namespace reorganization** - Imports change. Follow the changelog.
+2. **Namespace reorganization** - Imports change. Follow the changelog. (e.g. `card_eq_pow_finrank` → `Module.card_eq_pow_finrank`.)
 3. **New arguments added** - Functions gain new typeclass arguments. Usually inferred automatically; if not, provide explicitly.
 4. **Deprecation removals** - If you were using a deprecated alias, it may have been removed after 6 months. Switch to the canonical name.
 5. **Universe changes** - Rare but impactful. Check if universe parameters changed.
+6. **Predicate refactor (binary → unary)** - A common shape: a predicate `P i x` taking a hom `i` and an object `x` is replaced by `P (x.map i)` (apply the hom first, then take the unary predicate). Affected APIs lose the hom-argument lemmas (e.g. `_id_iff_*` no longer needed). Concrete example from `v4.29.1`:
+   - `Polynomial.Splits i f` (binary) → `Polynomial.Splits (f.map i)` (unary)
+   - `splits_of_splits_of_dvd i hf hg dvd` → `Splits.of_dvd hg hf (Polynomial.map_dvd _ dvd)` — divisibility must be lifted through the hom by hand
+   - `rw [← splits_id_iff_splits]; exact IsAlgClosed.splits _` → `exact IsAlgClosed.splits _` — the bridge lemma is obsolete
+7. **Field-name `IsX` normalization** - Structure fields named `not_unit`, `is_unit`, etc. are being renamed to match the `IsUnit` / `IsX` predicate convention: `Irreducible.not_unit` → `Irreducible.not_isUnit`. When a field rename breaks, check whether the matching predicate has an `Is`-prefixed name and update accordingly.
+8. **Primed variants for direct conclusions** - Look for a `'`-suffixed variant when an existing lemma needs awkward rearrangement. E.g. `List.le_maximum_of_mem` requires `(h_eq : maximum l = m)`; `List.le_maximum_of_mem'` returns `(a : WithBot α) ≤ maximum l` directly from membership alone.
 
 ### Efficient Debugging
 

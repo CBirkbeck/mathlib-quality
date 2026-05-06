@@ -160,7 +160,24 @@ theorem f_properties : Continuous f ∧ ∃ M, ∀ x, ‖f x‖ ≤ M := by
 - `def customBound` (line 50) — may duplicate mathlib
 ```
 
-**Ask the user to confirm before proceeding to Pass 2.** Show them the plan. They may want to adjust helper names, skip certain proofs, or add notes.
+### Awaiting user approval (mandatory pause)
+
+**STOP HERE.** Do not dispatch Pass 2 agents until the user has approved the plan.
+
+Print this exact line to the user:
+
+```
+AWAITING USER APPROVAL ON DECOMPOSITION PLAN — reply "approve" / "go ahead" / "looks
+good" to start Pass 2, or describe changes you want first.
+```
+
+Then wait for an approval message. Possible responses:
+- **Approve** → proceed to Pass 2
+- **Change** ("rename helper #2 to X", "skip proof Y") → update the plan, re-print it, wait again
+- **Cancel** → stop, leave `/- DECOMPOSE: ... -/` plan comments in place; user can resume later
+
+Do NOT dispatch Pass-2 agents on your own initiative. The plan is approved by the user, not
+by you.
 
 ---
 
@@ -212,6 +229,49 @@ CRITICAL RULES:
 - If mathlib has it, USE IT — don't create a wrapper
 - Name helpers by what they PROVE, not structural position
 - Verify compilation at every step
+
+REQUIRED REPORT FORMAT (the agent MUST print this to its caller; missing fields are
+defects, like the /cleanup Phase-4 status block):
+
+```
+### Decomposition: [theorem_name]
+
+1. MATH UNDERSTANDING (1-3 sentences in plain mathematical English of what the proof does):
+   <explanation>
+
+2. MATHLIB SEARCH (one row per planned helper):
+   | Helper             | lean_loogle queries tried | lean_leansearch queries tried | found in mathlib? |
+   |--------------------|---------------------------|-------------------------------|-------------------|
+   | norm_bound_of_compact | "Continuous → ..."    | "compact bounded continuous"  | no                |
+   | finite_support     | "DiscreteTopology → Finite" | "discrete compact finite"  | yes (DiscreteTopology.finite) — using directly |
+   ...
+
+3. HELPERS CREATED:
+   | Helper name         | Generality (weakest hyps used)  | Visibility | Lines | Used in main? |
+   |---------------------|---------------------------------|------------|-------|---------------|
+   | norm_bound_of_compact | [Compact K] [Continuous f]    | private    | 8     | yes           |
+   ...
+   Helpers NOT created (kept inline because <1-3 mathlib calls or not generalizable):
+   - <reason>
+
+4. MAIN THEOREM:
+   Before: <N> lines     After: <M> lines    (target: <15)
+   Term-mode proof? <yes/no — if no, why>
+
+5. GOLF PASS PER HELPER:
+   | Helper | grind tried | fun_prop tried | other tactics tried | result |
+   |--------|-------------|----------------|---------------------|--------|
+   | norm_bound_of_compact | yes (failed) | yes (failed) | omega (n/a) | original kept |
+   ...
+
+6. VERIFICATION:
+   ✓ DECOMPOSE comment block removed
+   ✓ lean_diagnostic_messages clean after each helper
+   ✓ Main theorem <15 lines (or report `STRUCTURE: <N> lines, see notes`)
+```
+
+If any field of this report is missing, the work is not done — the dispatcher will
+re-dispatch.
 ```
 
 **Dispatch agents in parallel** using multiple Agent tool calls in a single message. Each agent works on a different proof, so they won't conflict.

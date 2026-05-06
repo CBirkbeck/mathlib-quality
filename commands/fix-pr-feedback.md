@@ -1,238 +1,533 @@
 ---
 name: fix-pr-feedback
-description: Address PR reviewer comments
+description: Fetch PR reviewer comments, implement fixes locally, gate the push behind explicit user approval, then watch CI to completion
 ---
 
-# /fix-pr-feedback - Handle PR Reviewer Comments
+# /fix-pr-feedback — Address PR Reviewer Comments
 
-Parse and address feedback from mathlib PR reviews.
+Pull every reviewer comment on a mathlib PR, implement the fixes locally, **stop and wait
+for user approval before pushing**, then push and watch CI to completion.
+
+The non-negotiable rules:
+- **Never push before the user has reviewed and approved the changes.** No exceptions.
+- **Every comment must be accounted for** — addressed, deferred with a reason, or marked
+  unable-to-address with a reason. Silent skipping is a defect.
+- **After pushing, the skill must wait for CI** — it's not done until checks finish.
 
 ## Usage
 
 ```
 /fix-pr-feedback <PR_number>
+/fix-pr-feedback <PR_url>
+/fix-pr-feedback                  # If currently on a branch with an open PR, auto-detect
+```
+
+If only inline review comments are visible without a PR number, you can also paste them:
+
+```
 /fix-pr-feedback --comments "<pasted comments>"
 ```
 
-## Workflow
+But the workflow assumes a real PR (the CI-watching phase needs one).
 
-### Step 1: Gather Feedback
+---
 
-**From PR number:**
+## Phases
+
+```
+PHASE 1  FETCH                 pull every comment + PR description
+PHASE 2  TRIAGE                build numbered punch-list, classify, prioritise
+PHASE 3  IMPLEMENT             fix each item, track addressed / deferred / unable
+PHASE 4  COVERAGE              re-fetch comments, verify nothing slipped through
+PHASE 5  STOP — USER APPROVAL  print full report, do NOT push, wait for explicit OK
+PHASE 6  PUSH + WATCH CI       once approved, push; watch checks to completion
+PHASE 7  CI FOLLOW-UP          if CI fails, fix → return to Phase 5
+PHASE 8  REPORT + LEARNINGS    final summary, write learnings
+```
+
+---
+
+## PHASE 1 — Fetch (Main agent)
+
+### 1a. Resolve the PR
+
+Determine the repo and PR number:
+
+- If the user supplied a number with no repo, default to `leanprover-community/mathlib4`.
+- If a URL: extract `<owner>/<repo>` and number.
+- If neither: `gh pr view --json number,headRepository,baseRepository,url` from the current
+  branch.
+
+Print the resolved PR (number, title, URL) so the user can confirm the right one.
+
+### 1b. Pull comments
+
+Mathlib PRs accumulate three kinds of feedback:
+
+| Kind | What it is | gh API |
+|---|---|---|
+| **Review comments** | Inline comments tied to a file + line | `gh api repos/<owner>/<repo>/pulls/<N>/comments --paginate` |
+| **Issue comments** | Top-level PR comments (no line attachment) | `gh api repos/<owner>/<repo>/issues/<N>/comments --paginate` |
+| **Reviews** | Approve/Request-changes summary bodies | `gh api repos/<owner>/<repo>/pulls/<N>/reviews --paginate` |
+
+Pull all three. Store the raw JSON in scratch so you can re-fetch later for the coverage
+check. Capture for each comment:
+
+- `id` (stable identifier — used in Phase 4 to verify coverage)
+- `user.login` (author)
+- `body` (comment text)
+- `path` + `line` + `original_line` (review comments only)
+- `commit_id` (review comments only — flags if the comment is on an outdated commit)
+- `in_reply_to_id` (threading)
+- `created_at`
+
+### 1c. Pull PR description and diff
+
 ```bash
-gh pr view <PR_number> --repo leanprover-community/mathlib4 --json comments
-gh api repos/leanprover-community/mathlib4/pulls/<PR_number>/comments
+gh pr view <PR> --json title,body,files,headRefName,baseRefName,commits
+gh pr diff <PR>
 ```
 
-**From pasted comments:**
-Parse the provided text for actionable feedback.
+The PR description sometimes contains a checklist or "things to fix" the reviewer points
+back to. Read it.
 
-### Step 2: Categorize Feedback
+### 1d. Filter
 
-Group comments by type:
+- **Bot comments**: drop comments from `github-actions[bot]`, `mathlib4-bot`, etc., unless
+  the user specifies they're meaningful.
+- **Resolved threads**: review comments have a `position: null` field if the thread is
+  outdated/resolved on the current commit. Don't drop these silently — flag them in the
+  punch-list as "thread was on outdated code; check whether the underlying issue still
+  applies".
+- **Threading**: when a comment has `in_reply_to_id`, group it under the parent.
 
-| Category | Examples |
-|----------|----------|
-| **Style** | Line length, formatting, whitespace |
-| **Naming** | Rename declaration, follow convention |
-| **Documentation** | Add docstring, improve description |
-| **Proof Golf** | Shorter proof, use automation |
-| **API Design** | Change visibility, add lemma, namespace |
-| **Correctness** | Bug in logic, wrong type |
+---
 
-### Step 3: Prioritize
+## PHASE 2 — Triage (Main agent)
 
-Order by importance:
-1. 🔴 **Correctness** - Must fix, affects functionality
-2. 🔴 **Required changes** - Reviewer explicitly requires
-3. 🟡 **Style/conventions** - Standard compliance
-4. 🟢 **Suggestions** - Nice to have
+Build a single numbered punch-list. Print it before doing any edits. Format:
 
-### Step 4: Address Each Item
+```
+## PR Feedback Punch-List for <owner>/<repo>#<N>
 
-For each feedback item:
+Total comments fetched: 23
+After dropping bots: 18
+After threading (top-level comments): 14
 
-1. **Understand** - What exactly is being requested?
-2. **Locate** - Find the relevant code
-3. **Plan** - Determine the fix
-4. **Apply** - Make the change
-5. **Verify** - Ensure it compiles
-6. **Note** - Record what was done
+| # | Author | Where | Severity | Category | Comment summary |
+|---|--------|-------|----------|----------|-----------------|
+| 1 | @loefflerd | Foo.lean:45 | 🔴 must-fix | golf | "This can be `simpa using h`" |
+| 2 | @reviewer2 | Bar.lean:78 | 🔴 must-fix | naming | "Rename `wt_eq_zero` → `weight_eq_zero`" |
+| 3 | @loefflerd | Foo.lean:120 | 🟡 should-fix | api-design | "Should this be an instance?" |
+| 4 | @reviewer2 | (PR body) | 🟢 question | clarification | "Why prove this here vs in core mathlib?" |
+| ... |
+```
 
-### Step 5: Verify All Changes
+### Severity scale
 
-After all fixes:
+| Mark | Meaning | Default action |
+|---|---|---|
+| 🔴 must-fix | Reviewer used "please change", "should be", "must"; or it's a correctness/CI-blocking issue | Implement |
+| 🟡 should-fix | Suggestion phrased as recommendation; convention/style | Implement; document if you don't |
+| 🟢 question | Reviewer asks a question rather than requesting a change | Answer in writeup; only fix if answer implies a change |
+| ⚪ resolved | Thread was on outdated code or already resolved | Verify still resolved |
+
+### Categories (pick one each)
+
+`golf`, `style`, `naming`, `documentation`, `api-design`, `correctness`, `import`, `decomposition`, `mathlib-discovery`, `clarification`, `other`.
+
+### Prioritisation
+
+Order the implementation pass:
+1. Correctness 🔴 (could be wrong code)
+2. API/structural changes 🔴 (touch other items, do these first to avoid rework)
+3. Naming 🔴 (cascades through call sites)
+4. Golf / style 🔴/🟡
+5. Documentation 🔴/🟡
+6. Questions 🟢 (no code change, but draft an answer)
+
+Print the prioritised order before Phase 3 starts.
+
+---
+
+## PHASE 3 — Implement (Main agent + workers)
+
+For each item in the prioritised order:
+
+### 3a. Understand exactly what's being asked
+
+If the comment quotes code (most review comments do), make sure you're looking at the same
+code in the file *now* — the line numbers in `original_line` may have drifted. Use the
+quoted text + filename + nearby identifiers, not just the line number.
+
+### 3b. Apply the fix
+
+For golf/style/naming: small focused edits inline. For multi-line proof restructures or
+proofs you're rewriting: dispatch a worker the same way `/cleanup` Phase 4 does (one
+declaration at a time, full audit + golf rules from `golfing-rules.md`).
+
+For naming changes: `Grep` for the old name across the whole repo and update **every** call
+site. A reviewer-requested rename that misses a call site is a defect.
+
+For "consider X" suggestions where you decide *not* to do it: that's allowed, but you must
+write a reason in the report so the user can confirm in Phase 5.
+
+### 3c. Verify each fix
+
+After every edit, run `lean_diagnostic_messages` on the affected file. If the change broke
+the build, fix it before moving to the next item — don't accumulate breakage.
+
+### 3d. Record in the running log
+
+Maintain a per-item record:
+
+```
+Item #1 (Foo.lean:45, "This can be `simpa using h`")
+  Status:    ✓ addressed
+  Action:    Replaced `simp [foo]; exact h` with `simpa [foo] using h`
+  Verified:  lean_diagnostic_messages clean
+  Diff:      L45-46
+
+Item #2 (Bar.lean:78, "Rename wt_eq_zero → weight_eq_zero")
+  Status:    ✓ addressed
+  Action:    Renamed declaration; updated 7 call sites in 4 files
+  Verified:  lean_diagnostic_messages clean on all 4 files; lake build [target] succeeded
+
+Item #3 (Foo.lean:120, "Should this be an instance?")
+  Status:    ⚠ unable-to-decide
+  Action:    Drafted a reply asking the reviewer; no code change yet
+  Reason:    Both options have trade-offs; want reviewer's preference
+```
+
+---
+
+## PHASE 4 — Coverage Check (Main agent)
+
+**This phase exists to catch the "I forgot one" failure.**
+
+### 4a. Re-fetch comments
+
+Run the same `gh api` calls as Phase 1b to get the comment list *now*. (Reviewers may have
+added more between Phase 1 and now; also, this is the canonical list against which we check
+coverage.)
+
+### 4b. Cross-reference by `id`
+
+For each comment `id` from the re-fetch, find the matching entry in your Phase-3 running
+log. Build the verification table:
+
+```
+| Comment ID    | Phase-3 status      |
+|---------------|---------------------|
+| 12345678      | ✓ addressed         |
+| 12345679      | ✓ addressed         |
+| 12345680      | ⚠ unable-to-decide  |
+| 12345681      | ❌ NOT IN LOG — investigate |
+```
+
+Any `❌ NOT IN LOG` entries mean Phase 3 missed the comment. Go back, address them, then
+re-do Phase 4. Do not move on with unaddressed comments.
+
+### 4c. Verify the build
+
 ```bash
-lake build  # Ensure compilation
-lake exe runLinter  # Check linters
+lake build [target_modules]   # for the changed files
 ```
 
-### Step 6: Report
+If the project has a `lake exe runLinter`, run it too. Resolve every error before Phase 5.
 
-Generate summary of changes made.
+---
 
-## Output Format
+## PHASE 5 — STOP. Wait for user approval. (Main agent)
+
+**Do not push. Do not run `git push`. Do not commit-and-push. Do not "while we're here".**
+
+Print the full report (template below) and stop. Wait for the user to read it and either:
+
+- **Approve** ("ok push", "looks good", "go ahead") → proceed to Phase 6.
+- **Request changes** ("change item 3 to do X instead", "add a reply on item 4") → make the
+  change, re-run Phase 4 coverage, return to this Phase 5 and wait again.
+- **Cancel** ("don't push", "stop") → end here. The local commits stay; user can decide
+  what to do with them.
+
+### Phase 5 report template
 
 ```
-## PR Feedback Resolution: #1234
+## PR Feedback — Local Changes Ready (NOT YET PUSHED)
 
-### Feedback Summary
-- Total comments: 8
-- Actionable items: 6
-- Questions to clarify: 2
+PR: <owner>/<repo>#<N> — <title>
+Branch: <branch_name>
+Base: <base_branch>
 
-### Changes Made
+### Coverage
+| Total comments | 18 |
+| Addressed       | 15 |
+| Deferred (with reason) | 2 |
+| Unable to address (with reason) | 1 |
+| Unaddressed (DEFECT — should be 0) | 0 |
 
-#### Style (3 items)
-1. ✓ Line 45: Shortened line to 98 chars (was 115)
-2. ✓ Line 67: Fixed indentation (4→2 spaces)
-3. ✓ Line 89: Changed λ to fun
+### Changes summary
 
-#### Naming (1 item)
-1. ✓ Renamed `lemma1` to `add_pos_of_pos` (Line 56)
+#### Correctness (1)
+1. ✓ Bar.lean:120 — Fixed off-by-one in induction step (reviewer was right;
+   the `n + 1` case used `n` instead of `n + 1` in the IH application)
 
-#### Documentation (1 item)
-1. ✓ Added docstring to `importantDef` (Line 78)
+#### Naming (1)
+2. ✓ Renamed `wt_eq_zero` → `weight_eq_zero` (Foo.lean:78); updated 7 call sites
+   in 4 files (list…)
 
-#### Proof Golf (1 item)
-1. ✓ Simplified proof of `foo_bar` using ring tactic (Line 90-95)
+#### Golf (8)
+3. ✓ Foo.lean:45 — `simp; exact h` → `simpa using h`
+4. ✓ Foo.lean:60 — Inlined single-use `have h := bar`
+   ... etc
 
-### Questions for Reviewer
-1. Line 120: "Should this be an instance or a def?" - Need clarification
-2. Line 145: "Consider adding X" - Is this required or optional?
+#### Style (3) ...
+#### Documentation (2) ...
 
-### Compilation Status
-✓ All changes compile successfully
-✓ No new linter warnings
+### Deferred (2)
+- Item #3 (Foo.lean:120, "Should this be an instance?") — drafted reply asking
+  for preference; no code change. Reasoning: the trade-off depends on
+  downstream usage we don't have visibility into.
+- Item #14 (Bar.lean:200, "Could you also handle the `Int` case?") — out of
+  scope for this PR; suggested a follow-up issue.
 
-### Next Steps
-1. Push changes: `git push`
-2. Reply to reviewer comments explaining changes
-3. Wait for re-review
+### Unable to address (1)
+- Item #18 (general comment, "The whole approach feels off") — not an
+  actionable change request; need clarification before any code change.
+
+### Drafted replies (for the user to send after pushing)
+- Item #3: "Both work; the trade-off is X vs Y. Do you have a preference?"
+- Item #14: "I'd like to handle that in a follow-up — opened #YYYY."
+- Item #18: "Could you say more? Specifically, X feels off because Z, but
+  if you mean Y, then …"
+
+### Local git state
+- New commits: 1 ("address PR feedback")
+- Files changed: 6 (list…)
+- Lines: +23 −41
+
+### Next step
+**Awaiting your approval to push.** Reply with "push", "ok", or
+"approved" to proceed; or describe further changes you want first.
 ```
 
-## Common Feedback Patterns
+Then **stop** and wait. Do not pre-emptively push.
 
-### "Please shorten this line"
-```lean
--- Find line, break appropriately
--- Before
-theorem very_long_name (h₁ : hyp1) (h₂ : hyp2) (h₃ : hyp3) : conclusion := by ...
+---
 
--- After
-theorem very_long_name
-    (h₁ : hyp1) (h₂ : hyp2) (h₃ : hyp3) : conclusion := by
-  ...
+## PHASE 6 — Push + Watch CI (Main agent, only after user approval)
+
+### 6a. Push
+
+```bash
+git push
 ```
 
-### "Please add a docstring"
-```lean
--- Before
-def foo (x : α) : β := ...
+If the branch tracks a remote, this is enough. If not, the user has to set the upstream
+themselves — print the suggested `git push --set-upstream …` command and stop.
 
--- After
-/-- Brief description of what foo does.
-
-Longer explanation if needed. -/
-def foo (x : α) : β := ...
+Verify the push landed:
+```bash
+gh pr view <PR> --json headRefOid
 ```
 
-### "This can be golfed"
-```lean
--- Look for automation or term mode
--- Before
-theorem foo : P := by
-  have h := bar
-  exact h
+The `headRefOid` should match `git rev-parse HEAD`.
 
--- After
-theorem foo : P := bar
+### 6b. Wait for CI to start, then watch to completion
+
+CI runs are not instant — there's usually a 10–60 second delay between push and the first
+check appearing. Wait briefly, then start watching:
+
+```bash
+sleep 15
+gh pr checks <PR> --watch --interval 30
 ```
 
-### "Please rename to X"
-```lean
--- Rename and check all usages
--- Update any references in docstrings
+Run this with `Bash` `run_in_background: true`. The runtime auto-notifies you when the
+process exits — that's our wake-timer. Do **not** use a polling sleep loop in foreground —
+that wastes context and can hit timeouts. Do **not** use `ScheduleWakeup` (that's for
+`/loop` mode only).
+
+Tell the user what's happening:
+
+```
+Pushed to origin/<branch>. Watching CI on <owner>/<repo>#<N>.
+This typically takes 10–40 minutes for mathlib. I'll come back when checks finish.
 ```
 
-### "Use simp only"
-```lean
--- Before
-theorem foo : ... := by simp
+Then continue with other work or wait. When `gh pr checks --watch` exits, you'll be
+notified.
 
--- After
-theorem foo : ... := by simp only [relevant_lemmas]
+### 6c. Read the result
+
+When the watch process completes, capture its status:
+
+```bash
+gh pr checks <PR>           # final state
+gh pr view <PR> --json statusCheckRollup
 ```
 
-### "This should be in namespace X"
-```lean
--- Move declaration into namespace
--- Update any qualified references
+Three outcomes:
+
+| State | What it means | Next step |
+|---|---|---|
+| `SUCCESS` (all green) | CI passed | Phase 8 report |
+| `FAILURE` (any check failed) | CI flagged something | Phase 7 |
+| `PENDING` (still running) | The watch ended early; re-watch | Loop back to 6b |
+
+---
+
+## PHASE 7 — CI Follow-up (Main agent, only if CI failed)
+
+### 7a. Diagnose
+
+For each failed check:
+
+```bash
+gh run list --branch <branch> --limit 5
+gh run view <run_id> --log-failed
 ```
 
-## Handling Unclear Feedback
+Read the failure log. Common categories on mathlib PRs:
 
-If feedback is unclear:
-1. Quote the specific comment
-2. Explain your interpretation
-3. Ask for clarification if needed
-4. Make your best attempt if confident
+- **Build failure**: a file doesn't compile. The log shows the specific Lean error.
+- **Style linter failure**: a `style.*` linter fired on the diff.
+- **Mathlib4-style linter**: `lake exe runLinter` errors (unused, simpNF, etc.).
+- **Bench / nolints / other CI scripts**: project-specific checks (e.g., `!bench`).
+- **Imports** failure: `lake exe shake` flagged an unneeded or missing import.
 
-## Responding to Reviewers
+### 7b. Fix
 
-Template for PR comment after fixes:
-```markdown
-Thanks for the review! I've addressed the feedback:
+Apply the fix. For build failures, this often reveals that one of the Phase-3 changes
+introduced a regression — the diagnostic now leads you to the exact line.
 
-- Fixed line lengths on lines 45, 67, 89
-- Renamed `lemma1` to `add_pos_of_pos`
-- Added docstring to `importantDef`
-- Golfed proof of `foo_bar`
+After fixing locally, run:
 
-Questions:
-- Regarding the comment on line 120, should this be an instance or a def?
-
-Ready for re-review.
+```bash
+lake build <affected_modules>
+lake exe runLinter <affected_modules>   # if the CI failure was a linter
 ```
+
+### 7c. Loop back to Phase 5
+
+Print a short follow-up report ("CI failed on X; here's the fix; awaiting approval to push
+again") and wait for user approval again. Do not push without approval, even if the fix
+looks obvious.
+
+---
+
+## PHASE 8 — Final Report + Learnings (Main agent)
+
+Once CI is green:
+
+```
+## PR Feedback Resolution — <owner>/<repo>#<N> — DONE
+
+### Comments
+- Total addressed: 15
+- Deferred: 2 (with replies drafted)
+- Unable: 1 (clarification needed)
+
+### Code changes (final)
+- Files changed: 6
+- Lines: +23 −41
+- Commits: 1 ("address PR feedback")
+
+### CI
+- Final status: ✓ SUCCESS
+- Runs: 1 push + 0 fixes (or N pushes if Phase 7 fired)
+- Total wait time: ~22 minutes
+
+### Replies drafted (paste these into PR comments)
+- Item #3: "..."
+- Item #14: "..."
+- Item #18: "..."
+
+### Reviewer is now unblocked.
+```
+
+Then write learnings to `.mathlib-quality/learnings.jsonl` per the schema below.
+
+---
+
+## Edge cases
+
+### "I want to push myself, just do the fixes"
+
+If the user says they'll handle the push, stop after Phase 5. Don't run Phase 6 or 7. The
+fixes-only mode is fine; the no-push mandate is the default.
+
+### Multiple commits requested
+
+If the reviewer wants distinct concerns in separate commits ("please split this PR"):
+group the Phase-3 fixes by reviewer-asked grouping, then make one commit per group rather
+than one big commit. Commit messages should reference the comment(s) addressed.
+
+### CI is intermittently flaky
+
+If a check fails on something obviously unrelated (mathlib master broke, network glitch),
+don't loop back to Phase 7 with a code fix. Re-trigger the run:
+
+```bash
+gh run rerun <run_id>          # rerun the specific run
+# or
+gh pr comment <PR> --body "/bench"   # if a project bot accepts trigger commands
+```
+
+Then watch again. Treat persistent flakes as the user's call.
+
+### Reviewer dismissed or resolved a thread mid-flow
+
+If between Phase 1 and Phase 4 the reviewer resolved threads, don't worry — Phase 4
+re-fetches comments and the resolved-but-still-relevant ones stay in the punch-list
+(`⚪ resolved`). New comments added between Phase 1 and Phase 4 also get caught by 4b.
+
+---
 
 ## Reference
 
-See `references/pr-feedback-examples.md` for curated examples of common feedback patterns and their solutions.
+- `skills/mathlib-quality/references/pr-feedback-examples.md` — common feedback patterns
+- `skills/mathlib-quality/references/golfing-rules.md` — used by Phase 3 workers when a comment requests proof golf
+- `commands/cleanup.md` — Phase 4 worker prompt (used here when proofs need a deep golf pass)
 
-### Final Step: Record Learnings
+---
 
-After addressing all feedback and showing the report, capture what was learned.
+## Final Step: Record Learnings
 
-**For each significant fix made**, write a JSON entry to `.mathlib-quality/learnings.jsonl` (create the file and directory if they don't exist):
+After completing the resolution, capture what was learned.
+
+For each significant fix made, write a JSON entry to `.mathlib-quality/learnings.jsonl`:
 
 ```json
 {
-  "id": "<generate a short unique id>",
-  "timestamp": "<current ISO timestamp>",
+  "id": "<short unique id>",
+  "timestamp": "<ISO timestamp>",
   "command": "fix-pr-feedback",
-  "type": "<golf_pattern|style_correction|naming_fix|mathlib_discovery|failed_pattern>",
-  "before_code": "<original code the reviewer flagged, max 500 chars>",
-  "after_code": "<the fix applied, max 500 chars>",
+  "type": "<golf_pattern|style_correction|naming_fix|mathlib_discovery|api_change|failed_pattern>",
+  "before_code": "<original code, max 500 chars>",
+  "after_code": "<fixed code, max 500 chars>",
   "pattern_tags": ["<relevant pattern names>"],
-  "description": "<1-2 sentence description: what the reviewer asked for and how it was resolved>",
-  "math_area": "<analysis|algebra|topology|number_theory|combinatorics|order|category_theory|measure_theory|other>",
+  "description": "<what the reviewer asked for and how it was resolved>",
+  "math_area": "<analysis|algebra|...|other>",
   "accepted": true,
-  "source": "<agent_suggestion|user_correction>",
+  "source": "agent_suggestion",
   "context": {
     "file_path": "<relative path>",
-    "theorem_name": "<if applicable>"
+    "theorem_name": "<if applicable>",
+    "pr": "<owner>/<repo>#<N>",
+    "reviewer": "<gh login>"
   }
 }
 ```
 
-**What to capture from fix-pr-feedback:**
-- Each reviewer-requested change (what reviewers catch = what the skill should catch earlier)
-- Patterns the skill should have flagged in `/check-style` or `/cleanup`
-- Novel reviewer insights not covered by existing rules
-- Fixes the user disagreed with or modified
+**What to capture:**
+- Each reviewer-requested change — what reviewers catch is what `/cleanup` should catch earlier.
+- Patterns the skill should have flagged in `/cleanup`'s Phase 2 (style audit) or Phase 4 (per-declaration golf) but didn't.
+- Novel reviewer insights not yet in the reference docs.
+- Fixes the user disagreed with or modified during Phase 5 review.
 
 **What NOT to capture:**
-- Trivial formatting fixes
-- Changes already in the style guide (unless the skill missed them)
+- Trivial formatting fixes already in the style guide.
+- CI-flake reruns.
 
-**Keep it lightweight** - only 1-5 entries per command run, prioritizing novel reviewer insights.
+**Keep it lightweight** — only 1–5 entries per command run, prioritising novel reviewer insights.

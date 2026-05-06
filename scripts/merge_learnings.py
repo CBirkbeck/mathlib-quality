@@ -58,7 +58,10 @@ def validate_entry(entry: dict) -> tuple[bool, str]:
 
     valid_types = {
         'golf_pattern', 'style_correction', 'naming_fix', 'decomposition',
-        'file_split', 'mathlib_discovery', 'failed_pattern', 'user_teaching'
+        'file_split', 'mathlib_discovery', 'failed_pattern', 'user_teaching',
+        # bump-mathlib types
+        'api_change', 'api_rename', 'import_change', 'instance_change',
+        'deprecation_removal', 'tooling', 'other',
     }
     if entry.get('type') not in valid_types:
         return False, f"Invalid type: {entry.get('type')}"

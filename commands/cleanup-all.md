@@ -3,10 +3,10 @@ name: cleanup-all
 description: Run /cleanup on every file in the project, tracked file by file
 ---
 
-# /cleanup-all - Project-Wide Cleanup
+# /cleanup-all — Project-Wide Cleanup
 
-Run the full `/cleanup` procedure on every `.lean` file in the project. Each file gets its own
-dedicated agent so nothing is skipped.
+Run the full `/cleanup` procedure on every `.lean` file in the project. Each file gets its
+own dedicated agent so nothing is skipped.
 
 ## Usage
 
@@ -18,257 +18,160 @@ If no argument, processes all `.lean` files (excluding `.lake/`, `build/`).
 
 ---
 
-## Why This Command Exists
+## Why this command exists
 
-When told "run /cleanup on all files," agents:
-- Skip files (especially later ones as they get tired)
-- Rush through files without doing the full 15-item audit
-- Lose context and forget rules after processing a few files
+When told "run /cleanup on all files," a single agent will:
+- Skip files (especially later ones as context fills up)
+- Rush the per-file 7-phase workflow
+- Lose context and forget rules after a few files
 
-This command fixes that by giving EACH FILE its own dedicated agent with the full rules.
+This command fixes that by giving EACH FILE its own dedicated agent with the full rules and
+its own context window.
 
 ---
 
 ## Procedure
 
-### Step 1: Enumerate All Files
-
-Find every `.lean` file:
+### Step 1 — Enumerate files
 
 ```bash
 find [directory] -name "*.lean" -not -path "./.lake/*" -not -path "./build/*" | sort
 ```
 
-Print the full file list with line counts:
+Print the full file list with line counts and ask the user to confirm before proceeding:
 
 ```
-## Files to Clean (N total)
+## Files to clean (N total)
 
 | # | File | Lines | Status |
 |---|------|-------|--------|
 | 1 | Foo/Bar.lean | 450 | pending |
 | 2 | Foo/Baz.lean | 200 | pending |
 | 3 | Helpers.lean | 800 | pending |
-| ... | ... | ... | ... |
+...
 ```
 
-**Ask the user to confirm the file list before proceeding.** They may want to skip certain files
-or prioritize specific ones.
+### Step 2 — Process files one at a time
 
-### Step 2: Process Files One By One
-
-**Process files sequentially, ONE AT A TIME.** Do not try to do multiple files in parallel —
-each file needs full attention.
+**Sequentially, one file per agent.** Do not batch.
 
 For each file:
 
-#### 2a: Announce the file
+#### 2a. Announce
 
 ```
 ## Processing file 3/N: Helpers.lean (800 lines)
 ```
 
-#### 2b: Dispatch a dedicated cleanup agent
+#### 2b. Dispatch a per-file cleanup agent
 
-Dispatch an agent using the `Agent` tool with `subagent_type="general-purpose"`.
-
-**IMPORTANT — Batch mechanical replacements first:** The agent must do ALL `show→change`,
-`λ→fun`, `$→<|` replacements in ONE batch pass (using `Edit` with `replace_all: true`)
-BEFORE starting per-declaration audits. Do NOT do these one at a time — the Lean LSP rebuilds
-the file between edits and can revert individual changes. See Step 1c in cleanup.md.
-
-**The agent prompt MUST include the FULL cleanup worker instructions.** Read the contents of
-`commands/cleanup.md` — find the worker prompt section (starting with "Your declarations") and
-include it verbatim. Do NOT summarize or abbreviate the rules.
-
-**Agent prompt structure:**
+Use the `Agent` tool with `subagent_type="general-purpose"`. The worker prompt is below — paste
+it verbatim, substituting the file path and progress numbers.
 
 ```
-You are running /cleanup on [file_path]. This is file [X] of [N] in a project-wide cleanup.
+You are running /cleanup on [file_path]. This is file X of N in a project-wide cleanup.
 
-IMPORTANT: This file gets your FULL attention. Do not rush.
+This file gets your FULL attention. Do not rush. Take as long as you need.
 
-Step 1: Run lean_diagnostic_messages on the file. Print all warnings.
+Your job is to execute the full Mode B (Whole File) workflow from `commands/cleanup.md`,
+which is seven phases:
 
-Step 2: Fix the file header (copyright, imports, module docstring).
+  PHASE 1  PREPARE                  collect context
+  PHASE 2  STYLE AUDIT              full punch-list, no fixes yet
+  PHASE 3  FILE-LEVEL FIXES         work the file-level items from the punch-list
+  PHASE 4  PER-DECLARATION GOLF     one worker per declaration
+  PHASE 5  REFACTORING              cross-declaration changes
+  PHASE 6  FINAL VERIFICATION       diagnostic-clean, compiles, no FIXMEs
+  PHASE 7  REPORT                   one consolidated report
 
-Step 3: Batch mechanical replacements (show→change, λ→fun, $→<|) with replace_all.
+Step 1 of YOUR work: Read `commands/cleanup.md` in full so you know exactly what each phase
+requires. The prompt for the per-declaration sub-worker (Phase 4) lives there verbatim —
+copy it as-is into each Agent dispatch.
 
-Step 4: List every declaration with line numbers.
+Then execute Phases 1–7 on [file_path]. Do not skip phases. The user has explicitly
+demanded methodical, no-shortcut cleanup — every audit item gets a concrete answer, every
+golfing rule gets considered, every declaration gets its own focused sub-worker in Phase 4.
 
-Step 5: For EACH declaration, dispatch a dedicated worker agent (one per declaration).
-Each worker gets the full rules below and focuses deeply on finding the cleanest
-possible proof for that ONE declaration. Multiple workers can run in parallel.
-
-Worker prompt for each declaration:
-
-  You are cleaning up a SINGLE Lean 4 declaration in [file_path]: `decl_name` (lines N-M).
-  Give it your full attention. Think deeply about the cleanest, shortest proof possible.
-  The goal is to minimize tactics — ideally find a one-liner or term-mode proof.
-
-  A. Print the audit report (every item must have an answer):
-
-  1. LINT: [warnings or "none"]
-  2. HAVE SCAN: [list EVERY have — classify as INLINE or KEEP]
-  3. SET_OPTION: [any set_option? MUST remove]
-  4. SIMP SQUEEZE: [any bare simp? badly formatted simp only?]
-  5. NAMING: [OK / rename needed]
-  6. LINE PACKING: [lines breaking too early?]
-  7. BY PLACEMENT: [violations or "OK"]
-  8. FORMAT: [indent, empty lines, or "OK"]
-  9. COMMENTS: [inline comments or "clean"]
-  10. DOCSTRING: [action needed or "OK"]
-  11. VISIBILITY: [private needed or "OK"]
-  12. STRUCTURE: [>30 lines, ∧, branches >10 — attempt fix]
-  13. MATHLIB: [replacement found or "checked, none"]
-
-  Issues to fix: [numbered list]
-
-  B. Deep golf — apply rules checklist:
-
-  INSTANT WINS (always apply if pattern matches):
-  - `:= by exact term` → `:= term`
-  - `:= by rfl` → `:= rfl`
-  - `rw [h]; exact e` → `rwa [h]`
-  - `simp [...]; exact h` → `simpa [...] using h`
-  - `simp [...]; rfl` → just `simp [...]`
-  - `constructor; exact a; exact b` → `exact ⟨a, b⟩`
-  - `apply f; exact h` → `exact f h`
-  - `by_contra h; push_neg at h` → `by_contra! h`
-  - `fun x => f x` → `f` (eta-reduce)
-  - Single-use `have h := x` → inline x at use site
-  - `apply X; intro y` → `refine X fun y => ?_`
-  - Redundant `show T` → remove
-  - `have h := ...; h.1, h.2` → `obtain ⟨a, b⟩ := ...`
-  - Consecutive `rw [a]; rw [b]` → `rw [a, b]`
-  - Terminal `simp only [...]` → unsqueeze to `simp` (don't squeeze terminal simp!)
-  - Nonterminal bare `simp` → squeeze via `simp?`
-  - Dot notation: `Foo.bar h` → `h.bar`
-  - `f (by simp)` → `f <| by simp`
-
-  AUTOMATION UPGRADES (try each on multi-line blocks, keep if compiles):
-  1. `grind` / `grind [lemmas]` on whole proof
-  2. Delete tactics before `grind` (it subsumes preceding steps)
-  3. `fun_prop` / `fun_prop (disch := grind)` for Continuous/Differentiable/Measurable
-  4. `positivity` for `0 < x`, `0 ≤ x`
-  5. `gcongr` for inequality congruence
-  6. `lia` for Nat/Int arithmetic (preferred over omega)
-  7. `aesop` for logic/membership
-  8. `field_simp; ring` for denominator equalities
-  9. `wlog` for symmetric cases
-  10. `refine ⟨?_, ?_⟩ <;> grind` for multiple similar goals
-
-  CLEANUP:
-  - `erw` → `rw`; `continuity`/`measurability` → `fun_prop`
-  - `omega` → `lia`; `simp_all only` → `simp_all`
-  - Remove `set_option maxHeartbeats` (fix the proof instead)
-
-  STEP BACK AND THINK:
-  After mechanical rules, look at the proof holistically:
-  - Can the ENTIRE proof be one tactic? (grind, simp, aesop, decide)
-  - Is there a better mathlib lemma that makes this trivial?
-  - Is there a term-mode proof shorter than the tactic proof?
-  - Can have blocks be composed into a single expression?
-  - Would a completely different proof strategy be shorter?
-  - Try `exact?` or `apply?` if stuck.
-
-  C. Implement ALL fixes from the audit report.
-  D. Verify with lean_diagnostic_messages.
-  E. Report before/after line counts.
-
-Step 6: After all declarations, run lean_diagnostic_messages on the full file.
-  Report: original warnings vs remaining warnings.
-
-[INCLUDE THE FULL ITEM 2 (HAVE SCAN), ITEM 4 (SIMP SQUEEZE), ITEM 6 (LINE PACKING),
- ITEM 3 (SET_OPTION), AND ITEM 14 (STRUCTURE) PROCEDURES FROM cleanup.md]
+When done, output the Phase 7 report.
 ```
 
-**CRITICAL: Include the detailed procedures for items 2, 3, 4, 6, and 14 in the agent prompt.**
-These are the most commonly skipped checks. If you just say "see cleanup.md," the agent won't
-read it. Paste the actual rules.
+#### 2c. Verify the agent's work
 
-#### 2c: Verify the agent's work
+After the agent reports done:
 
-After the agent completes, verify:
-1. Run `lean_diagnostic_messages` on the file — should be clean (or only STRUCTURE items remaining)
-2. Check that the agent actually printed audit reports (did it skip declarations?)
-3. If the agent skipped declarations or didn't fix issues, re-dispatch for the missed items
+1. `lean_diagnostic_messages` on the file — must be clean (or only `[STRUCTURE]` items remaining).
+2. Confirm the agent printed the Phase 7 report.
+3. Spot-check that the Phase 4 status block shows golf rules considered for at least one declaration.
+4. If the agent skipped any phase or declaration, re-dispatch with explicit instructions on what was missed.
 
-#### 2d: Update progress
+#### 2d. Update progress
 
 ```
 ## Progress: 3/N complete
 
-| # | File | Lines | Status | Issues Fixed |
-|---|------|-------|--------|--------------|
-| 1 | Foo/Bar.lean | 450 | ✓ done | 12 |
-| 2 | Foo/Baz.lean | 200 | ✓ done | 5 |
-| 3 | Helpers.lean | 800 | ✓ done | 18 |
-| 4 | Main.lean | 600 | ⏳ next | - |
-| ... | ... | ... | pending | - |
+| # | File | Lines | Status | Issues fixed | Saved (lines) |
+|---|------|-------|--------|--------------|---------------|
+| 1 | Foo/Bar.lean | 450 | ✓ done | 12 | -34 |
+| 2 | Foo/Baz.lean | 200 | ✓ done |  5 | -8  |
+| 3 | Helpers.lean | 800 | ✓ done | 18 | -120 |
+| 4 | Main.lean    | 600 | ⏳ next |    |     |
+...
 ```
 
-### Step 3: Final Project Verification
+### Step 3 — Final project verification
 
-After ALL files are processed:
+After all files done:
 
-1. Run `lean_diagnostic_messages` on each file one more time
-2. Build the full project to verify everything compiles together:
-   ```bash
-   lake build
-   ```
-3. Print the final report
+1. `lean_diagnostic_messages` on each file again.
+2. `lake build` to ensure the whole project still compiles together.
+3. Print the final report.
 
-### Step 4: Final Report
+### Step 4 — Final report
 
 ```
-## Cleanup-All Report
+## /cleanup-all report
 
 ### Summary
 - Files processed: N/N ✓
 - Total issues fixed: M
 - Total lint warnings resolved: L
-- Remaining STRUCTURE items: S (for /decompose-proof)
+- Total lines saved: ΔL
 
-### Per-File Results
-| File | Declarations | Issues Fixed | Remaining |
-|------|-------------|-------------|-----------|
-| Foo/Bar.lean | 15 | 12 | 1 (STRUCTURE) |
-| Foo/Baz.lean | 8 | 5 | 0 |
-| ... | ... | ... | ... |
+### Per-file results
+| File | Declarations | Issues fixed | Saved | Notes |
+|------|-------------|--------------|-------|-------|
+| Foo/Bar.lean | 15 | 12 | -34 | 1 STRUCTURE flagged |
+| Foo/Baz.lean | 8  |  5 |  -8 |                     |
+| ... | ... | ... | ... | ... |
 
-### Files Flagged for /decompose-proof
-- Helpers.lean: `theorem_X` (45 lines), `theorem_Y` (38 lines)
+### Cross-file refactoring (collected from Phase 5 reports)
+- Renamed `wt_*` → `weight_*` across 3 files (24 call sites)
+- Removed bridge lemma `splits_id_iff_*` (mathlib used directly in 4 files)
+
+### Files flagged for /decompose-proof
+- Helpers.lean: `theorem_X` (38 lines after golfing)
 - Main.lean: `main_result` (62 lines)
 
+### Files flagged for /split-file
+- Big.lean (1,847 lines)
+
 ### Compilation
-✓ Full project builds successfully
+✓ lake build succeeded
 ```
 
 ---
 
-## Key Rules for This Command
+## Key rules for this command
 
-1. **ONE file at a time.** Do not batch files. Each file gets a dedicated agent with full context.
-
-2. **FULL rules in every agent prompt.** Do not say "refer to cleanup.md." Paste the actual
-   HAVE SCAN procedure, SIMP SQUEEZE procedure, LINE PACKING procedure, SET_OPTION procedure,
-   and STRUCTURE procedure into every agent prompt. Agents won't read external files.
-
-3. **Verify after each file.** Run lean_diagnostic_messages. If issues remain, re-dispatch.
-
-4. **Track progress visibly.** Print the progress table after each file. The user must be able
-   to see that every file was processed.
-
-5. **Do not skip files.** Every `.lean` file in the list must be processed. If a file is already
-   clean, the agent should confirm this by printing audit reports showing "OK" for each check.
-
-6. **Handle cross-file renames in a final pass.** If a cleanup agent reports "Refactoring needed:
-   rename X used in other files," collect these and handle them after all files are processed.
+1. **One file per agent.** Each file gets its own dedicated context and worker. No batching.
+2. **The per-file worker runs the FULL 7-phase /cleanup workflow.** Don't accept "I did a quick pass." Phase 4 dispatches *another* level of agents (one per declaration) — that's by design.
+3. **Verify after each file.** `lean_diagnostic_messages`. If issues remain, re-dispatch.
+4. **Track progress visibly.** Print the progress table after each file so the user can see no file was skipped.
+5. **Cross-file refactoring goes in the final pass.** When per-file workers report `Refactoring needed: rename X across files`, collect these and handle in Step 4 (or after all files are processed if it's safer to do once).
 
 ---
 
 ## Reference
 
-- `commands/cleanup.md` — the per-file cleanup procedure (items 2, 3, 4, 6, 14 procedures)
-- `skills/mathlib-quality/references/golfing-rules.md` — full golfing rules checklist
+- `commands/cleanup.md` — the per-file 7-phase workflow (the per-file worker reads this)
+- `skills/mathlib-quality/references/golfing-rules.md` — full golfing rules checklist (per-declaration sub-workers in Phase 4 read this)

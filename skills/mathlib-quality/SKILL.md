@@ -39,17 +39,18 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 
 | Command | Description |
 |---------|-------------|
-| `/develop` | Plan and prove a mathematical development with ticket management |
-| `/cleanup` | Audit + golf (whole file or single declaration) |
+| `/develop` | **Planning only.** Searches mathlib, designs API, drafts proof sketches from your sources, writes a detailed ticket board where every ticket contains the full Lean statement, a numbered proof sketch citing sources, the mathlib lemmas needed, and the generality decision. After approval, `/develop` stops — workers run via `/extended-work`. |
+| `/extended-work` | **Execution only.** Pick up one ticket from the `/develop` board and work it to completion or concrete approach error. Strict no-complaining, no-pivoting, no-divergence mode: forbidden phrases include "this is a multi-week effort", "this is too complex", "let me try a different approach without first proving the planned one fails". Stops only on DONE / PROOF-SKETCH FAILURE / MATHLIB GAP / SCOPE-DEFINITION ERROR / DEPENDENCY NOT MET — each with a required concrete report. |
+| `/cleanup` | Style audit + cleanup + golf (whole file or single declaration). **9-phase methodical workflow**: doctor (baseline build) → prepare → audit punch-list → file-level fixes → per-declaration deep golf with diff gates → refactoring → final gates + cumulative checks → built-in `/simplify` pass → report. **Absorbed**: `/check-style` (Phase 2 audit), `/check-mathlib` (Phase 4 item 13 — five-method search + six strict rules + common-equivalents lookup), the inline mechanical pass of `/generalise` (Phase 4 item 18), and shouyi-style diff gates (Phase 4 + 6). Phase 6.5 hand-off to the built-in `/simplify` skill catches holistic issues the rule-driven pass missed. |
 | `/cleanup-all` | Run /cleanup on every file in the project, tracked file by file |
-| `/check-style` | Validate without making changes |
 | `/decompose-proof` | Break long proofs into helper lemmas |
 | `/overview` | Project declaration inventory for consolidation analysis |
-| `/check-mathlib` | Find mathlib equivalents to avoid duplication |
+| `/expert-review` | Two-mode skill for external mathematical review. **Mode 1**: produce a self-contained `REVIEW_BRIEF.md` (no Lean, no file paths) — goals, plan, references, status, blockers, numbered questions — and stop, waiting for the reviewer's reply. **Mode 2** (`--reply`): once the reviewer responds, map their answers onto our questions, propose ticket/work-order updates, apply only after user approval. Session history persists in `.mathlib-quality/expert-review/<date>/`. |
+| `/generalise` | Audit a lemma or definition for assumption weakening. Tries mechanical weakenings from a catalogue (typeclass parents, drop-unused, point-localise, strict→weak), then performs a literature search (WebSearch + ChatGPT MCP if available + mathlib's five-method search). Auto-applies small safe changes; presents big changes (public-API, restating, renames) as numbered options for user approval. |
 | `/split-file` | Split large files (>1500 lines) into focused modules |
 | `/pre-submit` | Pre-PR submission checklist |
 | `/bump-mathlib` | Bump mathlib version and fix resulting breakage |
-| `/fix-pr-feedback` | Address reviewer comments |
+| `/fix-pr-feedback` | Fetch PR comments, implement fixes locally, **wait for user approval before pushing**, then watch CI to completion. 8-phase workflow with explicit comment-coverage check. |
 | `/setup-rag` | Set up RAG MCP server for PR feedback search |
 | `/setup-chatgpt` | Set up ChatGPT MCP server for mathematical second opinions |
 | `/teach` | Teach the skill a project-specific pattern or convention |
@@ -356,7 +357,7 @@ Exceptions (suffixes, like atoms): `_injective`, `_surjective`, `_bijective`, `_
 The skill learns from every use and gets better over time. There are three layers:
 
 ### 1. Automatic Local Capture
-Every command (`/cleanup`, `/check-style`, etc.) automatically records significant learnings to `.mathlib-quality/learnings.jsonl` in your project. This captures:
+Every command (`/cleanup`, `/develop`, `/bump-mathlib`, etc.) automatically records significant learnings to `.mathlib-quality/learnings.jsonl` in your project. This captures:
 - Proof golfing patterns that worked (before/after code)
 - Style corrections applied
 - Mathlib lemmas discovered that replaced custom code

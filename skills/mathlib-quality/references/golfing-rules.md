@@ -126,6 +126,28 @@ f (by simp)                      f <| by simp
 g (fun x => h x)                 g fun x => h x
 ```
 
+### 1.19 `push_neg` → `push Not`
+`push_neg` is deprecated. Use `push Not at h` (or `push Not` with a location) instead.
+```lean
+-- BEFORE                        -- AFTER
+push_neg at h                    push Not at h
+push_neg                         push Not
+by_contra h; push_neg at h       by_contra! h
+```
+
+### 1.20 Inline trivial single-use `∃`-lemmas
+A private `∃`-lemma whose body is `⟨witness, rfl, rfl, ...⟩` and is used only once is junk.
+Inline the witness at the call site.
+```lean
+-- BEFORE
+private lemma my_witness : ∃ d, P d := ⟨_, rfl, rfl⟩
+-- ... used once
+obtain ⟨d, h1, h2⟩ := my_witness
+
+-- AFTER (no helper lemma)
+obtain ⟨d, h1, h2⟩ : ∃ d, P d := ⟨_, rfl, rfl⟩
+```
+
 ---
 
 ## Phase 2: Automation upgrades (try each, keep if it works)

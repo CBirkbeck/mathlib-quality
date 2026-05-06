@@ -20,6 +20,28 @@ Please consider using that instead."
 
 **Humility:** No one has a monopoly on best practices. Allow room for better approaches.
 
+### Review Meta-Pattern: Spot Missing General Lemmas
+
+During review/cleanup, actively look for places where a *general lemma is missing* in mathlib — not just style/golf issues. The signal is a proof that uses an ad-hoc workaround where a nicer dot-notation form would work if a lemma existed:
+
+```lean
+-- ❌ Ad-hoc workaround: anonymous constructor + type ascription
+⟨_, (multipliableLocallyUniformlyOn_one_sub_pow.hasProdLocallyUniformlyOn :
+    TendstoLocallyUniformlyOn _ _ _ _).comp (Periodic.qParam 1)
+  (fun z hz ↦ by simpa using ...) (by fun_prop)⟩
+
+-- ✓ After adding a general `MultipliableLocallyUniformlyOn.comp` lemma upstream
+multipliableLocallyUniformlyOn_one_sub_pow.comp (𝕢 1)
+  (fun z hz ↦ by simpa using ...) (by fun_prop)
+```
+
+**How to find these:** read the proof and ask "what would make this nicer / shorter / more conceptual?". If the answer is "if there were a `.comp` (or `.mul`, `.add`, …) lemma for this namespace", the right fix is to add the general lemma upstream, not to keep the workaround.
+
+Common signals:
+- `⟨_, ...⟩` with a nontrivial type ascription on the second component
+- A coercion-or-cast acrobatics chain that ends in something that *should* be dot-notation
+- Repeated `have : XClass Γ' := eq ▸ ‹_›` bridges across multiple proofs (add an API lemma instead)
+
 ## Review Categories (Easiest to Hardest)
 
 ### 1. Style

@@ -200,11 +200,34 @@ theorem foo : P
 - **Discouraged inside declarations** (enforced by linter)
 - Blank lines separate theorems/definitions
 - May omit blank lines for grouped short definitions
+- **Exactly one blank line between consecutive declarations** (lemma/theorem/def). Two or more is rejected; zero is rejected.
+
+### No Subsection Dividers Inside Files
+
+Do not add `/-! ### Foo -/` (or `/-! ## Foo -/`) subsection headers inside a Lean file. The only module-level docstring belongs at the top of the file. Subsection dividers below the header are rejected by review and `/cleanup` strips them.
+
+```lean
+-- BAD: subsection divider inside a file
+/-! ### Surjectivity of `evalE₄E₆` -/
+
+theorem evalE₄E₆_surjective : ... := by ...
+
+/-! ### Injectivity of `evalE₄E₆` -/
+
+-- GOOD: just declarations, no dividers
+theorem evalE₄E₆_surjective : ... := by ...
+
+theorem evalE₄E₆_injective : ... := by ...
+```
+
+If a chunk of declarations needs a header to be discoverable, the file is probably too large — split it instead.
 
 ### Comments in Proofs
 
 **Mathlib proofs should have NO inline comments.** Proofs should be self-documenting through
 clear variable names and logical structure. Use docstrings for documentation.
+
+**Narrative `--` comments inside proofs (`-- now apply the IH`, `-- use linearity`, `-- Step 1: ...`) are rejected.** `/cleanup` strips them automatically. The only `--` comments that survive a review pass are those documenting a non-obvious WHY: a hidden constraint, a workaround for a specific bug, or behaviour that would surprise a reader.
 
 **What to avoid:**
 ```lean
@@ -274,6 +297,19 @@ theorem valence_formula : ... := by ...
 private theorem valence_formula_aux : ... := by ...
 ```
 
+**Private/auxiliary lemmas must not have docstrings.** Docstrings are reserved for the public-API surface; a docstring on a `private` lemma is review-rejected and `/cleanup` strips it.
+
+```lean
+-- BAD: docstring on a private helper
+/-- For even `k ≥ 4`, there exist `a, b ∈ ℕ` with `4a + 6b = k`. -/
+private lemma exists_monomial_weight ... := ...
+
+-- GOOD: no docstring on private/aux
+private lemma exists_monomial_weight ... := ...
+```
+
+If the helper deserves to be documented, it probably deserves to be public (drop `private`); otherwise drop the docstring.
+
 **Rarely acceptable comments (use sparingly):**
 - `-- Porting note:` for Lean 3 → 4 migration issues (required for porting PRs)
 - Reference to a paper for a highly unusual technique (rare)
@@ -320,6 +356,35 @@ def fundamentalDomain : Set UpperHalfPlane := {z | |z.re| ≤ 1/2 ∧ ‖(z : �
 - Build new API/lemmas FOR mathlib's existing definitions rather than creating custom ones
 - If replacing a custom def with a mathlib one, update ALL lemmas to use the mathlib def
 
+### Avoid Custom Defs That Mirror Trivial Mathlib Constructions
+
+**Every `def` must be strongly justified and come with good API.** Small wrapper defs whose body is a one-line mathlib expression are junk — inline the expression at use sites.
+
+```lean
+-- BAD: trivial wrappers around existing mathlib constructions
+def mk2 (a b : ℕ+) : Fin 2 → ℕ+ := ![a, b]
+def sigma1 (m : ℕ+) : ℕ := ArithmeticFunction.sigma 1 m
+
+-- GOOD: use mathlib directly at every call site
+-- ![a, b]                    -- not mk2 a b
+-- ArithmeticFunction.sigma 1 -- not sigma1
+```
+
+**Test:** if your `def` is used outside one local proof, has `_apply`/`_def` lemmas, or names a non-trivial mathematical object, keep it. Otherwise inline.
+
+### Junk Defs Without API
+
+A `def foo : T := value` with **no surrounding API** (no `_apply`/`_def` simp lemmas, no users outside one local proof) is junk. Inline `value` at every use site, with a type ascription `(value : T)` if the elaborator needs it.
+
+```lean
+-- BAD: bare def, no API, used in one place
+def E₄E₆Weight : Fin 2 → ℕ := ![4, 6]
+-- ... used 13 times as `E₄E₆Weight` with no _apply lemmas
+
+-- GOOD: inline at every site
+(![4, 6] : Fin 2 → ℕ)
+```
+
 ### No Bridge Theorems
 
 When a custom definition duplicates a mathlib definition, do NOT create bridge theorems between them. Instead, migrate all code to use the mathlib definition directly.
@@ -331,6 +396,21 @@ theorem S0_mem_fd_clean : ... := by rw [fd_eq_fd']; ...
 
 -- GOOD: update ALL code to use the mathlib definition directly
 -- Delete custom fundamentalDomain and rewrite every lemma that used it
+```
+
+### Inline Trivial Single-Use Existential Lemmas
+
+A private `∃`-existence lemma whose body is `⟨witness, rfl, rfl, ...⟩` and is used only once is junk — write the witness inline at the call site.
+
+```lean
+-- BAD: trivial single-use existence lemma
+private lemma finsupp_of_fin2 (a b : ℕ) : ∃ d : Fin 2 →₀ ℕ, d 0 = a ∧ d 1 = b :=
+  ⟨Finsupp.equivFunOnFinite.invFun ![a, b], rfl, rfl⟩
+-- used once
+
+-- GOOD: inline the witness at the call site
+obtain ⟨d, hd0, hd1⟩ : ∃ d : Fin 2 →₀ ℕ, d 0 = a ∧ d 1 = b :=
+  ⟨Finsupp.equivFunOnFinite.invFun ![a, b], rfl, rfl⟩
 ```
 
 ### Prefer Notation Over Definitions for Simple Compositions
@@ -458,18 +538,27 @@ structure Foo (α : Type*) where
 
 ## Tactic Mode
 
-### One tactic per line (usually)
-```lean
--- Good
-theorem foo : P := by
-  apply h₁
-  apply h₂
-  exact h₃
+### One tactic per line
 
--- Acceptable for very short closers
-theorem foo : P := by exact h
-theorem bar : P := by simp; ring
+**No `tac1; tac2` chains on one line.** Each tactic goes on its own line. The one exception is sequential `rw` calls, which should be **merged** into a single call rather than chained:
+
+```lean
+-- BAD: distinct tactics chained with `;`
+theorem foo : P := by
+  subst hk; rfl
+  rw [a]; rw [b]
+  rw [...]; ring
+
+-- GOOD: one tactic per line; merge sequential rw
+theorem foo : P := by
+  subst hk
+  rfl
+  rw [a, b]    -- merged
+  rw [...]
+  ring
 ```
+
+The terminal-only one-liners `:= by exact h`, `:= by simp`, `:= by rfl` are fine on a single line.
 
 ### Focused subgoals with `·`
 ```lean
@@ -631,6 +720,68 @@ alias old_name := new_name
 - Named instances don't require deprecations
 - For `to_additive`: ensure deprecation tagged on both versions
 
+### Renaming declarations across namespaces — `protected alias`
+
+When renaming a declaration that *moves between namespaces* (e.g.
+`ModularFormClass.qExpansion_smul` → `ModularForm.qExpansion_smul`), don't simply delete
+the old qualified name. Add a `protected alias` at the OLD namespace so downstream code
+that imports the qualified name still compiles:
+
+```lean
+-- After renaming ModularFormClass.qExpansion_smul → ModularForm.qExpansion_smul,
+-- add this at the OLD namespace:
+namespace ModularFormClass
+
+@[deprecated (since := "yyyy-mm-dd")]
+protected alias qExpansion_smul := ModularForm.qExpansion_smul
+
+-- ... etc for every renamed declaration in this namespace
+
+end ModularFormClass
+```
+
+`protected` keeps the alias accessible only via the qualified `ModularFormClass.qExpansion_smul`
+form (not via dot-notation on a subject), which matches typical downstream usage. Plain
+`alias` (non-protected) opens the name to dot-notation too, which is rarely what you want
+for a deprecation alias.
+
+This applies to any PR that moves or renames declarations downstream code might import.
+[loefflerd review of mathlib4 #38806]
+
+### Moving a file: TWO PRs, no shim in the move PR
+
+When moving a file in mathlib4, **don't leave a deprecation shim at the old path in the
+same PR that does the move**. The mathlib convention is a two-PR workflow:
+
+**PR 1 — the move.** In the file-move PR, delete the old file outright (`git rm`). Run
+`lake exe mk_all` to drop the now-orphaned import from `Mathlib.lean`. The new file at
+the new path is the only copy.
+
+```lean
+-- ❌ Wrong: leave a shim at the old path in the move PR
+-- old/path/MyFile.lean (kept):
+--   module -- shake: keep-all
+--   public import new.path.MyFile
+--   deprecated_module ...
+```
+
+**PR 2 — the deprecation shim, separate and immediate.** In a follow-up PR (sent right
+after the move), add the deprecation shim back at the old path:
+
+```lean
+-- old/path/MyFile.lean (added in follow-up PR):
+deprecated_module "Use new.path.MyFile instead." (since := "yyyy-mm-dd")
+```
+
+**Why two PRs?** Git's rename-detection only recognises a file move when the old file
+*vanishes entirely* and an identically-content new file appears. A one-line stub at the
+old path defeats the heuristic — Git treats the new file as freshly created, and
+`git blame` / `git log --follow` lose history. The two-PR split gets both: clean rename
+detection in PR 1, downstream-friendly deprecation in PR 2. Tedious but worth it for the
+permanent history.
+
+[loefflerd review of mathlib4 #38806]
+
 ## Error Messages
 
 ```lean
@@ -726,6 +877,22 @@ IsCuspForm f ↔ ∀ {c : OnePoint ℝ}, IsCusp c Γ → c.IsZeroAt f k
 -- ✓ Type of c inferable from `IsCusp c Γ`
 IsCuspForm f ↔ ∀ {c}, IsCusp c Γ → c.IsZeroAt f k
 ```
+
+### Use `change` (not `show`) when the tactic actually rewrites the goal
+
+The `linter.style.show` linter enforces this. `show` is for *annotating* the goal you're about to prove (no change in what's behind the colon); `change` is for *rewriting* the goal up to definitional equality.
+
+```lean
+-- ❌ `show` used to rewrite the goal — flagged by linter.style.show
+  show g z / d z * d z = g z
+  rw [div_mul_cancel₀ _ ...]
+
+-- ✓ `change` is the correct tactic when the goal is actually being rewritten
+  change g z / d z * d z = g z
+  rw [div_mul_cancel₀ _ ...]
+```
+
+Rule of thumb: if the goal text differs from what came before, use `change`; if you're only labelling the existing goal for the reader (and removing the line wouldn't change anything), drop the line entirely — the redundant `show T` adds nothing (60+ occurrences of this in PR review data).
 
 ### Remove `show X from by` — use `show X by` or drop entirely
 

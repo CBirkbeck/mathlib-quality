@@ -8,8 +8,8 @@ All learning entries are stored as JSONL (one JSON object per line) in `.mathlib
 {
   "id": "string (short unique identifier, e.g. 'abc123')",
   "timestamp": "string (ISO 8601, e.g. '2026-02-28T14:30:00Z')",
-  "command": "string (cleanup | check-style | decompose-proof | split-file | pre-submit | fix-pr-feedback | check-mathlib | teach)",
-  "type": "string (golf_pattern | style_correction | naming_fix | decomposition | file_split | mathlib_discovery | failed_pattern | user_teaching)",
+  "command": "string (cleanup | decompose-proof | split-file | pre-submit | fix-pr-feedback | teach | bump-mathlib)",
+  "type": "string (golf_pattern | style_correction | naming_fix | decomposition | file_split | mathlib_discovery | failed_pattern | user_teaching | api_change | api_rename | import_change | instance_change | deprecation_removal | tooling | other)",
   "before_code": "string (original lean code, max 500 chars, optional)",
   "after_code": "string (resulting lean code, max 500 chars, optional)",
   "pattern_tags": ["string (e.g. 'inline_have', 'use_grind', 'term_mode', 'simp_to_simpa')"],
@@ -35,13 +35,20 @@ A short unique identifier. Generated at write time (e.g., first 8 chars of a UUI
 | Type | Description | Typical Commands |
 |------|-------------|------------------|
 | `golf_pattern` | Proof was shortened or simplified | cleanup |
-| `style_correction` | Formatting or style fix applied | check-style, cleanup |
+| `style_correction` | Formatting or style fix applied | cleanup (Phase 2 audit / Phase 3 file-level / Phase 4 worker) |
 | `naming_fix` | Declaration renamed to follow conventions | cleanup, fix-pr-feedback |
 | `decomposition` | Long proof was broken into helpers | decompose-proof |
 | `file_split` | File was split into modules | split-file |
-| `mathlib_discovery` | Found existing mathlib lemma to replace custom code | check-mathlib, cleanup |
+| `mathlib_discovery` | Found existing mathlib lemma to replace custom code | cleanup (Phase 4 item 13 search-status block) |
 | `failed_pattern` | A suggested pattern didn't work or was rejected | any |
 | `user_teaching` | User explicitly taught a pattern via `/teach` | teach |
+| `api_change` | Mathlib API signature/semantics changed (not just renamed) | bump-mathlib |
+| `api_rename` | Declaration renamed/moved namespace in mathlib | bump-mathlib |
+| `import_change` | Import path moved | bump-mathlib |
+| `instance_change` | Typeclass instance signature/availability changed | bump-mathlib |
+| `deprecation_removal` | Deprecated alias removed; callers must migrate | bump-mathlib |
+| `tooling` | Build/lakefile/dependency lesson (non-Lean code) | bump-mathlib, develop |
+| `other` | Doesn't fit any other type | any |
 
 ### `source` Values
 

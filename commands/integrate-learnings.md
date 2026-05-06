@@ -82,13 +82,59 @@ python3 scripts/merge_learnings.py --input data/community_learnings/ --output da
 
 ### Step 5: Update Reference Docs
 
-For frequently recurring patterns (3+ occurrences across contributions):
+#### 5a. Count occurrences (required artifact)
+
+Print the occurrence count for every distinct `pattern_tags` set:
+
+```
+| Pattern (representative description) | Occurrences | Sources                                   | Eligible for ref docs? (≥3) |
+|--------------------------------------|-------------|-------------------------------------------|------------------------------|
+| junk_def / inline_def                | 4           | 2026-05-03_mathlib4, 2026-04-21_mathlib4  | yes                          |
+| splits_api / unary_predicate         | 3           | 2026-05-06 leanbridge bump (×3)            | yes                          |
+| review-meta-pattern                  | 1           | 2026-04-29 loefflerd                      | no — single source           |
+| ...                                  |             |                                           |                              |
+```
+
+The 3+ rule is the consensus filter; below threshold and a pattern stays in the RAG index
+but does NOT propagate to the reference docs. Patterns with 1–2 occurrences from a single
+contributor are NOT community consensus.
+
+#### 5b. Apply to reference docs (only the eligible patterns)
 
 1. **Style rules**: Add new rules to `references/style-rules.md`
 2. **Naming conventions**: Add new patterns to `references/naming-conventions.md`
 3. **PR feedback examples**: Add curated examples to `references/pr-feedback-examples.md`
 
 Only add patterns that appear in multiple contributions (community consensus).
+
+#### 5c. Manual-review gate (REQUIRES USER APPROVAL)
+
+Some entries can't be auto-merged. Before completing Step 5, print the
+`REQUIRES MANUAL REVIEW` block and **stop** until the user weighs in:
+
+```
+## REQUIRES MANUAL REVIEW — auto-integration paused
+
+The following entries can't be merged automatically. Review each and tell me what to do
+("integrate as <pattern>", "drop", "modify and integrate"):
+
+### Contradictions with existing reference docs
+- <id>: pattern says X; existing rule in <file>:<section> says Y. Reconcile.
+
+### Below-threshold patterns flagged as important
+- <id>: only 1 occurrence but the contributor marked it as critical. Keep in RAG only?
+  Or promote to ref docs anyway?
+
+### Ambiguous patterns (no clear before/after)
+- <id>: description-only entry; no code example. Treat as guidance text in <file>?
+  Or drop?
+
+### Project-specific patterns (may not generalise)
+- <id>: tagged as <project>-specific. Generic enough to add to ref docs, or skip?
+```
+
+Without user input on every item in this block, the integration is incomplete. Don't
+proceed to Step 6 until the block is empty or every item has a user decision logged.
 
 ### Step 6: Update Example Files
 

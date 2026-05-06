@@ -492,10 +492,61 @@ Print a summary to the conversation with the top 5 action items.
 
 If the project has many files, process them in phases. Quality over speed.
 
+### Anti-skim verification gates
+
+Process discipline isn't enforceable on its own — workers can produce plausible-looking
+output without reading the proofs. The artifacts below make skimming detectable.
+
+#### Per-declaration entry: required fields
+
+Every declaration entry produced by a Phase-1 worker MUST include all of the following
+fields. Missing any field is a defect — re-dispatch the worker.
+
+- **What** (≥1 sentence in plain mathematical English describing what the result says or
+  what the def constructs). One-word answers like "see the type" don't count.
+- **How** (≥1 sentence naming the *mathematical* argument, not the tactics). Acceptable:
+  "Uses dominated convergence with the bound from `bound_on_K`." Not acceptable:
+  "By `simp; ring`."
+- **Hypotheses** (the mathematical conditions, in math English; not Lean type-class lists).
+- **Uses from project** (every project declaration referenced in the proof body — empty
+  list `[]` is acceptable but blank/missing is a defect).
+
+#### Mathematical-argument cross-check
+
+For any proof >10 lines, the worker's "How" must mention at least one specific
+declaration name from "Uses from project" or from mathlib. A "How" field that names no
+specific lemma is a sign the worker didn't read the proof — re-dispatch.
+
+#### Duplication-check artifact
+
+The duplication phase MUST produce a pairwise comparison table:
+
+```
+| Decl A          | Decl B            | Same statement? | Same proof? | Verdict       |
+|-----------------|-------------------|-----------------|-------------|---------------|
+| foo_eq_zero     | foo_eq_zero'      | yes (modulo args)| no         | UNIFY         |
+| bound_continuous| continuousAt_bound| no             | similar     | possibly unify|
+| ...             |                   |                 |             |               |
+```
+
+A duplication phase that produces only a textual list ("possible duplicates: A, B, C")
+without the pairwise table has skipped the rigorous check — re-dispatch.
+
+#### Final-pass acceptance check
+
+Before saving `PROJECT_OVERVIEW.md`, verify:
+- Every public declaration in the project appears at least once in the inventory
+  (cross-check: `grep -c "^[a-zA-Z]" .lake-decl-list` vs the count in the overview).
+- No entry has `What:` empty, `How:` empty, `Hypotheses:` empty, or `Uses from project:`
+  blank-not-`[]`.
+- The duplication-check phase produced its pairwise table.
+
+If any of those fail, the overview isn't done — fix before saving.
+
 ---
 
 ## Reference
 
-- `/check-mathlib` — detailed mathlib search for individual declarations
+- `/cleanup [file] [decl_name]` — single-declaration mode runs the full Phase-4 audit, including the five-method mathlib search-status block (formerly the standalone `/check-mathlib`)
 - `/cleanup` — per-file cleanup after implementing overview recommendations
 - `/decompose-proof` — decompose long proofs identified in the overview

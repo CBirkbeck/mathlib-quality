@@ -1,25 +1,38 @@
 ---
 name: develop
-description: Plan and execute a mathematical development with ticket-based project management
+description: Plan a mathematical development project (planning-only). Searches mathlib, designs the API, drafts proof sketches from your sources, and writes detailed self-contained tickets. Workers run via /extended-work, not here.
 ---
 
-# /develop - Mathematical Development Engine
+# /develop — Mathematical Development Planner
 
-Plan and execute a mathematical development project. Creates a comprehensive plan,
-manages work via a ticket system, dispatches focused worker agents, and builds clean
-API along the way.
+Plan a mathematical development. Creates a comprehensive plan from your references,
+designs the API for every new declaration, drafts the proof sketches step-by-step, and
+writes a detailed ticket board where **every ticket contains the Lean statement and
+the full proof sketch with cited sources** — detailed enough that no replanning is
+needed once execution starts.
 
-**This is the default skill for developing new mathematics.** It handles everything
-from project planning to proof execution to periodic cleanup.
+**`/develop` is planning-only.** Workers don't run here. Once the ticket board is
+approved, invoke `/extended-work` to pick up the next available ticket and work it to
+completion.
+
+This split keeps strategic thinking (mathlib search, API design, proof sketching from
+sources, generality decisions) in `/develop` and tactical execution (state declaration,
+call planned lemmas, iterate to compilation) in `/extended-work`. It prevents the
+"agent reconsiders the whole approach mid-proof" failure mode — once `/extended-work`
+starts a ticket, the plan is fixed; the worker either implements it or hard-stops with
+a concrete reason it can't.
 
 ## Usage
 
 ```
 /develop                            # Auto-detect: new, resume, or takeover
-/develop --continue                 # Resume from existing tickets (skip audit)
+/develop --continue                 # Audit the current ticket board against the code, propose updates
 /develop --status                   # Show current ticket board
-/develop --takeover                 # Force takeover mode on existing code
+/develop --takeover                 # Force takeover mode on existing code (creates tickets to bring it to completion)
 ```
+
+After any of these completes and the ticket board is approved, run `/extended-work` to
+start (or resume) work.
 
 ---
 
@@ -30,8 +43,13 @@ If the `chatgpt-math` MCP server is configured (check for `ask_chatgpt_math` too
 This is **not required** — the command works without it — but catches errors earlier:
 
 - **Plan validation**: after drafting the plan, ask ChatGPT if the approach is sound
-- **Periodic checks**: every ~3 tickets, verify the overall direction is correct
-- **Stuck escalation**: when stuck on a proof, get a second opinion before giving up
+- **Source clarification**: if a referenced source is ambiguous, ask ChatGPT to fill in
+  the gap (especially useful for "what's the canonical statement of theorem X")
+- **Sketch sanity-check**: when drafting a proof sketch for a ticket, ask ChatGPT
+  whether the sketch's argument structure is sound
+
+(`/extended-work` may also consult ChatGPT during execution if available; that's
+documented separately in `extended-work.md`.)
 
 All ChatGPT questions must be **fully self-contained** — ChatGPT has no access to
 local files. Include all definitions, theorem statements, and reference citations
@@ -110,27 +128,76 @@ Present findings to the user:
 - NEW: need ticket for `helper_lemma` (uncovered declaration)
 ```
 
-### R3: Update Plan with User
+### R3: Cleanup-Cadence Audit
 
-Discuss findings with the user:
+Before proposing updates to the user, audit whether the existing ticket board still
+satisfies the cleanup cadence from §1f. Resumed projects routinely drift on cleanup
+discipline because new tickets were added during execution without re-running the
+cadence rule.
+
+For each file in the project:
+
+1. List all `done` and `in_progress` proof/definition tickets touching that file in
+   dependency order.
+2. Walk the list. After every 3rd one, there should be a cleanup ticket (open, in_progress,
+   or done) before the next proof ticket. If not, the cadence is broken there — add a
+   `[CLEANUP-<n>]` ticket to the proposal in R4 below.
+3. After the last proof ticket on the file, there should be a final per-file cleanup ticket.
+   If not, propose adding one.
+4. If a milestone ticket is open and a `CLEANUP-ALL` doesn't precede it, propose adding one.
+5. Verify the final `[CLEANUP-FINAL] /cleanup-all` ticket exists. If not, propose adding it.
+
+Print the audit result before R4:
+
+```
+## Cleanup-cadence audit (R3)
+
+| File | Proof tickets done | Cleanups present | Cleanups missing per cadence rule |
+|------|--------------------|------------------|------------------------------------|
+| Defs.lean | 5 | CLEANUP-1 (after T003) | none |
+| Basic.lean | 4 | none | CLEANUP-X needed after T008; final cleanup missing |
+| Main.lean | 1 (milestone open) | none | CLEANUP-ALL needed before milestone |
+
+Pre-milestone /cleanup-all: missing (T010 is a milestone with no preceding CLEANUP-ALL)
+Final /cleanup-all: missing
+```
+
+### R4: Update Plan with User
+
+Discuss findings — including the cleanup-cadence audit from R3 — with the user:
 
 ```
 ## Proposed Updates
 
+State:
 1. Reopen [T005] — sorry still present
 2. Reset [T008] to open — appears abandoned
 3. Add new ticket for `helper_lemma`
 4. [T012] dependency chain updated after [T009] expansion
 5. Remove [T014] — `bar_mono` now exists in mathlib (added in recent bump)
 
+Cleanup cadence (from R3 audit):
+6. Add [CLEANUP-X] for Basic.lean (3 proof tickets done since last cleanup)
+7. Add [CLEANUP-Y] final cleanup for Basic.lean
+8. Add [CLEANUP-ALL-1] before T010 (milestone)
+9. Add [CLEANUP-FINAL] as last ticket
+
 Shall I apply these updates? Anything else to change?
 ```
 
-Wait for user confirmation, then update `.mathlib-quality/tickets.md`.
+Wait for user confirmation, then update `.mathlib-quality/tickets.md`. Items 6–9 are not
+optional unless the user explicitly opts out — they're the cadence rule, not a suggestion.
 
-### R4: Continue Execution
+### R5: Hand off to `/extended-work`
 
-After updating, proceed to Phase 2 (Execution) — pick up the next available ticket.
+After updating the ticket board, `/develop --continue` is done. Tell the user:
+
+```
+Plan updated. Next available ticket: TXXX (<title>).
+Run `/extended-work` to pick it up and work it to completion.
+```
+
+`/develop` does not execute. Workers run via `/extended-work`.
 
 ---
 
@@ -203,13 +270,20 @@ After the user confirms understanding:
    - Any structural work needed (file splits, import cleanup)
 3. Get user approval on the ticket board
 
-### T4: Continue to Execution
+### T4: Hand off to `/extended-work`
 
-Proceed to Phase 2 (Execution).
+After ticket board approval, `/develop --takeover` is done. Tell the user:
+
+```
+Takeover plan ready. N tickets created from the existing code.
+Run `/extended-work` to start working through them.
+```
+
+Same separation as the new-project flow: `/develop` plans, `/extended-work` executes.
 
 ---
 
-## Phase 1: New Project Planning (Super Agent)
+## Phase 1: New Project Planning (the only phase — `/develop` is planning-only)
 
 The planner runs ONCE at the start to create the full development plan. This is the
 most important phase — a good plan prevents wasted work.
@@ -312,33 +386,91 @@ Create the ticket board at `.mathlib-quality/tickets.md`:
 
 ## Tickets
 
-### [T001] Define FooBar and basic API
-- **Status**: open
-- **File**: MyProject/Defs.lean
-- **Depends on**: none
-- **Parallel**: yes (no dependencies)
-- **Description**: Define `FooBar` over `CommMonoid`. Create API:
-  `fooBar_zero`, `fooBar_one`, `fooBar_mul`, `fooBar_mono`.
-  Tag `fooBar_zero` and `fooBar_one` with `@[simp]`.
-- **Mathlib check**: Not in mathlib. Closest: `Mathlib.Algebra.Foo` (different).
-- **Naming**: `FooBar` (UpperCamelCase def), `fooBar_zero` (snake_case lemma).
-- **Generality**: State over `CommMonoid` not `CommRing` — multiplication is all we need.
-
 ### [T002] Prove fooBar_comp
 - **Status**: open
 - **File**: MyProject/Basic.lean
 - **Depends on**: T001
 - **Parallel**: yes (after T001, parallel with T003)
-- **Description**: Prove `fooBar_comp : FooBar (f ∘ g) = FooBar f * FooBar g`.
-  Reference: Theorem 3.2 in [Paper]. Proof sketch: unfold, use `Finset.prod_comp`.
-- **Proof approach**: Should follow from `Finset.prod_comp` + API from T001.
+- **Type**: lemma
 
-### [T003] Prove fooBar_mono
+#### Statement
+```lean
+theorem fooBar_comp {α β γ : Type*} [CommMonoid α] [CommMonoid β] [CommMonoid γ]
+    (f : α → β) (g : β → γ) (s : Finset α) :
+    fooBar s (g ∘ f) = fooBar (s.image f) g := by
+  sorry
+```
+
+#### Proof sketch
+Following [Lang2002], Theorem 5.1 in §3.5 (statement-side); the Lean proof is
+straightforward once the right `Finset` lemmas are identified.
+
+1. **Unfold `fooBar`** to expose the `Finset.prod` form. (Tactic: `simp only [fooBar]`
+   or `unfold fooBar`.)
+2. **Apply `Finset.prod_comp`** to push the composition `(g ∘ f) x = g (f x)` through
+   the product, turning it into a product over `s.image f`.
+3. The two sides now match definitionally; close with `rfl` or `simp`.
+
+Off-script bridging tactics that may be needed: `Function.comp_apply` rewrite if step 2
+doesn't fire automatically.
+
+#### Mathlib lemmas needed
+- `Finset.prod_comp` — distributes a product over a composition `Finset s (g ∘ f) = ∏ x in s.image f, g x` (verify: `lean_loogle "Finset.prod _ (_ ∘ _)"`)
+- `Function.comp_apply` — definitional unfolding (`(g ∘ f) x = g (f x)`); usually fires via `simp`
+
+#### Sources
+- [Lang2002] Serge Lang, *Algebra* (3rd ed., Springer 2002, GTM 211). Theorem 5.1, §3.5
+  pp. 144–145 — the categorical statement that products commute with reindexing.
+
+#### Generality decision
+- Stated over `[CommMonoid α/β/γ]` (the weakest setting in which the result holds — the
+  product needs commutativity, no inverses needed).
+- Universe-polymorphic in `α β γ` — `Type*` not `Type`.
+- Not requiring `[Fintype α]` because we work over a fixed `Finset s` rather than the
+  universe.
+
+### [T001] Define FooBar and basic API
 - **Status**: open
-- **File**: MyProject/Basic.lean
-- **Depends on**: T001
-- **Parallel**: yes (after T001, parallel with T002)
-- **Description**: ...
+- **File**: MyProject/Defs.lean
+- **Depends on**: none
+- **Parallel**: yes (no dependencies)
+- **Type**: def + API lemmas
+- **Mathlib check**: Not in mathlib. Closest: `Mathlib.Algebra.Foo` (different shape — operates on `Multiset` not `Finset`).
+- **Naming**: `FooBar` (UpperCamelCase def), `fooBar_zero` (snake_case lemma).
+
+#### Statement
+```lean
+def fooBar {α : Type*} [CommMonoid α] (s : Finset α) (f : α → α) : α :=
+  ∏ x ∈ s, f x
+
+@[simp]
+theorem fooBar_empty {α : Type*} [CommMonoid α] (f : α → α) :
+    fooBar ∅ f = 1 := by sorry
+
+@[simp]
+theorem fooBar_singleton {α : Type*} [CommMonoid α] (a : α) (f : α → α) :
+    fooBar {a} f = f a := by sorry
+
+theorem fooBar_insert {α : Type*} [CommMonoid α] [DecidableEq α]
+    {s : Finset α} {a : α} (ha : a ∉ s) (f : α → α) :
+    fooBar (insert a s) f = f a * fooBar s f := by sorry
+```
+
+#### Proof sketch
+- `fooBar_empty`: `simp [fooBar]` — `Finset.prod_empty` fires.
+- `fooBar_singleton`: `simp [fooBar]` — `Finset.prod_singleton` fires.
+- `fooBar_insert`: `simp [fooBar, Finset.prod_insert ha]` — the standard insert lemma.
+
+#### Mathlib lemmas needed
+- `Finset.prod_empty`, `Finset.prod_singleton`, `Finset.prod_insert` — all standard.
+
+#### Sources
+- (None — this is the basic API. The shape follows mathlib's `Finset.prod` convention.)
+
+#### Generality decision
+- `[CommMonoid α]`: the weakest typeclass that supports `∏`.
+- `f : α → α`: deliberately self-mapping (the project's downstream applications need
+  this; the more general `f : α → β` form lives in `Finset.prod` already).
 
 ### [CLEANUP-1] Run /cleanup on MyProject/Defs.lean
 - **Status**: open
@@ -346,23 +478,108 @@ Create the ticket board at `.mathlib-quality/tickets.md`:
 - **Depends on**: T001
 - **Parallel**: no (must wait for T001 to complete)
 - **Type**: cleanup
-- **Description**: Run /cleanup to ensure mathlib quality before building on top.
+- **Description**: Run /cleanup on Defs.lean to ensure mathlib quality before building
+  on top. This is an algorithmically-inserted cleanup ticket per the cadence rule
+  below (every 3 proof/def tickets per file → cleanup ticket).
 
 ### [T004] Main theorem
 - **Status**: open
 - **File**: MyProject/Main.lean
 - **Depends on**: T002, T003, CLEANUP-1
 - **Parallel**: no (needs all prerequisites)
-- **Description**: ...
+- **Type**: theorem
+- (... full Statement, Proof sketch, Mathlib lemmas, Sources, Generality block as above ...)
 ```
 
-**Ticket rules:**
-- Every definition ticket includes its API lemmas
-- Every 3-5 proof tickets, insert a CLEANUP ticket for the files worked on
-- Mark parallel opportunities explicitly
-- Include proof approach/sketch from references
-- Include mathlib check result
-- Include precise naming following mathlib conventions
+**Ticket rules — every proof/definition ticket MUST include:**
+
+1. **Status / File / Depends on / Parallel / Type** — the metadata header (as before).
+2. **Statement** — the full Lean statement of the declaration, including the type
+   signature with all hypotheses, ending in `:= by sorry`. The `/extended-work` worker
+   must be able to copy this verbatim into the file. **No abbreviations, no "etc."**
+3. **Proof sketch** — a numbered list of steps. Each step names the *mathematical idea*
+   ("Apply Cauchy's residue theorem"), the *tactical realisation* ("Use `Complex.residue`"),
+   and any *bridging tactics* that may be needed. The sketch is detailed enough that the
+   `/extended-work` worker doesn't need to think strategically — only execute.
+4. **Mathlib lemmas needed** — every mathlib lemma the proof sketch references, by exact
+   name. The planner verifies each name exists before writing the ticket (search via
+   `lean_loogle`/`lean_leansearch`/`lean_local_search`). If a lemma isn't found in
+   mathlib, the sketch must either provide an alternative path or flag the gap.
+5. **Sources** — every paper/book cited in the proof sketch, with full bibliographic
+   info. The planner reads the source (or asks the user) and extracts the relevant
+   theorem.
+6. **Generality decision** — explicit choice of typeclasses + universes + bundled-vs-
+   unbundled hypotheses, with one-line reason. Defaults to maximum generality per
+   `references/style-rules.md` § "Maximal Generalization of Theorems".
+
+The point of this level of detail is **no mid-work pivots**. The user explicitly asked
+for tickets detailed enough to avoid replanning due to unforeseen complications. If a
+ticket lacks any of fields 2–6, `/extended-work` will refuse to start and report
+"Ticket TXXX is not fully specified" — that's a planning bug, not a worker bug.
+
+**Other ticket rules:**
+
+- Every definition ticket includes its API lemmas (`_zero`, `_one`, `_singleton`,
+  `_insert`, etc., as appropriate) — all in the **Statement** field with their own
+  individual proof sketches.
+- Cleanup tickets are inserted **algorithmically** (see "Cleanup cadence" below) — not by feel.
+- Mark parallel opportunities explicitly.
+- For sources: the planner is responsible for digging through the references the user
+  provided in 1a/1b. If a reference is incomplete ("Section 3 of [Author]"), ask the
+  user to supply the missing precision before writing tickets that depend on it.
+
+#### Cleanup cadence (this is the rule, not a guideline)
+
+Cleanup tickets get skipped when the rule is "every 3–5 proof tickets, insert a cleanup".
+Use the deterministic procedure below instead.
+
+Walk the proof/definition tickets in dependency order. For each file in the project, count
+proof+definition tickets touching that file as you encounter them. Insert cleanup tickets
+according to:
+
+1. **Per-file cadence.** For every file, insert `[CLEANUP-<n>] Run /cleanup on <file>`
+   after every **3rd** proof/definition ticket on that file. Depends on the most recent
+   proof ticket on that file, blocks all later proof tickets on that file.
+2. **Final per-file cleanup.** After the last proof ticket on each file, insert one final
+   `[CLEANUP-<n>] Run /cleanup on <file>` ticket. Depends on the last proof ticket for
+   that file.
+3. **Project-wide cleanup before milestone tickets.** Before any "main theorem" or
+   "milestone" ticket (i.e., a ticket the user marked as a project goal in 1d), insert a
+   `[CLEANUP-ALL-<n>] Run /cleanup-all on the project so far` ticket. Depends on every
+   open proof ticket; blocks the milestone.
+4. **Final pass.** As the last ticket in the dependency graph, insert a single
+   `[CLEANUP-FINAL] Run /cleanup-all on the whole project` ticket. Depends on every other
+   ticket. The Phase-3 final review takes over from here.
+
+**Worked example.** Suppose Defs.lean has 5 proof tickets (T001–T005), Basic.lean has
+4 (T006–T009), and Main.lean has the milestone theorem T010:
+
+```
+T001  proof on Defs.lean         (Defs count: 1)
+T002  proof on Defs.lean         (Defs count: 2)
+T003  proof on Defs.lean         (Defs count: 3) → INSERT CLEANUP-1 (Defs.lean) after this
+CLEANUP-1  cleanup Defs.lean     (depends on T003)
+T004  proof on Defs.lean         (Defs count: 4, depends on CLEANUP-1)
+T005  proof on Defs.lean         (Defs count: 5)
+CLEANUP-2  cleanup Defs.lean     (final per-file, depends on T005)
+T006  proof on Basic.lean        (Basic count: 1)
+T007  proof on Basic.lean        (Basic count: 2)
+T008  proof on Basic.lean        (Basic count: 3) → INSERT CLEANUP-3 (Basic.lean)
+CLEANUP-3  cleanup Basic.lean    (depends on T008)
+T009  proof on Basic.lean        (Basic count: 4, depends on CLEANUP-3)
+CLEANUP-4  cleanup Basic.lean    (final per-file, depends on T009)
+CLEANUP-ALL-1  /cleanup-all      (before milestone; depends on CLEANUP-2, CLEANUP-4)
+T010  main theorem on Main.lean  (depends on CLEANUP-ALL-1)
+CLEANUP-FINAL  /cleanup-all      (depends on T010)
+```
+
+**Verify before saving the ticket board.** Count: did you insert at least
+`⌈total_proof_tickets / 3⌉` cleanup tickets, plus one final per-file cleanup per file?
+If not, you skipped some — re-check.
+
+In the Phase-1g ChatGPT validation request below, include "Cleanup tickets:
+N (1 per ~3 proof tickets + 1 final per file + project-wide cleanups)" in the **Planned
+Approach** section so ChatGPT can flag a planner that skipped them.
 
 ### 1g: Validate Plan with ChatGPT (if available)
 
@@ -411,343 +628,34 @@ I've created N tickets across M files.
 Does this plan look right? Should I adjust anything before starting?
 ```
 
----
-
-## Phase 2: Execution (Worker Agents)
-
-### 2a: Pick Up a Ticket
-
-When starting work (or resuming with `--continue`):
-
-1. Read `.mathlib-quality/tickets.md`
-2. Find the next open ticket whose dependencies are all done
-3. **Update the ticket status to `in_progress`** immediately (with timestamp)
-4. Read the file context and any dependent files
-
-### 2b: Work the Ticket
-
-For each ticket, the worker agent follows this cycle:
-
-```
-Search → Draft → Prove → Verify → Iterate
-```
-
-#### Search (before writing ANY code)
-1. **Search mathlib** for the result or close variants
-   - Use `exact?`, `apply?`, Loogle, grep
-   - If found: use it directly, update ticket as "resolved by mathlib"
-2. **Search mathlib** for each helper lemma you plan to use
-3. **Check generality**: is your statement as general as it could be?
-   - Can `Ring` be weakened to `Semiring`? `Finset` to `Set`?
-   - The user wants MAXIMUM generality, no shortcuts
-
-#### Draft
-1. Write the definition/lemma statement precisely
-   - Follow mathlib naming: `conclusion_of_hypothesis`
-   - Use the right universe levels, typeclasses, implicit vs explicit args
-2. For definitions: write ALL planned API lemmas as `sorry` stubs
-   - This forces you to think about the API before proving anything
-3. Verify the statements compile: `lean_diagnostic_messages`
-
-#### Prove (multi-cycle for each sorry)
-
-For each `sorry`, run cycles until filled:
-
-**Cycle:**
-1. Read the goal state with `lean_goal`
-2. Think about the mathematical content — what is this really saying?
-3. Search for relevant lemmas: `lean_loogle`, `exact?`, `apply?`
-4. Generate 2-3 proof candidates
-5. Test with `lean_multi_attempt`
-6. If none pass:
-   - Try automation: `grind`, `simp`, `aesop`, `fun_prop`, `omega`
-   - Try a different proof strategy
-   - Try breaking into sub-goals with `have` or `suffices`
-7. If stuck after 3 attempts on the same sorry, escalate through tiers:
-
-   **Tier 1: Self-reflection**
-   - Step back and reconsider the approach
-   - Is the statement correct? Is it general enough?
-   - Would a helper lemma make this easier?
-   - If a helper lemma is needed: **go back to the ticket board and add
-     new tickets** for the helper lemma and its API. Do not just prove
-     it inline as a one-off `have`.
-
-   **Tier 2: Consult ChatGPT** (if `ask_chatgpt_math` available)
-
-   If self-reflection doesn't unstick you, formulate a **self-contained**
-   question for `ask_chatgpt_math`. The question MUST include:
-
-   ```
-   I am formalizing mathematics in Lean 4 / Mathlib and I am stuck on a proof.
-
-   ## References
-   [Explicit sources: "Following [Author, Title], Theorem X.Y" or
-   "Based on Section N of [Textbook]" — name every source being used]
-
-   ## Mathematical Context
-   [What we are building, in plain mathematics. Include all relevant
-   definitions — ChatGPT cannot see our files.]
-
-   ## Lean Statement
-   [Copy-paste the exact theorem/lemma statement from the .lean file]
-
-   ## Current Proof State
-   [Copy-paste the goal state from lean_goal]
-
-   ## What I Have Tried
-   - Approach 1: [what and why it failed]
-   - Approach 2: [what and why it failed]
-   - Approach 3: [what and why it failed]
-
-   ## Specific Question
-   [What exactly do you need help with? A proof strategy? A missing
-   lemma? Is the statement even correct?]
-   ```
-
-   Try ChatGPT's suggestion. If it works, continue. If not, move to Tier 3.
-
-   **Tier 3: Prepare question for human reviewer**
-
-   If still stuck after ChatGPT consultation, prepare a full-context
-   question for a human mathematician/reviewer. This person has **NO access
-   to the project files** but knows the mathematics and the references.
-
-   Write the question to the ticket's `blocked` annotation in
-   `.mathlib-quality/tickets.md`:
-
-   ```markdown
-   **BLOCKED — needs human input**
-
-   ## Background
-   [1-2 paragraphs: what this project is about mathematically,
-   written for someone encountering it fresh]
-
-   ## References Being Used
-   - [Paper/textbook 1]: [Author, Title, Year] — specifically Theorem X.Y / Section N
-   - [Paper/textbook 2]: [Author, Title, Year] — specifically Definition A.B
-   - [Mathlib source]: [Specific Mathlib file/declaration if relevant]
-   [List ALL references. Be explicit about theorem/section numbers.]
-
-   ## The Theorem (natural language)
-   [State the result in plain mathematical language]
-
-   ## The Theorem (Lean 4)
-   ```lean
-   [Copy-paste the exact Lean statement]
-   ```
-
-   ## Current Proof State
-   ```lean
-   [Copy-paste the goal state]
-   ```
-
-   ## Approaches Tried
-   1. [Approach + why it failed]
-   2. [Approach + why it failed]
-   3. [Approach + why it failed]
-   4. ChatGPT suggested: [summary] — this failed because: [reason]
-
-   ## Specific Help Needed
-   [Precisely what you need: a proof strategy? Is the statement wrong?
-   Is a different formulation needed? Is there a reference we're missing?]
-   ```
-
-   Mark the ticket as `blocked`, then **move on to the next available ticket**.
-   Do not stay stuck — there is always other work to do.
-
-#### Proof Length Check (ENFORCED — run after every proof is filled)
-
-**No proof may exceed 50 lines.** Count the lines after filling each sorry.
-If a proof exceeds 50 lines, you MUST decompose it before moving on.
-
-**Decomposition procedure:**
-
-1. **Identify extractable blocks** — look for:
-   - `have` blocks with `by` proofs longer than 8 lines
-   - Case branches (`by_cases`, `rcases`, `match`) longer than 10 lines
-   - `constructor` branches longer than 10 lines
-   - `calc` chains longer than 15 lines
-   - Any self-contained reasoning step that could be stated independently
-
-2. **Extract as helper lemmas** — for each block:
-   - State it as a separate `private lemma` or `lemma` above the theorem
-   - Name it properly: `mainTheorem_aux_description` or a standalone name
-     if it's reusable
-   - Give it the most general type signature possible
-   - If it's reusable beyond this file, make it public and add API tickets
-
-3. **Rebuild the main proof** — the main theorem should read as a clear
-   outline, composing the helpers:
-   ```lean
-   theorem mainResult : P := by
-     have h1 := helper_step1 ...
-     have h2 := helper_step2 h1 ...
-     exact final_composition h1 h2
-   ```
-   **Target: main theorems should be 5-15 lines**, reading like a proof sketch.
-
-4. **Add tickets for extracted helpers** — if any helper is substantial
-   (>5 lines, reusable), add it to the ticket board with proper naming
-   and API. Don't leave unnamed `private` helpers that could be useful API.
-
-5. **Verify** — `lean_diagnostic_messages` on all modified declarations.
-
-**Why this matters:** Monolithic proofs are:
-- Hard to maintain (one mathlib change breaks everything)
-- Hard to parallelize (other workers can't help with sub-parts)
-- Hard to review (reviewers reject walls of tactics)
-- Hard to reuse (helper results buried inside a proof are invisible)
-
-**The 50-line rule applies to the PROOF BODY only** (from `:= by` to the end),
-not the statement. A 10-line statement with a 5-line proof is fine.
-
-**Generality rule:** If you find yourself proving a `have` block that's
-more than 5 lines, ask: should this be its own lemma? If it's reusable,
-extract it as a new ticket with proper naming and API.
-
-#### Verify
-1. `lean_diagnostic_messages` — no errors
-2. **No sorry remaining** — check all `sorry` stubs are filled. Grep the file
-   for `sorry`. If ANY remain, the ticket is not done.
-3. **No new axioms** — add `#print axioms decl_name` after each key declaration,
-   run `lean_diagnostic_messages`, check only `propext`, `Quot.sound`, and
-   `Classical.choice` appear. If `sorryAx` appears, a sorry is still hiding
-   somewhere (possibly in a dependency). Find and fill it.
-4. **Proof length check** — every proof must be ≤50 lines. If any proof
-   exceeds this, run the decomposition procedure above before continuing.
-5. Run through the /cleanup audit mentally:
-   - No `by exact` wrappers
-   - No single-use `have` blocks
-   - Terminal simp not squeezed
-   - Proper naming
-6. **Remove `#print axioms` lines** before committing — they were just for checking.
-
-### 2c: Complete the Ticket
-
-1. **Update the ticket status to `done`** (with timestamp)
-2. If the ticket revealed additional work needed:
-   - **Add new tickets** to the board with full descriptions
-   - Update dependency graph
-   - Note which new tickets can be parallelized
-3. Commit with a clear message: `feat: [ticket ID] description`
-
-### 2d: Periodic Approach Check (if `ask_chatgpt_math` available)
-
-Every **3 completed tickets** (or when transitioning to a new section of the
-dependency graph), pause and ask ChatGPT to verify the overall approach:
-
-```
-I am partway through a Lean 4 / Mathlib formalization. Please check that
-my approach is still on the right track.
-
-## Project Goal
-[Main theorem, in natural language]
-
-## References
-[Explicit list of all sources being followed]
-
-## What Has Been Proved So Far
-[List completed definitions and lemmas with brief descriptions]
-
-## What I Am About to Prove Next
-[Next 2-3 tickets, with their statements]
-
-## Questions
-1. Does the work so far look correct and on track?
-2. Is the approach to the next steps sound?
-3. Am I proving the right intermediate results, or should I restructure?
-4. Any mathematical concerns with the formalization strategy?
-```
-
-If ChatGPT raises concerns:
-- If it's a minor course correction: adjust the plan and continue
-- If it's a fundamental issue: stop, update `.mathlib-quality/plan.md`,
-  discuss with the user before continuing
-
-This check is cheap insurance against investing many tickets in a wrong direction.
-
-### 2e: Cleanup Tickets
-
-When a CLEANUP ticket comes up:
-1. Run `/cleanup` on the specified file
-2. This applies the full 13-item audit + golfing rules to every declaration
-3. Verify compilation after cleanup
-4. Mark the cleanup ticket as done
+After the user approves, **`/develop` is done.** It does not execute the plan.
 
 ---
 
-## Phase 3: Review & Iterate
+## End of `/develop` — what happens next
 
-After all tickets are done:
+`/develop` is **planning-only**. After the ticket board is approved:
 
-### 3a: Final Review
+- **To start working tickets**: invoke `/extended-work` (single-ticket focused work session
+  that picks the next available ticket and works it to completion or concrete approach
+  error). See `commands/extended-work.md`.
+- **To check progress**: `/develop --status` prints the current ticket board.
+- **When all tickets are done**: invoke `/pre-submit` for the final-review checklist
+  (`lake build` clean, no `sorry`, no new axioms, etc.). The "Phase 3 Review & Iterate"
+  step that used to live in `/develop` is now `/pre-submit`'s job.
 
-1. Run `lean_diagnostic_messages` on every file
-2. Run `lake build` to verify the full project
-3. **Grep for `sorry`** across all files — none must remain
-4. **Check axioms** on every key theorem: `#print axioms theorem_name`.
-   Only `propext`, `Quot.sound`, `Classical.choice` are acceptable.
-   If `sorryAx` appears anywhere, find and fix the source.
-5. **Grep for `axiom` and `constant`** declarations — none should exist
-   unless explicitly discussed with the user
-6. Review the API: is it complete? Would a mathlib reviewer accept this?
+The split is deliberate. `/develop` does the strategic thinking — searches mathlib,
+designs the API, drafts the proof sketches from the user's references, makes generality
+decisions. `/extended-work` does the tactical implementation — states the declaration,
+calls the planned mathlib lemmas, iterates to compilation. This separation prevents the
+"agent reconsiders the whole approach mid-proof" failure mode that motivated the
+detailed-tickets requirement (see Phase 1f's "Ticket rules").
 
-### 3b: Final Cleanup
-
-Run `/cleanup` on every file one more time.
-
-### 3c: Report
-
-```markdown
-## Development Complete
-
-### Files Created
-| File | Definitions | Lemmas | Lines |
-|------|------------|--------|-------|
-| Defs.lean | 3 | 12 | 180 |
-| Basic.lean | 0 | 8 | 120 |
-| Main.lean | 0 | 3 | 90 |
-
-### Tickets
-- Total: N | Done: N | Added during execution: K
-
-### Mathlib Usage
-- Definitions reused from mathlib: M
-- Lemmas found in mathlib: L
-- New definitions created: D (with API)
-
-### Generality
-- [Summary of generality decisions made]
-
-### Ready for PR?
-- [ ] All files compile (`lake build` clean)
-- [ ] No `sorry` remaining (grep confirms)
-- [ ] No new axioms (`#print axioms` clean on all key theorems)
-- [ ] No `axiom` or `constant` declarations
-- [ ] /cleanup run on all files
-- [ ] Naming follows mathlib conventions
-- [ ] API is complete for all new definitions
-```
-
----
-
-## Parallel Execution
-
-The planner identifies which tickets can run in parallel based on dependencies.
-
-**How to run parallel workers:**
-- The main agent dispatches multiple worker agents simultaneously
-- Each worker picks up ONE ticket, updates its status, and works independently
-- Workers must check the ticket board before starting (another worker may have taken it)
-- A Lean project typically supports 2-3 parallel workers (limited by file dependencies
-  and LSP server load)
-
-**Parallel rules:**
-- Two tickets on the SAME file cannot run in parallel
-- Two tickets on DIFFERENT files CAN run in parallel if no import dependency
-- CLEANUP tickets must run AFTER all proof tickets for that file
-- The main theorem ticket must run AFTER all dependency tickets
+Tickets are written to be **complete and self-contained** so a worker doesn't need to
+think strategically — only execute. If a `/extended-work` worker finds the plan is
+genuinely wrong (proof-sketch failure, mathlib gap, scope/definition error per the stop
+conditions in `extended-work.md`), it stops with a concrete report and the user
+re-invokes `/develop` to replan.
 
 ---
 
@@ -806,25 +714,45 @@ each key theorem. The only acceptable axioms are:
 
 If ANY other axiom appears (especially `sorryAx`), the ticket is NOT done.
 
-### 5. Workers Escalate, Never Shortcut
+### 5. Tickets that prove insufficient on contact with reality
 
-When a worker discovers a ticket needs more work than expected:
-1. **Do NOT take shortcuts** (e.g., adding `sorry`, using weaker hypotheses,
-   specializing to a concrete type)
-2. **Go back to the ticket board** and:
-   - Add a full description of the extra work needed
-   - Break it into new tickets
-   - Mark dependencies
-   - Identify what can be parallelized
-3. Continue with what CAN be done, leave the rest for other workers
+If a `/extended-work` worker hits a hard-stop condition (proof-sketch failure, mathlib
+gap, scope/definition error per `extended-work.md`), the worker reports the failure and
+stops. The user then re-invokes `/develop --continue`, which runs the resume-mode audit
+(R1–R5) — this is when the plan gets repaired:
 
-### 6. Periodic Cleanup
+1. **Do NOT take shortcuts** in repair (e.g., dropping a hypothesis we don't have, adding
+   a `sorry`, specializing to a concrete type). The fix has to be a real plan.
+2. **Update the ticket board** — modify the failed ticket, add new tickets if the work
+   genuinely decomposed into more pieces than expected, mark dependencies, identify
+   parallel opportunities.
+3. **Re-run the cleanup-cadence check on the new tickets.** Adding N new proof tickets to
+   a file may push it over the 3-ticket-since-last-cleanup threshold; if so, insert a
+   cleanup ticket for that file as a dependency before any of the new tickets. Use the
+   per-file cadence rule from §1f. This is the most common path by which cleanup tickets
+   get skipped — new tickets get added during the resume audit without re-running the
+   cadence rule.
+4. Once the board is updated and re-approved, the user runs `/extended-work` again to
+   continue.
 
-Cleanup tickets are inserted every 3-5 proof tickets. They ensure:
+### 6. Periodic Cleanup (this is the rule, see §1f for the algorithm)
+
+Cleanup tickets are inserted **algorithmically** at planning time (§1f), re-checked at
+each `/extended-work` ticket pickup, and re-checked again whenever new tickets are added
+during a `/develop --continue` resume (§5 step 3 above). The cadence is:
+- **Per-file**: cleanup ticket every 3 proof tickets touching that file
+- **Final per-file**: one cleanup ticket after the last proof ticket on each file
+- **Pre-milestone**: `/cleanup-all` ticket before any user-marked milestone theorem
+- **Final**: one `[CLEANUP-FINAL] /cleanup-all` ticket as the last item in the graph
+
+They ensure:
 - Code stays at mathlib quality throughout development
 - Naming issues are caught early
 - Proofs are golfed before being built upon
 - API gaps are identified while context is fresh
+
+If you find yourself doing 3+ proof tickets without a cleanup, the cadence check has
+been skipped. Stop and add the missing cleanup ticket before proceeding.
 
 ---
 

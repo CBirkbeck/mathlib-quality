@@ -6,33 +6,48 @@ Built on **14,000+ real mathlib PR review comments** with **7,273 before/after c
 
 ## What It Does
 
-### Develop New Mathematics (`/develop`)
+### Develop New Mathematics — Plan with `/develop`, then Execute with `/extended-work`
 
-The flagship command. Plans and executes a full mathematical development with:
+The development workflow is **split into planning and execution** to prevent the "agent
+reconsiders the whole approach mid-proof" failure mode. `/develop` does the strategic
+thinking; `/extended-work` does the tactical implementation; neither does the other's
+job.
 
-- **Project planning** -- creates a comprehensive plan from your references, searches mathlib exhaustively, designs API for every new definition
-- **Ticket management** -- breaks work into trackable tickets with dependencies, parallel capacity, and proof sketches
-- **Focused workers** -- one agent per ticket, deep focus on finding the cleanest proof possible
-- **Resume & takeover** -- pick up where you left off, or take over an existing project with full audit
-- **Quality enforced throughout** -- no sorry placeholders, no new axioms, 50-line proof limit with auto-decomposition, periodic cleanup passes
-- **Maximum generality** -- always prove in the most general setting, never take shortcuts
+**`/develop` — planning only.**
+
+- **Comprehensive plan** from your references; exhaustive mathlib search; API design for every new declaration.
+- **Detailed self-contained tickets.** Every proof/definition ticket contains the full **Lean Statement**, a numbered **Proof Sketch** citing sources, the **Mathlib lemmas needed** (verified to exist), the **Sources** with bibliographic info, and the **Generality decision**. Detailed enough that no replanning is needed once execution starts.
+- **Algorithmic cleanup-cadence**: every 3 proof tickets per file → cleanup ticket; per-file finals; pre-milestone `/cleanup-all`; final-of-everything cleanup. The cadence is verified at planning time and re-checked at every resume audit.
+- **Resume & takeover modes**: `--continue` audits the ticket board against the current code and proposes updates (including missing cleanup tickets); `--takeover` creates a plan for an existing project. Both end with a hand-off to `/extended-work`.
+- **No execution.** Once the board is approved, `/develop` stops.
+
+**`/extended-work` — execution only.**
+
+- **Single ticket focus.** Picks the next available ticket (or `--ticket TXXX`) and works it to completion or a concrete approach error. Forbidden phrases include *"this is a multi-week effort"*, *"this is too complex"*, *"let me try a different approach"* (without first proving the planned one fails).
+- **Strict stop conditions.** Stops only on DONE / PROOF-SKETCH FAILURE / MATHLIB GAP / SCOPE-DEFINITION ERROR / DEPENDENCY NOT MET. Each requires a concrete report — which step failed, what was tried, why each attempt failed, a specific replanning suggestion. Vague excuses are not stop conditions.
+- **Quality enforced throughout** — no `sorry`, no new axioms (`#print axioms` checked), maximum generality, gates run on the diff before marking the ticket done (definition_protected, theorem_statement_protected, lake_build_file).
 
 ### Clean Up Existing Code (`/cleanup`)
 
-Audit and golf declarations against mathlib standards:
+Methodical 8-phase workflow for any Lean file. Replaces what used to be three commands (`/check-style`, `/check-mathlib`, plus the original `/cleanup`):
 
-- **13-item audit** per declaration (lint, have scan, simp squeeze, naming, structure, mathlib check, ...)
-- **30+ golfing rules** applied systematically (data-driven from 7,273 PR suggestions)
-- **One agent per declaration** with deep focus on shortest proof
-- Works on a whole file or a single declaration
+- **Phase 0 — Doctor**: pre-flight `lake build` baseline check; aborts if the project doesn't currently compile (we can't tell what we broke without a clean baseline)
+- **Phase 2 — Style audit**: full numbered punch-list; what was the standalone `/check-style`
+- **Phase 3 — File-level fixes**: copyright + module docstring (CREATED if missing) + imports + subsection-divider strip + `set_option` removal + batched mechanical replacements
+- **Phase 4 — Per-declaration deep cleanup**: one worker per decl; **18-item audit** with required status blocks for golf rules (1.1 → 3.7), the **five-method mathlib search** (formerly `/check-mathlib`), and **inline `/generalise` mechanical pass** with literature search for public decls
+- **Phase 5 — Refactoring**: cross-declaration items (renames, junk-def inlining, mathlib replacements, big-change generalisations escalated to standalone `/generalise`)
+- **Phase 6 — Final verification**: file-level **gates** (definition_protected, theorem_statement_protected, lake_build_file, cumulative_no_unintended_breakage) — borrowed from [shouyi](https://github.com/frenzymath/shouyi)
+- One agent per declaration, deep focus on shortest proof; 60+ rules from `golfing-rules.md` and `proof-patterns.md` applied systematically (data-driven from 7,273 PR suggestions)
 
 ### Additional Tools
 
-- **Golf proofs** -- automation upgrades (`grind`, `fun_prop`, `positivity`, `gcongr`), term mode conversion, `have` inlining
-- **Decompose long proofs** -- break proofs >30 lines into focused helper lemmas
-- **Check for mathlib duplication** -- search mathlib before writing new definitions
-- **Prepare PRs** -- comprehensive pre-submission checklist
-- **Fix reviewer feedback** -- parse and address PR review comments
+- **`/generalise`** — weaken assumptions on a single lemma/def: typeclass-hierarchy walk, drop-test, point-localise, strict→weak, plus mandatory literature search; auto-applies small safe changes, presents big changes as a numbered approval menu (also runs inline as part of `/cleanup` Phase 4)
+- **`/decompose-proof`** — break proofs >30 lines into focused helper lemmas (with mandatory user approval gate before dispatch)
+- **`/expert-review`** — produce a self-contained mathematical brief (`REVIEW_BRIEF.md`) for an external reviewer with no repo access; pure math, no Lean, no file paths; then in Mode 2 (`--reply`) integrate the reviewer's response into ticket-board updates
+- **`/fix-pr-feedback`** — fetch every PR comment, fix locally, **stop for explicit user approval before pushing**, then watch CI to completion (`gh pr checks --watch` runs in background as the wake-timer)
+- **`/bump-mathlib`** — bump mathlib version and fix the resulting breakage; documents recurring patterns from upstream evolution (Splits binary→unary refactor, IsX field-name normalisation, etc.)
+- **`/pre-submit`** — final pre-PR checklist
+- **`/split-file`** — split files >1000 lines (with mandatory user approval gate)
 
 ## Installation
 
@@ -125,12 +140,13 @@ activate the new tool.
 
 | Command | Description |
 |---------|-------------|
-| `/develop` | Plan and execute a mathematical development with ticket management |
-| `/cleanup` | Audit + golf (whole file or single declaration) |
+| `/develop` | **Planning only.** Mathlib search, API design, detailed tickets (Statement + Proof Sketch + Mathlib lemmas + Sources + Generality per ticket). Stops after approval. |
+| `/extended-work` | **Execution only.** Pick one ticket, work non-stop to DONE or concrete approach error. Strict no-complain mode. |
+| `/cleanup` | Style audit + cleanup + golf (whole file or single declaration). 7-phase methodical workflow; absorbed `/check-style` (Phase 2 audit) and `/check-mathlib` (Phase 4 item 13: five-method search-status block + six strict mathlib-replacement rules). |
 | `/cleanup-all` | Run /cleanup on every file in the project |
-| `/check-style` | Validate code against style rules (non-destructive) |
+| `/expert-review` | Two-mode external review: produce a self-contained math brief (`REVIEW_BRIEF.md`), wait for the reviewer's response, then integrate their guidance into the ticket board |
+| `/generalise` | Weaken assumptions on a lemma or definition: mechanical weakenings + literature search; auto-apply small safe changes, propose big changes as a numbered menu |
 | `/decompose-proof` | Break long proofs into helper lemmas |
-| `/check-mathlib` | Find mathlib equivalents to avoid duplication |
 | `/pre-submit` | Pre-PR submission checklist |
 | `/fix-pr-feedback` | Address PR reviewer comments |
 | `/bump-mathlib` | Bump mathlib version and fix breakage |
@@ -142,18 +158,44 @@ activate the new tool.
 ### Developing New Mathematics
 
 ```
-/develop                   # Start a new development (plan, tickets, prove)
-/develop --continue        # Resume from existing tickets
+# Plan
+/develop                   # Plan a new development (creates the ticket board)
+/develop --continue        # Audit ticket board against the code, propose updates
 /develop --status          # Show current ticket board
-/develop --takeover        # Take over an existing project
+/develop --takeover        # Plan a takeover of an existing project
+
+# Execute
+/extended-work             # Pick the next available ticket and work it to completion
+/extended-work --ticket T042   # Specific ticket
+/extended-work --resume    # Resume an in_progress ticket from its progress notes
+
+# Finish
+/pre-submit                # Final-review checklist after all tickets are done
 ```
 
-**How `/develop` works:**
+**How `/develop` works (planning):**
 
-1. **Plan** -- asks for your goal and references, searches mathlib exhaustively, designs API, creates ticket board with dependency graph
-2. **Execute** -- dispatches one worker per ticket; each searches mathlib, drafts statements, proves via multi-cycle approach, decomposes proofs >50 lines
-3. **Enforce** -- no sorry placeholders, no new axioms (`#print axioms` checked), maximum generality, periodic `/cleanup` passes
-4. **Resume** -- on restart, deep-scans project state, cross-references tickets with reality, updates plan with user
+1. **Gather context** — goal, references, scope.
+2. **Study references** — read user-provided papers / books to extract the canonical statements and proof outlines that will populate tickets.
+3. **Search mathlib** exhaustively for existing relevant definitions and lemmas.
+4. **Design the API** — maximally general typeclasses, namespace conventions, what to define vs. import.
+5. **Write the plan** in `.mathlib-quality/plan.md`.
+6. **Create detailed tickets** — every ticket gets full **Statement**, **Proof Sketch**, **Mathlib lemmas needed**, **Sources**, **Generality decision**.
+7. **(Optional)** ChatGPT plan validation if MCP available.
+8. **User approval.** After approval, `/develop` stops.
+
+**How `/extended-work` works (execution):**
+
+1. **Pick** — auto-pick the next ticket whose dependencies are done, or honour `--ticket TXXX`.
+2. **Read** the ticket fully. If any required field (Statement / Proof Sketch / Mathlib lemmas / Sources / Generality) is missing, refuse to start and ask the user to re-run `/develop` to complete the ticket.
+3. **Pre-work checks** — dependencies actually done; `lake build` baseline clean.
+4. **State** the declaration verbatim from the ticket's Statement field.
+5. **Prove** by walking the proof sketch step by step; verify each cited mathlib lemma exists; use `lean_multi_attempt` aggressively; checkpoint progress in the ticket as you go.
+6. **Verify** — diagnostics clean, no sorry, axiom check, `lake build` clean.
+7. **Gates** on the diff (definition_protected, theorem_statement_protected, etc.).
+8. **Mark done** + report. If a hard-stop condition fires instead, the report names which step failed, what was tried, and a concrete replanning suggestion.
+
+**When all tickets are done**, run `/pre-submit` for the final-review checklist (no `sorry` anywhere, no new axioms, full project build clean, etc.).
 
 ### Cleaning Up Code
 
@@ -163,28 +205,61 @@ activate the new tool.
 /cleanup-all                        # Clean every file in project
 ```
 
-**How `/cleanup` works:**
+**How `/cleanup` works (9 phases, methodical, no skipping):**
 
-For each declaration, a dedicated agent:
-1. Runs 13-item audit (lint, have scan, simp squeeze, naming, line packing, ...)
-2. Applies 30+ golfing rules (instant wins + automation upgrades)
-3. Steps back to think holistically about the shortest possible proof
-4. Verifies compilation
+0. **Doctor** — pre-flight: `lake exe cache get`, `lake build` (must pass — without a clean baseline we can't tell what breakage we introduced), LSP responsive on the target file. Aborts if the baseline is broken.
+1. **Prepare** — read the file, run `lean_diagnostic_messages`, read the five reference docs (golfing-rules, proof-patterns, mathlib-search, generalisation-patterns, cleanup-gates), build the declaration list.
+2. **Style audit** — complete numbered punch-list (file-level + linter findings + per-declaration light scan). No fixes yet. Replaces what used to be `/check-style`.
+3. **File-level fixes** — copyright, **module docstring (CREATED if missing)**, imports, subsection dividers, file-level `set_option`, batch mechanical replacements (`λ`→`fun`, `$`→`<|`, `push_neg`→`push Not`).
+4. **Per-declaration deep cleanup** — one dedicated agent per declaration. The worker reads the reference docs, runs the **18-item audit** with required status blocks for: every golfing rule (1.1 → 3.7), the **five-method mathlib search** (with the six strict mathlib-replacement rules — replaces `/check-mathlib`), the **inline mechanical generalisation pass** (catalogue-driven typeclass-hierarchy walk, drop-test, pointwise / strict→weak), and (for public decls) a literature search. Then runs the **diff gates** on the worker's edits before completing.
+5. **Refactoring** — cross-declaration items from Phase 4 worker reports: renames, junk-def inlining, mathlib replacements, big-change generalisations escalated to standalone `/generalise` (which has the user-approval gate on big changes).
+6. **Final verification** — file-level diff gates (`lake_build_file`, `lake_build`, `definition_protected`, `theorem_statement_protected`, `cumulative_no_unintended_breakage`). Untraceable signature changes are gate failures; only continues if Phase 6 is `pass`.
+6½. **Simplify pass** — hand off to the **built-in `/simplify` skill** (provided by Claude Code) for a holistic review. Where `/cleanup` is checklist-driven, `/simplify` is holistic — it spots duplicated proof skeletons across the file, cross-cutting issues the per-declaration workers missed, and quality issues that don't match any specific rule. If `/simplify` makes changes, the gates from Phase 6 are re-run on the new state. Required artifact: simplify-pass status block.
+7. **Report** — one consolidated report including the Phase-0 baseline, the audit punch-list, per-declaration before/after, refactoring done, gate-status table, and the simplify-pass outcome.
+
+**No-skipping enforcement.** `/cleanup`'s anti-skip defence sits on four mechanisms: required artifacts (status blocks the agent must emit — golf-rule status, mathlib search-status, generalisation status, gate status, simplify status; missing or blank cells = step skipped), verification gates between phases (`lake build` baseline, diagnostics-clean), diff gates on edits (definition_protected, theorem_statement_protected — catches *out-of-scope* edits), and user-approval pauses for high-blast-radius actions. The Phase-7 report's required-section list lets a missing artifact fail the report.
 
 ### Preparing a PR
 
 ```
-/check-style MyFile.lean       # Check style (non-destructive)
-/cleanup MyFile.lean            # Fix everything
+/cleanup MyFile.lean            # Audit + fix + golf (one command)
 /pre-submit MyFile.lean         # Final checklist
 ```
 
 ### Handling PR Feedback
 
 ```
-/fix-pr-feedback 1234              # Process feedback from PR #1234
+/fix-pr-feedback 1234              # Process feedback from mathlib PR #1234
 /fix-pr-feedback --comments "..."  # Or paste specific comments
 ```
+
+**How `/fix-pr-feedback` works (8 phases, push-gated):**
+
+1. **Fetch** — pull every review comment, issue comment, and PR-review summary via `gh api`.
+2. **Triage** — numbered punch-list with severity (🔴 must-fix, 🟡 should-fix, 🟢 question, ⚪ resolved) and category (golf / style / naming / api-design / correctness / …).
+3. **Implement** — fix each item in priority order (correctness → naming → golf → style → docs → questions); for proof rewrites, dispatches `/cleanup`-Phase-4-style workers.
+4. **Coverage check** — re-fetches comments and cross-references by id; any comment not in the action log is treated as a defect and addressed before continuing.
+5. **STOP for user approval** — prints the full report (changes, deferred items with reasons, drafted replies for the reviewer) and **waits for explicit OK to push**. No silent push.
+6. **Push + watch CI** — once approved, `git push` then `gh pr checks --watch` in the background. The runtime auto-notifies when checks finish — that's the wake-timer.
+7. **CI follow-up** — if CI fails, diagnose, fix, return to Phase 5 (still no push without approval).
+8. **Final report + learnings** — once green, summarise and write learnings.
+
+## Design Philosophy: Methodical Phases + Required Artifacts
+
+The recent rewrites of `/cleanup`, `/fix-pr-feedback`, `/develop`, `/expert-review`,
+`/generalise`, `/decompose-proof`, `/split-file`, `/integrate-learnings`, `/check-mathlib`,
+`/bump-mathlib`, and `/overview` all follow a single pattern:
+
+1. **Multi-step procedures with explicit phase numbers.** A workflow that says "do X, then Y, then Z" silently drops Y when the agent gets tired. A workflow with `PHASE 1` … `PHASE 8` makes phase-skipping visible.
+2. **Required artifacts.** Each phase produces a structured output — a punch-list, a status block, a gate-status table, a per-hypothesis classification table. The artifact is the proof the phase actually ran. Skipping a step is detectable in the missing or malformed artifact.
+3. **No silent skipping.** Every rule, every search method, every hypothesis, every comment, every reviewer point gets explicit status: `applied`, `tried-and-failed`, `n/a: <reason>`. Blank entries are defects. Recent example: `/cleanup`'s Phase-4 worker emits a per-rule status line for every entry in `golfing-rules.md` (sections 1.1 through 3.7), so a worker that silently skipped automation upgrades produces a report with missing rules.
+4. **Verification gates between phases.** A phase doesn't complete until its check passes. The `/cleanup` Phase-4 worker can't move past Step 5 without `lean_diagnostic_messages` being clean *and* the diff gates (definition-protection, theorem-statement-protection, lake-build-file) passing. The Phase-0 doctor blocks the whole workflow if the project doesn't currently build.
+5. **User-approval pauses for high-blast-radius actions.** Pushing to a remote (`/fix-pr-feedback` Phase 5), executing a file split (`/split-file`), dispatching decomposition (`/decompose-proof`), applying big-change generalisations (`/generalise` Phase 8), and integrating ambiguous community learnings (`/integrate-learnings` 5c) all stop at an explicit `AWAITING USER APPROVAL` line and wait. No silent push, no silent overwrite, no "while we're here".
+6. **Cleanup discipline as algorithm, not vibe.** `/develop`'s cleanup-cadence is "every 3 proof tickets per file → cleanup ticket; finals per file; pre-milestone cleanup-all; final cleanup-all", checked at every ticket pickup and every replanning. "Insert a cleanup every 3-5 proof tickets" was getting skipped; an algorithm with a verify-count check before saving the board doesn't.
+7. **Diff-level gating, not just LSP diagnostics.** Borrowed from [shouyi](https://github.com/frenzymath/shouyi): every AI-generated edit gets diff-checked against gates that catch *categorical* mistakes (touched a `def` line that wasn't supposed to change; modified a `theorem` statement during what was supposed to be a proof-only golf). LSP diagnostics catch type errors; gates catch policy violations.
+
+The throughline: **enforcement happens through artifacts the agent must emit, not through
+guidelines the agent should remember.**
 
 ## Key Rules (from 14,000+ PR reviews)
 
@@ -260,30 +335,94 @@ All data is privacy-preserving -- only technical content is collected, no person
 ```
 mathlib-quality/
 ├── commands/                    # Slash command implementations
-│   ├── develop.md               # Mathematical development engine
-│   ├── cleanup.md               # Audit + golf
-│   ├── cleanup-all.md           # Project-wide cleanup
-│   ├── decompose-proof.md
-│   ├── check-style.md
-│   ├── check-mathlib.md
-│   ├── pre-submit.md
-│   ├── fix-pr-feedback.md
-│   ├── setup-rag.md
-│   └── setup-chatgpt.md         # ChatGPT MCP server setup
+│   ├── develop.md               # Planning-only: mathlib search, API design, detailed tickets
+│   ├── extended-work.md         # Execution-only: single ticket, work to done-or-error, no complaints
+│   ├── cleanup.md               # Style audit + fix + golf (8-phase; absorbed /check-style + /check-mathlib)
+│   ├── cleanup-all.md           # Project-wide cleanup (one /cleanup per file)
+│   ├── decompose-proof.md       # Break long proofs into helper lemmas (with approval gate)
+│   ├── expert-review.md         # Two-mode external review: brief → wait → integrate reply into tickets
+│   ├── generalise.md            # Weaken hypotheses; mechanical pass + literature search; user approval for big changes
+│   ├── split-file.md            # Split files >1000 lines (with approval gate)
+│   ├── overview.md              # Per-declaration project inventory
+│   ├── pre-submit.md            # Final pre-PR checklist
+│   ├── fix-pr-feedback.md       # 8 phases: fetch → fix → coverage check → STOP → push → watch CI
+│   ├── bump-mathlib.md          # Bump mathlib + fix breakage (cache verification gate)
+│   ├── teach.md                 # Record a project-specific pattern
+│   ├── contribute.md            # Push local learnings back as a PR
+│   ├── integrate-learnings.md   # (maintainers) merge contributed learnings into refs + RAG
+│   ├── setup-rag.md             # Configure the RAG MCP server
+│   └── setup-chatgpt.md         # Configure the ChatGPT MCP server
 ├── skills/mathlib-quality/
 │   ├── SKILL.md                 # Main skill definition
-│   └── references/              # Style, naming, golfing rules, proof patterns
+│   └── references/              # Authoritative reference docs read by workers:
+│       ├── style-rules.md           # File structure, formatting, deprecation
+│       ├── naming-conventions.md    # snake_case/camelCase/UpperCamelCase + symbol dictionary
+│       ├── golfing-rules.md         # Phase 1/2/3 rules (instant wins, automation, cleanup)
+│       ├── proof-patterns.md        # Data-driven patterns from 7,273 PR suggestions
+│       ├── mathlib-search.md        # Five-method exhaustive search + six strict rules
+│       ├── generalisation-patterns.md  # Typeclass-weakening catalogue
+│       ├── cleanup-gates.md         # Diff gates for /cleanup (borrowed from shouyi)
+│       ├── pr-feedback-examples.md  # Curated review-category examples
+│       └── linter-checks.md         # Mathlib's built-in linters
 ├── mcp_server/
-│   └── mathlib_rag.py           # MCP server for RAG queries
-├── scripts/                     # Scraping, analysis, and query tools
-└── data/pr_feedback/            # RAG indexes (built from PR reviews)
+│   └── mathlib_rag.py           # MCP server for RAG queries over the PR-feedback index
+├── scripts/                     # Scraping, analysis, query, and merge tools
+└── data/
+    ├── pr_feedback/             # RAG indexes (built from 3,772 merged PRs)
+    └── community_learnings/     # /contribute submissions; archived/ once merged
 ```
 
 ## Acknowledgements
 
-- **[kim-em/botbaki](https://github.com/kim-em/botbaki)** -- Style conventions and formatting guidelines
-- **[cameronfreer/lean4-skills](https://github.com/cameronfreer/lean4-skills)** -- Multi-cycle proving approach and proof golfing methodology
-- **[leanprover-community/mathlib4](https://github.com/leanprover-community/mathlib4)** -- PR review data (public, technical content only)
+This plugin builds on tools, ideas, and writing from across the Lean / mathlib
+community. In particular:
+
+### Skill design and tooling
+
+- **[frenzymath/shouyi](https://github.com/frenzymath/shouyi)** — the **gates pattern** that
+  `/cleanup` uses in Phase 0 (pre-flight `lake build` doctor), Phase 4 (per-worker diff
+  gates), and Phase 6 (file-level cumulative gates). Shouyi treats every AI-generated
+  edit as a diff that must pass programmatic gates (`definition_protected`,
+  `theorem_statement_protected`, `lake_build_file`, `docstring_only_changes`) before
+  acceptance — a structurally more robust pattern than "edit, then diagnose afterwards".
+  See `references/cleanup-gates.md`.
+- **[cameronfreer/lean4-skills](https://github.com/cameronfreer/lean4-skills)** —
+  multi-cycle proving approach and proof-golfing methodology, plus the Lean 4
+  development workflows that `/develop` builds on.
+- **[oOo0oOo/lean-lsp-mcp](https://github.com/oOo0oOo/lean-lsp-mcp)** — the MCP server
+  that gives every command sub-second feedback (`lean_goal`, `lean_diagnostic_messages`,
+  `lean_multi_attempt`, `lean_loogle`, etc.) instead of 30+ second `lake build` cycles.
+  Nearly every command depends on it.
+- **[delta-lab-ai/Lean-Finder](https://huggingface.co/spaces/delta-lab-ai/Lean-Finder)**
+  — AI-powered mathlib search supporting both type signatures and natural-language
+  queries; method (A) of the five-method search-status block in `/cleanup`'s Phase-4
+  MATHLIB audit. See `references/mathlib-search.md`.
+- **[kim-em/botbaki](https://github.com/kim-em/botbaki)** — style conventions and
+  formatting guidelines that informed early versions of `style-rules.md`.
+
+### Authoritative content sources
+
+- **[leanprover-community style guide](https://leanprover-community.github.io/contribute/style.html)**
+  — the canonical reference for `references/style-rules.md`. All file-structure rules,
+  formatting conventions, indentation, line-length, and tactic-mode style come from
+  here.
+- **[leanprover-community naming guide](https://leanprover-community.github.io/contribute/naming.html)**
+  — the canonical reference for `references/naming-conventions.md` (snake_case for
+  lemmas, lowerCamelCase for defs, the symbol dictionary, the `conclusion_of_hypothesis`
+  pattern, etc.).
+- **[leanprover-community PR review guide](https://leanprover-community.github.io/contribute/pr-review.html)**
+  — informs the review-categories structure in `references/pr-feedback-examples.md`.
+
+### Data
+
+- **[leanprover-community/mathlib4](https://github.com/leanprover-community/mathlib4)**
+  — 3,772 merged PRs scraped for 14,063 reviewer-feedback items and 7,273 before/after
+  code suggestions. Privacy-preserving: only public, technical content collected.
+- **Community contributors** to this repo via `/contribute`: each archived JSONL in
+  `data/community_learnings/archived/` represents lessons learned by other Lean users
+  on real PRs (Eisenstein series cleanup, Hecke algebra formalisation, modular forms PR
+  reviews, version-bump breakage, file-deprecation conventions). These feed both the RAG
+  index and — when consensus emerges — the reference docs.
 
 ## Contributing
 

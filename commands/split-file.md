@@ -131,11 +131,48 @@ ResidueTheory/
 ```
 1. /split-file path/to/LargeFile.lean
 2. Agent analyzes and proposes split structure
-3. User approves or modifies plan
+3. STOP — wait for explicit user approval (mandatory pause)
 4. Agent executes split incrementally
 5. Agent verifies all files compile
 6. User reviews and commits
 ```
+
+### Step 3 — Awaiting user approval (mandatory pause)
+
+After producing the proposed split structure, **stop**. Do not start writing new files.
+Print this exact line:
+
+```
+AWAITING USER APPROVAL ON SPLIT PLAN — reply "approve" / "go ahead" / "looks good" to
+execute the split, or describe changes you want first.
+```
+
+Then wait. Possible responses:
+- **Approve** → proceed to step 4
+- **Change** ("rename file X to Y", "move declarations A and B to a different module",
+  "merge groups C and D") → update the plan, re-print it, wait again
+- **Cancel** → leave the original file untouched; user can resume later
+
+A split is a high-blast-radius operation (creates new files, edits imports, may break
+downstream). Never auto-execute without explicit approval. The plan is approved by the
+user, not by you.
+
+### Step 5 — Per-file verification gate
+
+After writing each new file, run `lean_diagnostic_messages` on it before moving to the
+next. If the new file has errors, fix them before proceeding. Do not accumulate broken
+files.
+
+Final verification: `lake build` must succeed on the affected modules. If the user has CI,
+also note that any cross-file rename may need a follow-up pass. Print:
+
+```
+✓ All N split files compile
+✓ lake build succeeded on affected modules
+✓ Original file is empty / removed (whichever was planned)
+```
+
+If any check fails, do NOT mark the split as done — list what's broken and stop.
 
 ### Final Step: Record Learnings
 

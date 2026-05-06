@@ -335,3 +335,108 @@ example (f : ℂ → ℂ) (hf : Continuous f) : P f := mathlib_lemma f hf
 - Use `apply?` and `exact?` liberally
 - Keep imports minimal and explicit
 - Check if your "custom" definition is a mathlib concept
+
+## Five-Method Exhaustive Search (the rule for `/cleanup`'s MATHLIB audit)
+
+The MATHLIB item in `/cleanup`'s per-declaration audit (Phase 4) requires this five-method
+search. A worker that concludes "not in mathlib" without trying all five has skipped the
+check.
+
+| # | Method | When it shines |
+|---|---|---|
+| **A** | **Lean-Finder** (https://huggingface.co/spaces/delta-lab-ai/Lean-Finder) — AI-powered, type signatures + natural language | Use first. Most powerful single tool. |
+| **B** | **Loogle** (`lean_loogle`) — type-pattern queries | When you know the rough shape: `IsCompact → DiscreteTopology → Finite` |
+| **C** | **LeanSearch** (`lean_leansearch`) — natural language | "discrete topology inherited by subset" / "compact + discrete is finite" |
+| **D** | **Grep mathlib source** (`grep -rn ... .lake/packages/mathlib/`) | When you have a guess at the name (e.g., `IsCompact.finite`) |
+| **E** | **Name-pattern search** (`lean_local_search`) — partial names | `discrete`, `isolated`, `finite_of`, `_left`, `_right`, `_of_subset` variants |
+
+If a method genuinely doesn't apply (e.g., grepping mathlib source isn't available in this
+environment), record `n/a: <reason>` — not blank. The audit must be auditable.
+
+## Six Strict Rules for Mathlib Replacement
+
+When `/cleanup`'s Phase-4 MATHLIB check finds (or doesn't find) an equivalent, apply these
+rules:
+
+**Rule 1 — No wrapper lemmas.** If a lemma just combines 1–3 mathlib calls, **delete it**.
+Use mathlib directly at every call site.
+
+```lean
+-- ❌ Wrapper lemma
+lemma my_finite [DiscreteTopology S] (hK : IsCompact K) : (S ∩ K).Finite := ...
+
+-- ✓ Use mathlib directly where needed
+theorem main ... := by
+  haveI := DiscreteTopology.of_subset ‹_› Set.inter_subset_left
+  have := hK.finite this
+```
+
+**Rule 2 — Exhaustive search.** All five methods (A–E above) before concluding "not in
+mathlib".
+
+**Rule 3 — Check auxiliary lemmas.** Often what you need is `Foo.of_subset`,
+`Foo.inter_left`, `foo_of_bar` — search variants, not just the canonical name.
+
+**Rule 4 — Use type classes, not custom predicates.** Replace explicit hypotheses with
+mathlib type-class arguments.
+
+```lean
+-- ❌ Custom predicate
+lemma foo (h : ∀ x ∈ S, ∃ ε > 0, ball x ε ∩ S = {x}) : P := ...
+
+-- ✓ Mathlib type class
+lemma foo [DiscreteTopology S] : P := ...
+```
+
+**Rule 5 — Delete, don't simplify.** When you find a mathlib equivalent, delete your local
+copy entirely; update call sites to use mathlib directly. Don't keep your version as a
+thin wrapper around mathlib.
+
+**Rule 6 — Document mathlib usage.** In the module docstring, note which mathlib lemmas
+the file relies on, so future readers don't recreate them locally:
+
+```lean
+/-!
+## Mathlib lemmas used directly
+* `IsCompact.finite` + `DiscreteTopology.of_subset` for finiteness on discrete subsets.
+-/
+```
+
+## Common Mathlib Equivalents (lookup table)
+
+When `/cleanup`'s MATHLIB check finds a candidate, it usually falls into one of these
+buckets. Use this table to spot the pattern.
+
+### Discrete / isolated points
+
+| Custom pattern | Mathlib equivalent |
+|---|---|
+| `∀ s ∈ S, ∃ ε > 0, ball s ε ∩ S = {s}` | `DiscreteTopology` on the subtype + `discreteTopology_subtype_iff` |
+| `∀ s ∈ S, ∃ ε > 0, ∀ s' ∈ S, s' ≠ s → ε ≤ d(s, s')` | `Set.Pairwise` with the distance |
+| Points isolated in a subspace | `DiscreteTopology.of_subset` |
+| Recover ball isolation from `[DiscreteTopology S]` | `exists_ball_inter_eq_singleton_of_mem_discrete` |
+
+### Finiteness
+
+| Custom pattern | Mathlib equivalent |
+|---|---|
+| Discrete ∩ Compact is finite | `IsCompact.finite` (with `DiscreteTopology` on the subtype) |
+| Finite preimage of singleton | `Set.Finite.preimage` |
+| Subset of finite is finite | `Set.Finite.subset` |
+
+### Separation
+
+| Custom pattern | Mathlib equivalent |
+|---|---|
+| Minimum pairwise distance | `Finset.inf'` over pairs |
+| Positive separation | `Set.pairwiseDisjoint` |
+
+### Bounded / bornology
+
+| Custom pattern | Mathlib equivalent |
+|---|---|
+| `∃ M, ∀ x ∈ S, ‖x‖ ≤ M` | `Bornology.IsBounded` or `Metric.Bounded` |
+| Bounded ↔ contained in a ball | `Metric.isBounded_iff_subset_closedBall` |
+
+This table is non-exhaustive; it captures patterns that came up repeatedly in PR review.
+Add to it via `/teach` when you find another recurring custom-vs-mathlib pair.

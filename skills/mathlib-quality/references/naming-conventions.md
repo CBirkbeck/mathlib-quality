@@ -385,6 +385,39 @@ end Nat
 - New or uncommon terms should be spelled out
 - When in doubt, be explicit
 
+### Forbidden Abbreviations in Declaration Names
+
+Mathlib spells things out. The following local-style abbreviations are routinely flagged in review and must be rejected:
+
+| Abbreviation | Spell out as | Notes |
+|---|---|---|
+| `whomog` | `weightedHomogeneous` | Polynomial degree |
+| `mvpoly` | `mvPolynomial` | `MvPolynomial` namespace |
+| `wt` | `weight` | Modular forms / graded |
+| `soln` | `solution` | |
+| `imp` | (spell out the conclusion) | Use `_imp_eval_eq_zero`, never bare `imp` |
+| `eqn` | `equation` (or `eq` per existing convention) | `_eq` is the accepted suffix |
+| `arg` | `argument` (only in prose, not names) | |
+| `thm` | `theorem` (in prose) | Never in identifiers |
+
+The accepted abbreviations live in the table above; anything not listed there should be spelled out, especially for new declarations.
+
+```lean
+-- ❌ Local abbreviations
+whomog_eq_zero_of_no_monomials
+mvpoly_support_after_reduction
+no_wt_monomial_of_odd
+unique_small_weight_soln
+eval_discriminantPoly_mul_zero_imp
+
+-- ✓ Spelled out
+weightedHomogeneous_eq_zero_of_no_monomials
+mvPolynomial_support_after_reduction
+no_weight_monomial_of_odd
+unique_small_weight_solution
+eval_discriminantPoly_mul_eq_zero_imp_eval_eq_zero
+```
+
 ## Instance Naming for Type-to-Class Relationships
 
 When `X` has a `YClass X` instance, name it `X.instYClass`, NOT `YClass.x`. The namespace prefix matches the subject type (the thing that *has* the instance).

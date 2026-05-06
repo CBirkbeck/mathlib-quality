@@ -290,6 +290,9 @@ exact foo
 | Manual `mono` | `gcongr` | Inequality congruence |
 | Manual case splits on decidable props | `decide` | Small computations |
 | `by_contra; push_neg` | `by_contra!` | Always |
+| `push_neg at h` | `push Not at h` | `push_neg` is deprecated |
+| `show X from by ...` | `show X by ...` | `from` is redundant when followed by `by` |
+| `show X` to rewrite goal | `change X` | `linter.style.show` enforces this when goal actually changes |
 
 ---
 
