@@ -813,12 +813,64 @@ For each declaration in the list from 1d:
 
 1. Decide if it can run in parallel. A declaration that uses helpers being modified by
    another worker should run *after* those helpers are done.
-2. Send the worker prompt as one `Agent` call. Substitute `[file_path]`, `decl_name`, line
-   range, lint warnings for the range, and the C.x punch-list items.
+2. Send the worker prompt as one `Agent` call **per declaration**. Substitute
+   `[file_path]`, `decl_name`, line range, lint warnings for the range, and the C.x
+   punch-list items.
 3. Wait for completion, capture the report.
 
-**Do not batch multiple declarations into one worker.** That is exactly what causes the
-"agent forgets" problem the user complained about.
+### The "batched worker" anti-pattern (DO NOT DO THIS)
+
+The most common failure mode of `/cleanup` is the main agent shortcutting Phase 4 by
+delegating the entire file to a single subagent — typically a `lean4:proof-golfer`,
+`general-purpose`, or any other "I'll just have one agent golf the whole file" call.
+**This violates Phase 4's contract** and silently drops audit items. It is forbidden.
+
+**Why it's tempting:** dispatching N workers, one per declaration, takes N tool calls
+and reads like overhead. A single batched call feels efficient.
+
+**Why it fails:** a single worker, given a whole file, optimises for *visible wins* (a
+few short proofs golfed) while skipping audit items that don't yield obvious diff
+hunks. Concretely, the items that get dropped most often:
+
+| Audit item | What gets dropped |
+|---|---|
+| **1. LINT** | Per-declaration lint warnings get summarised file-wide instead of addressed per decl |
+| **10. DOCSTRING** | The "private/aux lemmas have NO docstrings" rule is silently inverted — every private lemma ends up with a `/-- ... -/` block left in place |
+| **12. STRUCTURE** | Long proofs (>30 lines) don't get the STRUCTURE flag because the batched worker doesn't think per-decl about length thresholds |
+| **13. MATHLIB** | The five-method search-status block isn't emitted per declaration |
+| **18. GENERALISE** | The per-hypothesis classification table isn't emitted per declaration |
+
+**Symptoms of a batched-worker shortcut** (visible after the fact):
+- Every private lemma in the cleaned file still has a docstring.
+- Long proofs (>30 lines) weren't flagged for `/decompose-proof` in the report.
+- The Phase-4 results section reads "top 5 wins" / "key changes" rather than N
+  separate audit reports — one per declaration in the list from 1d.
+- The Phase-7 report's per-declaration table is missing rows that exist in the
+  declaration list.
+
+If you notice ANY of these symptoms during Phase 4 verification, the worker pass was
+batched and the work is invalid — re-dispatch correctly (one Agent call per decl).
+
+### Post-Phase-4 verification (REQUIRED, catches the shortcut)
+
+Before moving to Phase 5, the main agent verifies:
+
+```
+For each declaration D in the list from 1d:
+  - Did D get its own worker report? (One Phase-4 status block in the conversation
+    with D's name, audit table, golfing-rule status, mathlib-search status,
+    generalisation status, gate status.)
+  - Was the worker an `Agent` call dispatched specifically for D, or was D rolled up
+    into a batched call covering multiple decls?
+
+If any D is missing a per-decl worker report → re-dispatch a worker for D.
+If multiple Ds share one report → the entire batched run is invalid; re-dispatch
+each D separately.
+```
+
+This is not optional. The "one Agent per decl" rule was added because earlier batched
+shortcuts dropped audit items in production — see the
+`teach-cleanup-no-batched-worker` learning in `data/community_learnings/archived/`.
 
 ---
 
@@ -1001,7 +1053,11 @@ phase wasn't completed; treat as a defect and re-run that phase):
 - **Baseline (Phase 0)** — proves the doctor ran
 - **Audit (Phase 2)** — proves the punch-list was built
 - **Phase 3 file-level fixes** — proves file-level work happened
-- **Phase 4 per-declaration results** — proves each decl had a worker
+- **Phase 4 per-declaration results** — **one row per declaration in the list from 1d**.
+  A row count smaller than the 1d declaration count means workers were batched (the
+  forbidden shortcut described in Phase 4 "Dispatching workers"). If the table has 5
+  rows but 1d listed 12 declarations, 7 declarations didn't get their own worker —
+  re-dispatch.
 - **Phase 5 refactoring** — even "(none)" is acceptable; missing section = phase skipped
 - **Verification (Phase 6)** — diagnostics-clean confirmation
 - **Gates (Phase 6 cumulative)** — proves gates were run
