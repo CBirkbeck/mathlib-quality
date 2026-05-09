@@ -1,117 +1,77 @@
 ---
 name: project-status
-description: Mathematician-friendly snapshot of an in-progress /develop project — main goal, dependency tree, blockers, weighted progress bar. Pure mathematical narrative; Lean statements as code blocks but no code spelunking.
+description: Mathematician's snapshot of a /develop project — chat summary + live browser dashboard. The agent un-formalises the project's Lean code into mathematical English so the dashboard renders maths, not just signatures.
 ---
 
 # /project-status — Mathematician's Project Snapshot
 
-A read-only view of an in-progress mathematical formalisation. Designed for the case
-where a non-Lean expert mathematician wants to glance at the project between worker
-sessions and understand:
+A read-only view of an in-progress mathematical formalisation. The audience is
+an expert mathematician who wants to glance between work sessions, spot
+bottlenecks, and offer guidance — without reading any Lean code.
 
-- What is the main goal, in plain mathematical English?
-- What chain of intermediate results connects it to the lemma the worker just proved
-  and the one currently being attempted?
-- Where exactly is the worker stuck — at which step of which proof, and what kind of
-  mathematics is missing?
-- How much is left?
+## Source of truth: the .lean code, not the ticket file
 
-**Pure mathematical language.** Lean statements appear as code blocks (so the
-mathematician can see exactly what was stated), but proof sketches, blockers, and
-descriptions are in English. Never paste tactic-level proof text. Never reference
-file paths or build errors. The reader has no Lean and no repo access — they have a
-chalkboard and an opinion.
+The project's `.lean` files are the source of truth. The ticket file
+(`tickets.md`) is a status overlay only — it tells us which declarations are
+open / in_progress / done, but it does **not** supply the mathematical
+content. Every command run, the agent:
 
-This is **read-only with respect to the project**. The agent never edits
-project files, never builds, never runs `lean_diagnostic_messages`. It does
-spawn a small local HTTP server (Python stdlib only) for the live dashboard,
-and writes a PID file at `.mathlib-quality/.status_server.pid` to manage it.
-That is the only side effect.
+1. Discovers every declaration in the project (the server scans `.lean` files).
+2. For each declaration, **un-formalises** the Lean code into mathematical
+   English: a short math name, a 1-3 sentence description of what's being
+   asserted, and (for declarations with `sorry`) a narrative of where the
+   proof currently sits.
+3. Writes the un-formalisation to `.mathlib-quality/.status_annotations.json`.
+4. The server merges that sidecar into every dashboard snapshot, so the
+   browser renders mathematics rather than raw Lean signatures.
+
+The ticket file's role: matched by declaration name, it adds the worker's
+`open` / `in_progress` / `blocked` status and the Progress timeline.
+Declarations with a `sorry` but no matching ticket are flagged "unticketed
+sorries".
 
 ## Usage
 
 ```
-/project-status                # combined chat snapshot + open live browser dashboard
-/project-status T014           # ticket zoom in chat (dashboard already open auto-focuses)
-/project-status T014 step 4    # step zoom in chat
-/project-status T014/4         # shorthand for the above
-/project-status --no-browser   # chat snapshot only; do not start dashboard
-/project-status --stop         # kill the running dashboard server
+/project-status                       # combined chat snapshot + open live browser dashboard
+/project-status fooBar_comp           # per-declaration zoom in chat (unqualified name)
+/project-status MyProj.fooBar_comp    # per-declaration zoom in chat (fully qualified)
+/project-status --no-browser          # chat snapshot only; do not start dashboard
+/project-status --skip-unformalise    # use existing annotations, do not re-annotate
+/project-status --stop                # kill the running dashboard server
 ```
 
-This command does two things in parallel on the default invocation:
+The default invocation does **all four** of:
 
-1. **Live browser dashboard** — starts a local HTTP server (Python stdlib, no
-   dependencies) and opens it in the default browser. The dashboard renders a
-   clickable mathematical dependency tree on the left and a per-ticket detail
-   panel on the right. Arrow keys navigate, Enter focuses, `/` searches,
-   `Esc` returns to the project overview. The page polls `/api/status` every
-   3 seconds and live-updates as tickets and `.lean` files change. The server
-   is idempotent — re-running this command reuses the existing server.
+1. Start the dashboard server (background, idempotent).
+2. Fetch the structural snapshot (every declaration with its full body).
+3. **Un-formalise** the project's Lean code into mathematical English and
+   write the JSON sidecar (this is the bulk of the work).
+4. Open the browser tab AND print the chat snapshot.
 
-2. **Chat snapshot** — the same combined snapshot in markdown form, rendered
-   directly into the chat so the user does not have to switch context to see
-   the state. Drill-down (`/project-status T014` etc.) is chat-only zoom.
+The dashboard stays open between invocations and live-updates structural
+data every 3 s. The mathematical un-formalisation refreshes only when this
+command is re-run — it is the agent's work, not the server's.
 
-Three zoom levels — project / ticket / step. The default view is the combined
-snapshot. Zoom levels are reached by passing a ticket ID (and optionally a
-step). Every chat view ends with a navigation footer listing the next moves so
-the reader can walk around the project without leaving the chat.
+## Phase 0 — Launch the live server
 
-## Argument parsing (binding)
+Skip on `--stop` (which just kills the server) or any drill-down (the user
+is asking for a chat brief; an already-running dashboard keeps live-updating
+in the background).
 
-Parse arguments as follows. Whitespace-separated.
+```bash
+nohup python3 <plugin-root>/scripts/project_status_server.py > /dev/null 2>&1 &
+```
 
-| Args                                   | Dispatch                                                |
-|----------------------------------------|---------------------------------------------------------|
-| (none)                                 | **combined snapshot** + open dashboard                  |
-| `--no-browser`                         | **combined snapshot** in chat only, do not open browser |
-| `--stop`                               | kill running dashboard server, no chat output           |
-| `--dashboard-only`                     | open dashboard, skip chat snapshot                      |
-| matches `^T\d+$` or `^CLEANUP-\w+$`    | **ticket-zoom** in chat (dashboard untouched)           |
-| matches `^T\d+/\d+$` etc.              | **step-zoom** in chat (split on `/`)                    |
-| ticket ID followed by `step N`         | step-zoom in chat                                       |
-| anything else                          | error: list valid ticket IDs                            |
+(Or use the `Bash` tool with `run_in_background: true`.) Wait briefly and
+read the URL:
 
-Ticket-ID matching is case-insensitive and tolerates `T014`, `t14`, `T-014`. If the
-ID is unknown, list the closest 3 by Levenshtein and stop.
+```bash
+python3 <plugin-root>/scripts/project_status_server.py --status
+```
 
-When a ticket-zoom or step-zoom is requested, do **not** also start the
-dashboard — the user is drilling in via chat. The dashboard, if already running
-from a previous invocation, keeps live-updating in the background.
-
-## Phase −1 — Launch the live dashboard (default and `--dashboard-only` only)
-
-Skip this phase entirely on `--no-browser`, `--stop`, or any drill-down (ticket
-or step zoom).
-
-Run the server in the background. The server itself handles idempotency
-(checks `.mathlib-quality/.status_server.pid`; if already running, just
-re-prints the URL). The slash command must:
-
-1. Verify the server script exists at
-   `<plugin-root>/scripts/project_status_server.py`. If not, abort with a clear
-   message (the plugin install is broken).
-2. Start the server detached, so it survives the slash command exiting:
-   ```bash
-   nohup python3 <plugin-root>/scripts/project_status_server.py > /dev/null 2>&1 &
-   ```
-   (Or use the `Bash` tool with `run_in_background: true`.)
-3. Wait briefly (≤ 1 s) for the server to write its PID file, then read the URL:
-   ```bash
-   python3 <plugin-root>/scripts/project_status_server.py --status
-   ```
-   This prints `http://127.0.0.1:<port>/` if the server is running, or nothing
-   if it is not.
-4. Open the URL in the user's default browser:
-   - macOS:  `open <url>`
-   - Linux:  `xdg-open <url>`
-   - Windows / WSL: `start <url>` (rare in this project's audience, but handle)
-5. Print one line in chat: `🌐 Live dashboard: <url>`. Do this BEFORE the chat
-   snapshot so the user can click through immediately.
-
-If the server fails to start (e.g., no Python 3, no free port in 8765-8794),
-report the error and continue with the chat snapshot only.
+Print one line in chat: `🌐 Live dashboard: <url>`. Then `open <url>` (macOS)
+or `xdg-open <url>` (Linux) to launch the browser.
 
 For `--stop`:
 
@@ -121,646 +81,373 @@ python3 <plugin-root>/scripts/project_status_server.py --stop
 
 Print the result and exit.
 
-## Inputs (read-only)
+## Phase 1 — Fetch the structural snapshot
 
-- `.mathlib-quality/plan.md` — the project plan (main goal, sources, references)
-- `.mathlib-quality/tickets.md` — the ticket board (every ticket with Statement,
-  Proof Sketch, Status, Depends on, Progress checkpoints)
-- `.lean` files referenced by tickets — read in two modes:
-  - **For `done` tickets**: count `sorry` occurrences, cross-check the claim. Do not
-    analyse proof content.
-  - **For `in_progress` and `blocked` tickets**: read the declaration in full. The
-    point of this command is to isolate the bottleneck. The Progress notes alone are
-    not enough — read what the worker has actually attempted: the partial proof
-    above the `sorry`, any auxiliary `have` statements, and the current declaration
-    signature (which may have drifted from the ticket's stated Statement). This is
-    where the agent grounds the mathematical narrative in real code, not speculation.
-
-If `.mathlib-quality/tickets.md` does not exist:
-
-```
-No /develop project found in this directory. Run /develop to create a ticket
-board, or change to the project's working directory.
+```bash
+curl -s http://127.0.0.1:<port>/api/structure
 ```
 
-Stop.
+The response is a JSON object with:
 
-## Phase 0 — Parse the ticket board
+- `title`, `main_goal_lean` (from `plan.md`)
+- `decls`: a list of declaration dicts, each with:
+  - `name` (fully qualified), `local_name`, `kind`, `file_path`, `line_range`
+  - `namespace`, `is_private`
+  - `lean_signature` — the declaration head through `:= by` / `:=` / `where`
+  - `lean_body_full` — every line of the declaration block, verbatim, for
+    you to read and un-formalise
+  - `has_sorry`, `sorry_lines`, `haves` (each `{name, type_hint}`)
+  - `depends_on` — internal references found in the body (other project decls)
+  - `depended_on_by` — inverse
+  - `body_hash` — sha256 prefix; use this to skip re-annotating unchanged decls
+  - `ticket_id`, `ticket_status`, `progress_entries` — overlay from `tickets.md`
+  - `status` — computed: `done` / `in_progress` / `blocked` / `open` /
+    `has_sorry_no_ticket`
 
-Open `.mathlib-quality/tickets.md` and extract every ticket. For each, capture:
+If the snapshot is empty (no `.lean` files, or the server is not running),
+report and stop. Don't fabricate content.
 
-| Field | How to extract |
+## Phase 2 — Un-formalise (the heart of this command)
+
+For every declaration in the structural snapshot, write English annotations.
+Read the existing `.mathlib-quality/.status_annotations.json` first; **skip**
+any declaration whose `body_hash` matches the existing entry. This makes
+re-runs cheap on large projects.
+
+For each declaration that needs un-formalising, produce:
+
+### `math_name` (always)
+4-10 words of plain English describing **what the declaration is or claims**.
+Not the Lean identifier. Not a sentence with a verb if a noun phrase fits.
+
+Examples:
+
+| Lean | math_name |
 |---|---|
-| ID | The `[Tnnn]` or `[CLEANUP-n]` token in the heading `### [...] Title` |
-| Title | The remainder of that heading, after the bracketed ID |
-| Status | `^- \*\*Status\*\*: (open\|in_progress\|done\|blocked)` |
-| File | `^- \*\*File\*\*: (.+)$` |
-| Depends on | `^- \*\*Depends on\*\*: (.+)$` (comma-separated IDs, or `none`) |
-| Type | `^- \*\*Type\*\*: (.+)$` (lemma / def / def + API lemmas / cleanup / milestone) |
-| Statement | The Lean code block under `#### Statement` |
-| Sketch steps | Numbered lines `^[0-9]+\.` under `#### Proof sketch` (or `#### Proof Sketch`) — count and capture each step's text |
-| Sources | The list under `#### Sources` |
-| Mathlib lemmas | The list under `#### Mathlib lemmas needed` |
-| Progress entries | Lines under `**Progress**:` — each is `<ISO timestamp>: <note>`, parse timestamp and note |
+| `theorem fooBar_comp : fooBar s (g ∘ f) = fooBar (s.image f) g` | "FooBar commutes with composition" |
+| `theorem eisensteinSeries_holomorphic (k : ℕ) (hk : 4 ≤ k) : Holomorphic (E k)` | "Holomorphy of the Eisenstein series" |
+| `def cauchyPrincipalValue (f : ℝ → ℂ) : ℂ` | "Cauchy principal value of an integral" |
+| `lemma norm_le_of_compact (hK : IsCompact K) : ‖f x‖ ≤ M` | "Norm bound of a continuous function on a compact set" |
 
-Open `.mathlib-quality/plan.md` and capture:
+For `def` and `structure` declarations, the math name is the noun (the
+mathematical object being defined). For `theorem`/`lemma`, it's the
+result (the conclusion paraphrased).
 
-- Project title (top `#` heading or first sentence)
-- Main goal — the first paragraph or section that describes what is being formalised
-  in mathematical English
-- Sources — the bibliography section if present
+### `description` (always, 1-3 sentences)
+Plain mathematical English — what this declaration asserts. The reader is
+a peer mathematician who reads the math name and wants the precise
+statement at a glance. Refer to the Lean signature to get the type
+shape correctly. Use mathematical notation (∑, ℝ, τ, etc.) where natural.
+Do NOT use Lean tactic vocabulary ("rewrite using", "applies").
 
-## Phase 1 — Compute progress
+Examples:
 
-**Weighted by sketch step count.** For each ticket:
+> The Eisenstein series $E_k(\tau) = \sum_{(c,d) \neq 0} (c\tau + d)^{-k}$
+> is holomorphic on the upper half-plane $\mathbb{H}$ for every weight $k \geq 4$.
 
+> Asserts that the FooBar product distributes through function composition:
+> applying $g \circ f$ over $s$ gives the same product as $g$ over $s.\mathrm{image}\, f$.
+> The hypothesis is that $\alpha, \beta, \gamma$ are commutative monoids.
+
+### `proof_state_english` (only if `has_sorry`, 2-4 sentences)
+Read the `lean_body_full`. Identify what the worker has built (auxiliary
+`have`s, intermediate goals, case splits) and translate to mathematical
+claims. Identify what the remaining `sorry` would prove — the local goal,
+read from the surrounding context. State all of this in mathematical
+English.
+
+Example:
+
+> The worker has reduced the goal to showing the partial sums $S_N(\tau) =
+> \sum_{|c|+|d| \leq N} (c\tau+d)^{-k}$ converge uniformly on each compact
+> subset of $\mathbb{H}$. The auxiliary bound `h_summable` establishes
+> $\sum_n n^{-k} < \infty$, which provides the dominant series. The
+> remaining sorry asks to interchange the limit $N \to \infty$ with the
+> evaluation at $\tau$ — the standard Weierstrass M-test argument that
+> mathlib's library should already cover.
+
+If the body is essentially empty (just `sorry`), say so:
+
+> The declaration is stated but no proof has been started. The next move
+> is whatever the proof sketch suggests — see the ticket if one exists.
+
+### `ingredients_in_scope` (only if `has_sorry`, 2-6 bullets)
+Each bullet is one phrase naming a mathematical fact available at the
+sorry. Source from: hypotheses of the declaration; established `have`
+statements (translated mathematically); conclusions of dependency
+declarations the body uses; standard mathlib facts the body imports.
+
+Example bullets:
+
+- "Termwise holomorphy of $(c\tau + d)^{-k}$ for fixed $(c,d) \neq 0$ — established by `h_termwise`"
+- "Absolute summability $\sum_n n^{-k} < \infty$ for $k \geq 4$ — from dependency `absolute_summability`"
+- "The compact set $K \subset \mathbb{H}$ has positive distance from the boundary"
+- "Mathlib's Weierstrass M-test: `tendsto_uniformly_of_summable`"
+
+### `what_would_help` (only if status is `blocked` or appears stuck, 2-4 bullets)
+Concrete mathematical guidance the mathematician could give. Alternative
+strategy, hypothesis relaxation, literature pointer, decomposition
+suggestion. NOT generic encouragement.
+
+Examples:
+
+- "Try Morera's theorem: integrate around any triangle in $\mathbb{H}$ and use Cauchy's theorem on each summand"
+- "If the statement is relaxed to weight $k \geq 6$, the dominant series is $\sum n^{-6}$ which mathlib has more directly"
+- "Serre, *Cours d'arithmétique*, Ch. VII §2 gives this as Lemma 1; the trick is to bound by a fixed-radius shell"
+
+### Project-level annotation
+
+After per-declaration annotations, write the project-level fields:
+
+- **`project_goal_english`** (one paragraph) — what this whole project is
+  trying to prove, in mathematical English. Compose by reading: the
+  `plan.md` main paragraph (if any); the math_names and descriptions of
+  the project's roots (the declarations nothing depends on); any
+  `tickets.md` introduction.
+
+- **`project_main_decls`** (1-5 declaration names) — the declarations that
+  best represent the project's main results. By default the roots from
+  the structural snapshot. Trim trivial roots (basic API lemmas, deprecated
+  shims) so the dashboard's "Top-level results" section is the result the
+  reader actually cares about.
+
+### Write the file
+
+Write to `.mathlib-quality/.status_annotations.json` in this shape:
+
+```json
+{
+  "version": 1,
+  "generated_at": "<ISO timestamp now>",
+  "project_goal_english": "...",
+  "project_main_decls": ["MyProj.main_theorem"],
+  "declarations": {
+    "MyProj.fooBar_comp": {
+      "math_name": "FooBar commutes with composition",
+      "description": "Asserts that the fooBar product distributes through function composition.",
+      "proof_state_english": null,
+      "ingredients_in_scope": null,
+      "what_would_help": null,
+      "body_hash": "abc123def456",
+      "annotated_at": "2026-05-09T10:30:00Z"
+    },
+    "MyProj.eisensteinSeries_holomorphic": {
+      "math_name": "Holomorphy of the Eisenstein series",
+      "description": "...",
+      "proof_state_english": "...",
+      "ingredients_in_scope": ["...", "..."],
+      "what_would_help": ["...", "..."],
+      "body_hash": "...",
+      "annotated_at": "..."
+    }
+  }
+}
 ```
-weight(t) =
-  | count of numbered sketch steps        if ticket has a numbered Proof Sketch
-  | 1                                      otherwise (cleanup tickets, definitions, milestones)
-```
 
-Then:
+**Merge with existing annotations.** Read the existing file first.
+For each declaration:
+- If it doesn't appear in the structural snapshot anymore (deleted from
+  code), drop its annotation.
+- If its existing `body_hash` matches the current snapshot's `body_hash`,
+  keep the existing annotation entry verbatim.
+- Otherwise re-annotate.
 
-```
-done_weight     = sum of weight(t) for tickets with status = done
-total_weight    = sum of weight(t) for all tickets
-percent         = round(100 * done_weight / total_weight)
-```
+This keeps the cost of re-runs proportional to *changed* declarations,
+not total declarations.
 
-Counts (independent of weighting): `done`, `in_progress`, `open`, `blocked` ticket counts.
+## Phase 3 — Open browser
 
-## Phase 2 — Detect blockers and isolate the actual bottleneck
+After writing the JSON, open the dashboard URL (already known from Phase 0).
+The page will pick up the new annotations on its next 3 s poll.
 
-A ticket is a "blocker" (= worth surfacing in the blockers view) if **any** of:
+## Phase 4 — Chat snapshot
 
-1. Its Status is `blocked`.
-2. Its Status is `in_progress` and the **latest** Progress entry contains any of:
-   - `PROOF-SKETCH FAILURE`
-   - `MATHLIB GAP`
-   - `SCOPE / DEFINITION ERROR` or `SCOPE-DEFINITION ERROR`
-   - `DEPENDENCY NOT MET`
-   - `BLOCKED`
-3. Its Status is `in_progress` and the most recent Progress timestamp is more than
-   7 days old (= worker has stopped progressing).
-
-For each blocker ticket, **read the file** and isolate the bottleneck. This is the
-core of the command — Progress notes are a summary, the file is the truth. From
-the file:
-
-- **Stuck step**: locate the `sorry` (or all sorries) in the in-progress declaration.
-  Map its position back to the proof sketch: which numbered step is the proof
-  currently between? The last closed step is the one above the sorry; the stuck
-  step is the one the sorry would discharge. If multiple sorries, list each.
-- **What the worker has actually built**: read the partial proof above the
-  sorry. Identify the auxiliary `have` statements, intermediate goals, case
-  splits. Translate these into mathematical English (e.g., "the worker has
-  established that f is bounded on each compact subset, but cannot pass to the
-  limit"). Do not paste tactic text into the description; describe the math.
-- **Off-track detection**: compare the current declaration in the file against
-  the ticket's stated Statement. Differences to flag:
-  - Signature drift (added or removed hypotheses, changed conclusion)
-  - Renamed declaration
-  - Auxiliary lemmas added that aren't in the ticket sketch (= scope creep, or
-    legitimate decomposition the ticket didn't anticipate)
-  - The declaration has been split into helpers since the ticket was written
-- **Mathematical context the worker has relied on**: list the lemmas (custom
-  ones from this project, not generic mathlib citations) that are used above
-  the sorry. The mathematician reading this can spot if a wrong lemma is being
-  invoked or a hypothesis is misapplied.
-
-The blocker brief presents these in mathematical English, not as a code dump.
-
-## Phase 3 — Render the requested view
-
-Three views, dispatched per the argument-parsing table above:
-
-- **Default (no args)** — combined snapshot (this section)
-- **`<ID>`** — ticket-zoom (next section)
-- **`<ID> step <N>`** — step-zoom (section after that)
-
----
-
-### Default view — combined snapshot
-
-One single render. Sections in this exact order:
+Print the same content as the dashboard's project overview, in markdown.
 
 ```markdown
 # Project Status — <Project Title>
 
-<one-paragraph plain-English summary of the main goal, drawn from plan.md;
-do NOT paste Lean here>
+<project_goal_english — one paragraph>
 
 ## Progress
 
-[████████░░░░░░░░░░░░] <percent>%
-<done_weight> / <total_weight> weighted sketch steps complete
-<done_count> / <total_count> tickets done
+[████████░░░░░░░░░░░░] <percent>% — <done> / <total> declarations done
 
-✅ Done: <D>   🚧 In Progress: <P>   ⏳ Open: <O>   🚨 Blocked: <B>
+✅ Done: <D>   🚧 In Progress: <P>   ⏳ Open: <O>   🚨 Blocked: <B>   🟣 Unticketed: <U>
 
-⚠ <K> off-track flags — see Blockers section below
-<(omit this line entirely if K = 0)>
+## Top-level results
 
-## Counts by status × type
+<For each name in project_main_decls:>
+- <status icon> **<math_name>** — <description's first sentence>
+  ↳ Zoom: `/project-status <local_name>`
 
-|        | Proof | Cleanup | Definitions | Milestones | Total |
-|--------|-------|---------|-------------|------------|-------|
-| Done   |       |         |             |            |       |
-| InProg |       |         |             |            |       |
-| Open   |       |         |             |            |       |
-| Block  |       |         |             |            |       |
+## Current frontier
 
-(Definitions = Type contains "def". Milestones = Type contains "milestone" or
-ID starts CLEANUP-FINAL.)
+<For every declaration with status in {in_progress, blocked, has_sorry_no_ticket},
+ordered by status (blocked → in_progress → has_sorry_no_ticket):>
 
-## Dependency Chain
+### <math_name>  ·  <local_name>
 
-<ASCII tree, top-down. Root nodes are the main theorems (tickets with no
-dependents). For each node:
-- Status icon: ✅ done, 🚧 in_progress, ⏳ open, 🚨 blocked
-- Bracketed ID
-- A **mathematical name** (English description from the sketch's intro line,
-  NOT the verbatim ticket title if it's a structural label like "Prove fooBar_comp")
-- An indented one-line Lean statement, truncated to ~80 chars with `…` if longer
-- For in-progress / blocked nodes: a `⤷` line summarising the stuck step or blocker keyword
-Sort siblings: blockers first, then in_progress, then open, then done. Within
-each status tier, by ticket ID ascending. If the graph has multiple roots,
-print each as a separate tree, blank line between. If cycles: report and abort.>
-
-```
-🚧 [T020] Main theorem: modular forms of weight ≥ 4 form a finite-dimensional space
-        dim_modularForms_lt_top : Module.Finite ℂ (ModularForm Γ k)
-├── 🚧 [T014] Holomorphy of the Eisenstein series
-│        eisensteinSeries_holomorphic (k : ℕ) (hk : 4 ≤ k) : Holomorphic (E k)
-│        ⤷ Stuck on step 4: dominated convergence on compact sets
-│   ├── ✅ [T013] Termwise holomorphy of (cτ+d)^{-k}
-│   └── ✅ [T012] Absolute summability of |cτ+d|^{-k} for k ≥ 4
-├── 🚨 [T010] q-expansion principle
-│        ⤷ MATHLIB GAP: Fourier expansion of periodic holomorphic function
-└── ✅ [T002] FooBar commutes with composition
-        fooBar_comp : fooBar s (g ∘ f) = fooBar (s.image f) g
-```
-
-## Current Frontier
-
-<For every in_progress ticket — usually one or two — render this block:>
-
-### [<ID>] <Mathematical name in English, not the ticket title verbatim>
-
-<1-2 sentence English description of what this lemma/theorem says,
- paraphrased from the proof sketch's intro line>
+<description (1 sentence)>
 
 ```lean
-<the Lean Statement, verbatim from tickets.md>
+<lean_signature>
 ```
 
-**Stuck on:** step <N> of <total> — "<the step's text in English>"
-**Last touched:** <ISO timestamp of latest Progress entry>
-**Latest worker note:** "<the last Progress line, verbatim>"
-↳ Zoom: `/project-status <ID>` (full brief) · `/project-status <ID> step <N>` (this step only)
+**Where the proof currently sits.** <proof_state_english>
 
-<If there are no in_progress tickets, replace this whole section with:>
-> No ticket is currently in progress. The next ready ticket is `[<next ID>]
-> <math name>` — its dependencies are all done and a worker can pick it up via
-> `/extended-work`.
+**Ingredients in scope.**
+- <ingredient 1>
+- <ingredient 2>
 
-## Blockers
+**What would help** (only if `what_would_help` is populated)
+- <bullet 1>
+- <bullet 2>
 
-<For every blocker ticket from Phase 2, render the full brief below.
-Separator `---` between briefs. If there are no blockers:>
-> No blocker tickets detected. Every `in_progress` ticket has fresh Progress
-> entries (< 7 days) and no hard-stop keyword. Workers are progressing.
-
-<Brief template per blocker ticket:>
-
-### [<ID>] <Mathematical name in English>
-
-**What is being proved.** <2-4 sentences in plain mathematical English
-describing the statement and its mathematical content. Paraphrase from sketch
-intro + Sources. The reader is a mathematician — use ordinary mathematical
-prose, not Lean jargon.>
-
-**Lean statement.**
-```lean
-<the Statement code block, verbatim>
-```
-
-**Proof sketch (where we are).** <Numbered list of the sketch steps. ✅ closed,
-🚧 currently being attempted (the stuck step), ⏳ not yet attempted. English,
-not tactics.>
-
-1. ✅ <step 1 description in English>
-2. ✅ <step 2 description in English>
-3. ✅ <step 3 description in English>
-4. 🚧 <step 4 description in English>       ← STUCK HERE
-5. ⏳ <step 5 description in English>
-
-**What the worker has built so far.** <2-4 sentences in mathematical English
-describing the actual partial proof read from the file. Translate `have`
-statements and intermediate goals into mathematical claims. Do not paste
-tactic text. The state of play as a mathematician would describe it, looking
-at the worker's blackboard.>
-
-**Where the proof currently sits.** <1-2 sentences: which sketch step the
-sorry would discharge, and what the local goal is in mathematical terms.
-If multiple sorries, name each.>
-
-**Off-track flags** (only if present)
-<Only render this section if Phase 2 detected drift. Bullets:
-- Signature drift: "ticket states ∀ k ≥ 4 ...; current declaration has ∀ k ≥ 6"
-- Renamed declaration
-- Scope creep: "the file contains 3 auxiliary lemmas not anticipated in the sketch"
-- Decomposition: "the ticket's single statement has been split into N helpers"
-Omit section entirely if no flags.>
-
-**What would help.** <Concrete mathematical guidance the mathematician can
-give: alternative strategy, hypothesis relaxation, literature pointer,
-decomposition suggestion. Mention mathlib lemma names only if the gap *is*
-a specific missing lemma; even then, frame it mathematically first.>
-
-**Worker notes (latest 3).** <Verbatim Progress entries — the only
-Lean-flavoured content in this section.>
-
-- 2026-05-08T14:22 — PROOF-SKETCH FAILURE: step 4 — no mathlib lemma matches
-- 2026-05-08T13:55 — closed step 3 (Finset.prod_image)
-- 2026-05-08T13:40 — closed step 2 (Finset.prod_comp)
-
-↳ Zoom: `/project-status <ID>` · `/project-status <ID> step <stuck N>`
+↳ Zoom: `/project-status <local_name>` (full brief)
 
 ---
 
-## Oldest in-progress ticket
-
-[<ID>] <math name> — opened <ISO date of first Progress entry>
-                  — last touched <ISO date of latest Progress entry>
-                  — <days> days since last activity
-
-## Naive ETA
-
-<elapsed> days elapsed (from earliest done-ticket Progress entry to latest entry).
-At the current rate (<done_weight> / <elapsed> = X weighted steps/day), the
-remaining <total_weight - done_weight> weighted steps would land in ~<Y> days.
-
-⚠ Naive estimate. Doesn't account for blockers, ticket-size variance, parallel
-work, the typical fact that the harder steps cluster at the end.
-
-## Cleanup-cadence health
-
-<If `.mathlib-quality/cleanup_audit.md` or similar exists from a recent
-/develop --continue R3 audit, summarise. Otherwise:>
-(No recent cleanup-cadence audit on file. Run `/develop --continue` to refresh.)
+<continue for each frontier declaration>
 
 ## Drill in
 
-`/project-status <ID>`            zoom into one ticket (full brief)
-`/project-status <ID> step <N>`   zoom into one sketch step
+`/project-status <decl-name>`        full mathematical brief on one declaration
+`/project-status --skip-unformalise` refresh the chat snapshot without re-annotating
+🌐 Live dashboard: <url>             interactive tree, arrow-key navigation
 ```
 
----
+## Drill-down — `/project-status <decl-name>`
 
-### View: ticket-zoom — `/project-status <ID>`
-
-The mathematician saw something interesting in the overview / tree / blockers
-view and wants the full mathematical brief on one ticket. Render:
+In chat, render the full per-declaration brief — same content as the
+dashboard's detail panel, in markdown:
 
 ```markdown
-# [<ID>] <Mathematical name in English>
+# <math_name>  ·  <local_name>
 
-<Status icon> <Status word> · weight <W> · last touched <ISO> · depth <D> in dependency chain
+**Status:** <status pill>      **File:** <file_path>:<line_start>
+**Kind:** <kind>      **Ticket:** <ticket_id> (<ticket_status>) (only if ticketed)
 
-## What this proves
+<description (full)>
 
-<2-5 sentences in plain mathematical English. Describe the statement, why it is
-needed for the project (= which downstream ticket depends on this), and the
-intuition. Pull from the ticket's Sources where helpful. The reader is a peer
-mathematician, not a student — be precise, not pedagogical.>
-
-## Lean statement
+## Lean signature
 
 ```lean
-<verbatim Statement field from the ticket>
+<lean_signature>
 ```
 
-If the live declaration in the file differs, render a second block labelled
-`Live declaration in file (drift detected)`:
+## Where the proof currently sits  (only if has_sorry)
 
-```lean
-<the actual current signature, read from the file>
-```
+<proof_state_english>
 
-## Proof sketch — step by step
+## Ingredients in scope  (only if has_sorry)
 
-<Numbered list. For each step, show:
-- Status icon (✅ closed / 🚧 current / ⏳ open)
-- One-line English description (paraphrased from the sketch text)
-- For closed steps: a one-line note on which lemma or argument discharged it,
-  drawn from the Progress entries that mention `closed step N`.
-- For the current step: the local goal, paraphrased into mathematics from the
-  sorry's surrounding context (read the .lean file). Example:
-  "🚧 4. Apply dominated convergence on compact sets — local goal: show that
-   ∑_{c,d ≠ 0} (cτ+d)^{-k} converges uniformly on every compact K ⊂ ℍ."
-- For open steps: the planned approach, in one line.>
+- <ingredients_in_scope bullets>
 
-1. ✅ <step 1 — closed by …>
-2. ✅ <step 2 — closed by …>
-3. 🚧 <step 3 — current; local goal: …>
-4. ⏳ <step 4 — planned: …>
+## What would help  (only if blocker)
 
-## Mathematical context
+- <what_would_help bullets>
 
-<Read the `.lean` file. List, in mathematical English:
-- The auxiliary `have` statements the worker has built above the sorry
-  (translated to math: "the worker has shown |a_n(τ)| ≤ M_n with ∑ M_n < ∞")
-- Custom lemmas from this project that the proof leans on (by ticket ID where
-  possible — these are local citations the mathematician can cross-reference)
-- Mathlib lemmas the ticket's `Mathlib lemmas needed` field listed, with a
-  one-line gloss on each: "Finset.prod_comp — distributes a product through
-  a composition"
-This section is the working blackboard. Keep it factual, not narrative.>
+## Auxiliary `have` statements  (only if any)
 
-## Sources cited by this ticket
-
-<List the bibliography entries from the ticket's Sources field, verbatim.>
-
-## Where this fits in the project
-
-- **Depended on by:** <list of tickets with their math names; "(none)" if a leaf>
-- **Depends on:** <list of tickets with their math names; "(none)" if a root>
-
-## Off-track flags <(only if any)>
-
-<As in blockers view — signature drift, scope creep, etc. Omit section if none.>
-
-## Worker progress (full timeline)
-
-<Every Progress entry, verbatim, in chronological order. The mathematician
-can see the trajectory. This is the only place tactic-flavoured content
-appears in this view.>
-
-- 2026-05-08T14:22 — PROOF-SKETCH FAILURE: step 4 …
-- 2026-05-08T13:55 — closed step 3 (Finset.prod_image)
+- `<name>` : `<type_hint>`
 - ...
 
-## Drill in further
+## Connections
 
-`/project-status <ID> step <N>`  zoom into a single sketch step
-`/project-status blockers`        all stuck tickets, mathematical briefs
-`/project-status tree`            see this ticket's place in the dependency chain
-`/project-status overview`        back to the project snapshot
+- **Depends on:** <comma-separated math_names with local_name in monospace, links to `/project-status <name>`>
+- **Used by:** <same shape>
+
+## Worker progress  (only if ticketed and has progress_entries)
+
+- <verbatim progress entries>
 ```
-
-If the ticket's status is `done`, simplify: show Statement, the sketch with
-all steps closed (with their closing notes), the final Progress timeline, and
-"Depended on by" — skip the Mathematical context and Off-track sections.
-
-If the ticket has no Proof Sketch on file, render: "No proof sketch was
-recorded for this ticket. Run `/develop --continue` to refresh the board."
-Then continue rendering the rest (Statement, dependencies, Progress) as
-usual.
-
----
-
-### View: step-zoom — `/project-status <ID> step <N>` or `<ID>/<N>`
-
-The mathematician wants the deepest level: one specific step of one ticket's
-proof. Render:
-
-```markdown
-# [<ID>] step <N> of <total> — <one-line step description>
-
-Part of: <ticket math name>      [/project-status <ID> for the full ticket brief]
-Status: <✅ closed / 🚧 current / ⏳ open>
-
-## The mathematical step
-
-<2-4 sentences in mathematical English. What does this step actually do in the
-argument? What is the input (= what's been established by previous steps)? What
-is the output (= what this step concludes, ready for the next step)?
-
-For mathematical content: be specific. Don't say "apply dominated convergence";
-say "interchange ∑_{n} and the limit τ' → τ on the compact set K, using the
-uniform absolute summability bound Σ M_n < ∞ established in step 2".>
-
-## Local goal (read from the proof state)
-
-<If status is current (= the sorry that is currently being attempted is in this
-step): describe the local Lean goal at the sorry in mathematical English. Look
-at the file: what's the type of the sorry? Translate it.
-
-If status is closed: state what the goal *was* before this step's tactic, and
-what it *became* after — both in mathematical English.
-
-If status is open: predict the goal that this step will face when the previous
-steps land, based on the ticket sketch.>
-
-## What's been tried (current step only)
-
-<For the current step, list — in mathematical English, not tactic text — every
-approach the worker has attempted. Sources:
-- Progress entries between the previous `closed step` and now
-- `have` statements in the file that didn't pan out (look for ones followed by
-  later rewrites or that don't appear used downstream)
-- Worker reports of MATHLIB GAP, PROOF-SKETCH FAILURE etc.
-
-Each attempt as a bullet:
-- "Tried using a dominated convergence theorem from mathlib (the integral form);
-  the hypothesis shape didn't match — that lemma needs an L¹ majorant whereas
-  we have a series majorant."
-- "Tried bounding the partial sums uniformly first, then taking the limit — got
-  stuck on uniform convergence on the boundary of K."
-
-If status is closed, show what *did* work, with a one-line note. If open,
-omit this section.>
-
-## Mathematical ingredients in scope
-
-<List the facts/lemmas/hypotheses available at this step:
-- From earlier closed steps in the ticket
-- From dependency tickets (other tickets this one depends on; reference by math name)
-- From mathlib lemmas listed in the ticket
-- From hypotheses of the declaration
-
-This is the "working set" a mathematician would write on the side of the
-blackboard. Bullets, terse, mathematical.>
-
-## What would discharge this step
-
-<Concrete suggestions — for open or current steps only:
-- A specific mathematical move ("apply Abel summation")
-- A literature pointer ("this is Lemma 3 in Serre Ch. VII §2")
-- A hypothesis weakening if the current shape is too strong
-- A decomposition of the step into smaller sub-steps if it's compound
-Each as one bullet, one or two sentences. No padding.>
-
-## Worker notes for this step
-
-<Filter the ticket's Progress entries to those that name `step <N>` or fall
-between `closed step <N-1>` and `closed step <N>`. Verbatim. Chronological.>
-
-- 2026-05-08T14:22 — PROOF-SKETCH FAILURE: step 4 — no mathlib lemma matches
-- 2026-05-08T14:05 — step 4: trying tendsto_integral_of_dominated_convergence
-- 2026-05-08T13:58 — step 4: starting
-
-## Drill in further
-
-`/project-status <ID>`            back to the full ticket brief
-`/project-status <ID> step <N±1>` adjacent step (if it exists)
-`/project-status overview`        project snapshot
-```
-
-If `<N>` is out of range, list the available step numbers with their
-one-line descriptions and stop.
-
-If the ticket has no Proof Sketch, this view is not available — return:
-"Step zoom requires a proof sketch on the ticket. Run `/develop --continue`
-to refresh the ticket board, or use `/project-status <ID>` for the
-ticket-level brief."
-
----
 
 ## Tone — mandatory
 
-This command exists so a mathematician can spot the bottleneck and give targeted
-guidance. The tone is **mathematical reportage**: describe the state of play, not
-the difficulty of the work.
+The same tone rules as the chat snapshot apply at every drill-down level.
 
 **Forbidden phrases and patterns:**
 
-- "this is a hard problem", "challenging", "difficult", "complex"
+- "this is a hard problem", "challenging", "difficult", "complex", "non-trivial"
 - "this is taking a long time", "the worker is struggling", "stuck for a while"
-- "we're making slow progress", "this is a big effort", "non-trivial"
+- "we're making slow progress", "this is a big effort"
 - "the worker tried but couldn't"  →  say *what* was tried and *what* the gap is
 - "this seems impossible"  →  say *what hypothesis is missing*
-- Estimates of how long anything will take, except in the explicit ETA section
-  of `progress` view (which is labelled naive)
+- Estimates of how long anything will take
 - Apologies, hedging ("unfortunately", "alas", "regrettably")
 - Sympathy for the worker
 
-**Required posture:** describe the mathematics. Where the proof is. What has been
-established. What the next step asks. What ingredient is missing. The reader is a
-peer who can give technical advice once they see the state — they do not need
-preamble.
-
-Compare:
-
-| BAD (rhetorical) | GOOD (descriptive) |
-|---|---|
-| "Step 4 is proving very challenging." | "Step 4 reduces to interchanging sum and limit on a compact set." |
-| "The worker has been stuck on this for days." | "The latest closed step is step 3 (2026-05-06); no further closures since." |
-| "This is a tough one — the mathlib API doesn't quite fit." | "The worker needs a uniform absolute bound that is summable in the index and constant in the point; mathlib's nearest match handles the L¹ case." |
-| "Unfortunately the proof sketch underestimated this step." | "The sketch's step 4 conflates two facts: termwise holomorphy and dominated convergence." |
-
-The mathematician decides whether something is hard. Don't pre-empt that judgement.
+**Required posture:** describe the mathematics. Where the proof is. What has
+been established. What the next step asks. What ingredient is missing. The
+reader is a peer who can give technical advice once they see the state.
 
 ## Off-track detection
 
-Beyond surfacing blockers, this command flags when the worker has drifted from the
-plan. A mathematician glancing at the status should notice immediately if:
+The server already exposes (via `status` and `ticket_status`) when:
 
-- The in-progress declaration has a different signature than the ticket states
-  (added or removed hypotheses, generalised, specialised, renamed)
-- The proof has decomposed into helper lemmas the ticket sketch did not anticipate
-- The worker is operating on a declaration not in any ticket
-- A `done` ticket's declaration still has `sorry` (the cross-check)
-- A ticket is `in_progress` but the file contains no declaration matching its name
+- A declaration has `sorry` but its ticket says `done` → flagged `blocked`
+  (status mismatch — file lags ticket)
+- A declaration has `sorry` and no ticket → flagged `has_sorry_no_ticket`
+  (unticketed work, possibly scope creep)
 
-Surface these as **Off-track flags** in the blockers view brief and as a count
-in the overview footer:
-
-```
-⚠ 2 off-track flags — see /project-status blockers for details
-```
-
-If there are zero flags, omit the line.
+Surface these in the chat snapshot's "Current frontier" with appropriate
+icons. The agent does not have to compute them; they're in the snapshot.
 
 ## Implementation rules (binding)
 
-1. **Mathematical English, not Lean.** Descriptions, sketch step labels, blocker
-   reasoning, "what the worker has built" are in English. Lean appears only inside
-   fenced code blocks (the verbatim Statement field, and the latest Progress
-   entries which are quoted as evidence). Never explain a proof in tactics.
+1. **Mathematical English, not Lean.** Math names, descriptions, proof-state
+   narratives, ingredients, what-would-help — all English. Lean appears only
+   inside fenced code blocks (the verbatim `lean_signature`, and progress
+   entries when quoted as evidence). Never explain a proof in tactics.
 
-2. **No file paths in the rendered output.** The mathematician doesn't read
-   `.lean` files. (The agent reads them — but doesn't display the paths.)
+2. **No tactic vocabulary in prose.** "applies dominated convergence",
+   "rewrites using", "uses simp_rw" — these belong in the proof, not in the
+   un-formalisation. Translate to mathematics: "interchanges the limit and
+   sum", "substitutes the identity", "expands by lemma X".
 
-3. **Paraphrase ticket titles.** A title like "Prove fooBar_comp" is a label, not
-   a mathematical statement. Read the Statement and write a one-line English
-   description for the math name. Example:
+3. **Read the live code.** Do not rely on tickets for content. The agent
+   should read `lean_body_full` from the structural snapshot for every
+   declaration with `has_sorry`, and base `proof_state_english` on what it
+   sees in the body — not on speculation, and not on ticket sketches alone.
 
-   - Title: "Prove fooBar_comp"
-   - Math name: "FooBar commutes with composition"
+4. **Body-hash caching.** Skip re-annotating any declaration whose
+   `body_hash` matches the existing annotation. Re-runs on large projects
+   should take seconds, not minutes.
 
-4. **Read-only on the project.** No edits to any file under the project root. No
-   `lake build`. The agent may use the Read tool on `.lean` files for in-progress
-   and blocked tickets to ground the bottleneck description in the actual partial
-   proof. No mathlib search calls (those belong to `/extended-work` and
-   `/develop`). The only side effects are: starting/stopping the live dashboard
-   server (via the script in `scripts/project_status_server.py`), writing
-   `.mathlib-quality/.status_server.pid`, and opening a browser tab.
+5. **Don't fabricate.** If a declaration is opaque (just `sorry` with no
+   structure), say so: "The declaration is stated but the proof has not
+   been started." Don't invent ingredients or strategies that aren't in
+   the code.
 
-5. **Use the live context.** For each in-progress and blocked ticket, the agent
-   MUST read the actual file content of the in-progress declaration. The whole
-   point of this command is to isolate the bottleneck from real code, not to
-   parrot Progress notes. An agent that skips file reads has done the user's
-   work poorly.
+6. **Read-only on the project.** No edits to `.lean` files, no `lake build`,
+   no mathlib search. Side effects: spawning the dashboard server, writing
+   `.mathlib-quality/.status_annotations.json` and `.status_server.pid`,
+   opening a browser tab.
 
-6. **Honesty.** If the ticket board is incomplete (sketches missing, Progress
-   entries missing), say so. Do not synthesise content the tickets don't contain.
-   "No proof sketch on file for this ticket" is an acceptable line. If the
-   in-progress file content disagrees with the ticket, report both — don't
-   silently reconcile.
+7. **Be honest about state.** If `plan.md` is missing, project_goal_english
+   may have to be assembled from the math_names of the roots — say so in
+   the goal paragraph if needed. If the server isn't running and won't
+   start, fall back to chat-only mode and report the failure.
 
-7. **Fail loud.** If `.mathlib-quality/tickets.md` is malformed (e.g., a ticket
-   missing a Status), report which ticket and continue rendering the rest, marking
-   the malformed one explicitly.
+## Performance notes
 
-## Example session
+- The server caches `.lean` parses by file mtime, so repeated polling is
+  cheap even on large projects.
+- The agent's un-formalisation is the expensive step. Use the body_hash
+  cache aggressively — only re-annotate declarations that have changed.
+- For projects with many done declarations, you can produce shorter
+  `description` fields (one short sentence) since they're not the focus
+  of the dashboard. Spend the budget on `proof_state_english` and
+  `what_would_help` for sorries.
 
-```
-$ /project-status
+## Failure modes
 
-# Project Status — Modular Forms of Weight k ≥ 4
-
-We are formalising the classical theory of modular forms for SL₂(ℤ), aiming
-at the finite-dimensionality theorem dim Mₖ(Γ) < ∞ for k ≥ 4. Following Serre,
-Cours d'arithmétique, Chapter VII.
-
-## Progress
-
-[████████░░░░░░░░░░░░] 38% — 12/30 tickets, 84/220 weighted steps
-
-✅ Done: 12   🚧 In Progress: 2   ⏳ Open: 14   🚨 Blocked: 2
-
-## Current Frontier
-
-### [T014] Holomorphy of the Eisenstein series
-
-The Eisenstein series E_k(τ) = Σ_{(c,d) ≠ 0} (cτ+d)^{-k} converges absolutely
-for k ≥ 4 and defines a holomorphic function on the upper half plane.
-
-```lean
-theorem eisensteinSeries_holomorphic (k : ℕ) (hk : 4 ≤ k) :
-    Holomorphic (eisensteinSeries k) := by sorry
-```
-
-**Stuck on:** step 4 of 5 — "Apply dominated convergence on compact sets"
-**Last touched:** 2026-05-08T14:22
-**Latest worker note:** "PROOF-SKETCH FAILURE: step 4 — no mathlib lemma matches; need Morera's"
-
-## Top Blockers
-
-1. **[T014]** Holomorphy of the Eisenstein series — stuck applying dominated
-   convergence. The mathlib lemma the worker tried is for integrals, not series
-   of holomorphic functions; the right ingredient is a uniform absolute summable
-   bound on each compact set.
-
-2. **[T010]** q-expansion principle — needs a Fourier expansion of a periodic
-   holomorphic function. Worker reports a MATHLIB GAP.
-
-## More
-
-`/project-status tree` — mathematical dependency chain
-`/project-status blockers` — full briefs on every stuck ticket
-`/project-status progress` — counts and ETA estimate
-```
+- **No `.lean` files** → "No Lean code found in this project. /project-status
+  requires `.lean` files to render."
+- **Server fails to start** → fall back to `--no-browser` behaviour and
+  report.
+- **`.mathlib-quality/` is read-only** → cannot write annotations; report
+  and continue with chat snapshot from the structural data only.
+- **Body parse error on a malformed file** → skip that file, list it in a
+  "Could not parse" section at the end of the chat snapshot.
