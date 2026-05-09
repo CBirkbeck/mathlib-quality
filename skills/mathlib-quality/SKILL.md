@@ -14,6 +14,11 @@ trigger:
     - bump
     - upgrade
     - update
+    - status
+    - progress
+    - bottleneck
+    - stuck
+    - frontier
 ---
 
 # Mathlib Quality Skill
@@ -25,6 +30,8 @@ This skill activates when:
 - User mentions "mathlib style", "cleanup", "golf", "PR submission", or "pre-submit"
 - User asks to fix reviewer feedback on a mathlib PR
 - User wants to check code against mathlib conventions
+- User asks "what's the project status?", "where are we stuck?", "what's the
+  bottleneck?", "what's the worker doing?", "show me progress" → run `/project-status`
 
 ## Overview
 
@@ -45,6 +52,7 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | `/cleanup-all` | Run /cleanup on every file in the project, tracked file by file |
 | `/decompose-proof` | Break long proofs into helper lemmas |
 | `/overview` | Project declaration inventory for consolidation analysis |
+| `/project-status` | **Mathematician's snapshot of an in-progress `/develop` project — chat summary + live browser dashboard.** Default opens an interactive dashboard at `http://127.0.0.1:8765/` (clickable dependency tree with arrow-key nav, live polling every 3 s, KaTeX math) AND prints the combined snapshot in chat. Drill-down is chat-only: `/project-status T014` → ticket brief, `/project-status T014 step 4` → step zoom. Reads ticket board + live `.lean` files to isolate exactly where the worker is stuck (which sketch step, what's been built mathematically, what's missing, off-track flags from signature drift). Tone is descriptive math reportage, not difficulty rhetoric. Flags: `--no-browser`, `--stop`. |
 | `/expert-review` | Two-mode skill for external mathematical review. **Mode 1**: produce a self-contained `REVIEW_BRIEF.md` (no Lean, no file paths) — goals, plan, references, status, blockers, numbered questions — and stop, waiting for the reviewer's reply. **Mode 2** (`--reply`): once the reviewer responds, map their answers onto our questions, propose ticket/work-order updates, apply only after user approval. Session history persists in `.mathlib-quality/expert-review/<date>/`. |
 | `/generalise` | Audit a lemma or definition for assumption weakening. Tries mechanical weakenings from a catalogue (typeclass parents, drop-unused, point-localise, strict→weak), then performs a literature search (WebSearch + ChatGPT MCP if available + mathlib's five-method search). Auto-applies small safe changes; presents big changes (public-API, restating, renames) as numbered options for user approval. |
 | `/split-file` | Split large files (>1500 lines) into focused modules |

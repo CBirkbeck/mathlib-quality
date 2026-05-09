@@ -4,7 +4,7 @@
 A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up to mathlib standards before PR submission.
 
 ## Current Status
-**Version:** 0.20.1
+**Version:** 0.21.0
 
 ### Completed
 - Plugin architecture with 5 commands defined in `commands/`
@@ -67,6 +67,7 @@ A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up
 - `/cleanup-all` - Run /cleanup on every file in the project, one at a time, with progress tracking
 - `/decompose-proof` - Break long proofs into helpers (two-pass: analysis with DECOMPOSE plans → parallel agent decomposition)
 - `/overview` - Project declaration inventory — lists every def/lemma/theorem with descriptions, dependencies, and consolidation analysis
+- `/project-status` - **Mathematician's snapshot of an in-progress `/develop` project — chat summary + live browser dashboard.** Default invocation prints the combined snapshot in chat AND opens a live HTTP dashboard at `http://127.0.0.1:8765/` (Python stdlib server in `scripts/project_status_server.py`, polls every 3 s, arrow-key tree navigation, Lean syntax highlighting, KaTeX math). Drill-down is chat-only zoom: `/project-status T014` → ticket brief, `/project-status T014 step 4` → single sketch step. Reads `.mathlib-quality/plan.md` + `tickets.md` and the live `.lean` files for in-progress tickets to isolate the bottleneck (which sketch step, what's been built mathematically, what's missing, off-track flags from signature drift / scope creep). Pure mathematical narrative — Lean statements as code blocks, but no tactic text and no difficulty rhetoric. Read-only on the project; spawns a background server. Flags: `--no-browser`, `--stop`, `--dashboard-only`.
 - `/expert-review` - Two-mode external-review workflow. Mode 1 produces a self-contained `REVIEW_BRIEF.md` (no Lean, no file paths) with goals, plan, references, established results, in-progress work, blockers, numbered questions, then **stops and waits**. Mode 2 (`/expert-review --reply`) takes the reviewer's response, maps it onto the questions, and proposes ticket/work-order updates — applies only after user approval. State persists in `.mathlib-quality/expert-review/<date>/`. Ticket names allowed where mathematically meaningful.
 - `/generalise` - Weaken a lemma's or def's assumptions. Tries mechanical weakenings from `references/generalisation-patterns.md` (typeclass parents, drop-unused, point-localise, strict→weak); does a mandatory literature search (WebSearch + ChatGPT MCP + mathlib search). Small safe changes auto-apply with verification; big changes (public-API, renames, restating) become a numbered options menu for user approval — no auto-apply.
 - `/pre-submit` - Pre-PR submission checklist
