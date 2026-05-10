@@ -20,6 +20,42 @@ report is mathematical reportage — not Lean tactics, not difficulty rhetoric.
 This command is **read-only** on every file. It does not start servers, open
 browsers, or write sidecar JSONs.
 
+## Self-contained for a cold reader (binding principle)
+
+The reader has **not** followed the formalisation closely and **cannot**
+open any file. Everything they need to understand the state of play must
+be in the report itself. Concretely:
+
+- **Define what is non-standard.** The first time a project-specific
+  notion appears (`eisensteinSeries`, `cauchyPrincipalValue`,
+  `fooBar`, etc.), state its mathematical content in one phrase:
+  "the Eisenstein series $E_k(\tau) = \sum_{(c,d) \neq 0}(c\tau + d)^{-k}$",
+  not "eisensteinSeries (the project's main object)".
+
+- **Translate structural moves.** When the proof body uses Lean's
+  structural tactics (`obtain`, `refine`, `constructor`, `have`, `use`),
+  do not say "the worker obtains a witness" or "splits into cases".
+  Say *what* the witness is, *what* the cases are, *what* the parametric
+  intermediate claim asserts. The reader doesn't know Lean tactics; they
+  know mathematics.
+
+- **Spell out parametric / universally-quantified intermediate results.**
+  When the proof builds a fact of shape "for every $\varepsilon > 0$
+  there is $N$ such that …", state the universal claim explicitly. Don't
+  hide it behind a name like `h_cauchy`.
+
+- **Name the witnesses.** When the proof chooses a specific bound,
+  constant, or function, say what it is. "The worker chose
+  $M = \pi^2/6$ as the upper bound, motivated by $\sum n^{-2} = \pi^2/6$."
+  Not "fixes a constant".
+
+- **List sub-goals.** When the goal has been refined into several parts,
+  list every part in mathematical terms and mark each as discharged or
+  outstanding.
+
+If the body has no structural complexity (e.g. a near-one-line proof or
+just `sorry`), the report can be brief. Length follows content.
+
 ## Inputs
 
 - `.mathlib-quality/plan.md` (if present) — project goal, sources
@@ -96,39 +132,70 @@ is usually fine and faster.
 
 ## Phase 6 — Render the report
 
-The whole report is markdown. Length: a few short paragraphs total. The
-mathematician can ask follow-ups. Don't dump everything; answer the four
-questions cleanly.
+The whole report is markdown. Length follows content: brief if the proof
+is essentially trivial, longer when there's structural complexity to
+unpack. Aim for the report to be a self-contained briefing for a
+mathematician parachuting in cold.
 
 ```markdown
 # Project Status — <Project Title>
 
 ## Overall goal
 
-<one paragraph in mathematical English describing what this project is
-trying to prove. Pull from plan.md and the top-level theorems. Don't paste
-Lean code here.>
+<One paragraph in mathematical English describing what this project is
+trying to prove. Pull from plan.md and the top-level theorems. Define any
+non-standard notions. Don't paste Lean code here.>
 
 ## Currently working on
 
-### <math name, 4-10 words of English>
+### <math name in 4-10 words of English>
 
 ```lean
 <the Lean signature, verbatim>
 ```
 
-<2-3 sentences of mathematical English: what does this declaration assert?
-The reader is a peer mathematician — be precise, not pedagogical.>
+**What this asserts.** <2-4 sentences in mathematical English. Be precise.
+Define every non-standard term the first time it appears
+(e.g. "the Eisenstein series $E_k(\tau) = \sum_{(c,d) \neq 0}(c\tau+d)^{-k}$",
+not "eisensteinSeries"). Use mathematical notation freely.>
 
-**Where the proof currently sits.** <2-4 sentences. Read the body.
-Translate the auxiliary `have` statements into mathematical claims ("the
-worker has shown f is bounded on each compact set and that the partial
-sums are Cauchy"). Identify what the remaining `sorry` would prove,
-expressed mathematically. Do not paste tactic text.>
+**Setup** (only when needed: ambient hypotheses, parameters, structures).
+<List what the variables are and what context they live in. Skip this
+subsection if the signature alone is self-evident.>
 
-**How this connects to the overall goal.** <1-3 sentences. Trace the
-dependency chain in mathematical names: this lemma is needed for X, which
-proves Y, which is the project's main result Z.>
+**Where the proof currently sits.** <One or two paragraphs. Read the
+body. Translate every structural step into mathematics:
+
+- For each auxiliary `have` the worker has established, state the
+  mathematical claim it makes. If it's parametric ("for every ε > 0
+  there is N with …"), spell out the universal claim. Mark whether
+  the `have` was needed only for the current attempt or is a genuine
+  intermediate result.
+- For each `obtain`, `let`, or `use`, name the witness mathematically.
+  "The worker fixes $M = \pi^2/6$ as the dominant bound, since
+  $\sum_n n^{-2} = \pi^2/6$" — not "obtains a witness M".
+- If the goal has been refined into sub-goals (`refine ⟨?_, ?_, ?_⟩`,
+  `constructor`, `cases`), list every sub-goal mathematically and
+  mark which are discharged and which remain.
+- When the proof leans on a project-internal lemma, gloss what that
+  lemma says in math — don't just name it. "This step uses the
+  absolute-summability lemma (which states $\sum_n n^{-k} < \infty$
+  for $k \geq 4$)".
+
+If the body is essentially `sorry` with no structural progress, say
+"The declaration is stated but the proof has not been started" and stop.
+
+>
+
+**What discharging the sorry would establish.** <1-2 sentences. The
+local goal at the sorry, in mathematical English. Be concrete — say
+exactly what would be proved next, not "the next step".>
+
+**How this connects to the overall goal.** <Trace the chain explicitly,
+in math names. "This lemma states X. It feeds Y (the q-expansion
+principle), which combines with Z (absolute convergence) to give the
+project's main result W." Two or three sentences when the chain is
+long; one sentence when short.>
 
 (repeat the block for each declaration the worker is currently on; usually
 one or two)
@@ -137,29 +204,35 @@ one or two)
 
 ### <math name>
 
-<one sentence: what does this declaration assert?>
+```lean
+<the Lean signature, verbatim>
+```
 
-**What is missing.** <2-3 sentences in mathematical English. State the
-mathematical gap precisely: a hypothesis is too strong, a mathlib lemma
-has the wrong shape, a proof strategy hits a step that requires X.
-Do NOT say "this is hard" or "the worker is struggling".>
+**What this asserts.** <Same as above, 2-4 sentences in math English.>
 
-**What would help.** <2-3 concrete bullets. Alternative proof strategy,
-hypothesis relaxation, literature pointer. Mathematical guidance, not
-encouragement.>
+**Where the proof got stuck.** <One paragraph. Same level of detail as
+"Where the proof currently sits": translate structural steps, name
+witnesses, list sub-goals. The reader needs to see the partial proof
+the worker built, not just "couldn't finish".>
+
+**What is mathematically missing.** <2-4 sentences. State the gap
+precisely: a hypothesis is too strong; a mathlib lemma has the wrong
+shape; the proof strategy hits a step requiring a fact the project
+doesn't have. Frame it as a mathematical question, not a Lean question.>
+
+**What would help.** <2-4 concrete bullets. Alternative proof strategy,
+hypothesis relaxation, literature pointer, suggestion to decompose the
+step. Mathematical guidance, not encouragement.>
 
 ## Progress
 
 [████░░░░░░░░] <percent>% — <done> of <total> declarations have a complete
 proof; <has_sorry> still contain `sorry`.
 
-<one or two sentences. What's done, what's the current frontier, what's
-ahead. Examples:
-- "The basic API for FooBar is in place. The current frontier is the
-  holomorphy of Eisenstein series; q-expansion is blocked."
-- "All definitions are recorded; only the main convergence theorem and
-  three of its supporting lemmas remain."
->
+<One or two sentences placing the current frontier in the project's arc.
+"The basic API is in place; the main holomorphy result is the current
+frontier; the q-expansion principle is blocked on a missing Fourier
+expansion lemma." — not "lots of work left".>
 ```
 
 ## Tone — mandatory
@@ -185,23 +258,99 @@ mathematician decides what's hard.
    narratives, "how this connects" — all English. Lean appears only inside
    fenced code blocks (the verbatim signature of the declaration in focus).
    Never explain a proof in tactics. Never use Lean tactic vocabulary
-   ("rewrite using", "applies", "uses simp_rw") in prose — translate to
-   mathematics.
+   ("rewrite using", "applies", "uses simp_rw", "obtains a witness",
+   "splits into cases") in prose — translate to mathematics.
 
-2. **Don't fabricate.** If a body is just `sorry`, say "the declaration is
-   stated but the proof has not been started". Don't invent strategies the
-   code doesn't contain. Don't invent a project goal richer than what's in
-   `plan.md` plus the top-level signatures.
+2. **Self-contained.** A reader who has not seen the code, who cannot open
+   any file, must understand the state of play from the report alone.
+   This is the binding principle. If you find yourself writing a sentence
+   the cold reader couldn't decode without context, expand it: define the
+   notion, state the witness, spell out the parametric claim.
 
-3. **No file paths in the rendered output.** The mathematician doesn't read
-   `.lean` files. (The agent reads them — but doesn't display the paths.)
+3. **Translate every structural move.** Every `have`, `obtain`, `refine`,
+   `let`, `use`, `cases` in the proof body becomes mathematics in the
+   report. Never paraphrase as "the worker obtains a witness" or "splits
+   into cases" — name the witness, list the cases. Parametric `have`s
+   become explicit universal claims.
 
-4. **Read-only.** No edits. No `lake build`. No mathlib search. The agent
+4. **Don't fabricate.** If a body is just `sorry`, say "the declaration is
+   stated but the proof has not been started" and move on. Don't invent
+   strategies, witnesses, or sub-goals the code doesn't contain. Don't
+   invent a project goal richer than what's in `plan.md` plus the
+   top-level signatures.
+
+5. **Use mathematical notation.** $\mathbb{R}$, $\sum$, $\int$, $\tau$ —
+   render naturally. Markdown supports inline math via `$...$` and the
+   user's chat may render it; even when not rendered, the source remains
+   readable. Don't fall back to plain ASCII when notation is clearer.
+
+6. **No file paths in the rendered output.** The mathematician doesn't
+   read `.lean` files. The agent reads them — but doesn't display the paths.
+
+7. **Read-only.** No edits. No `lake build`. No mathlib search. The agent
    reads files with the `Read` tool, walks the project with `Bash` (for
-   `find`/`grep`-style discovery if useful), and that's it.
+   `find` / `grep`-style discovery if useful), and that's it.
 
-5. **Be concise.** A few paragraphs. The mathematician asks follow-up
-   questions if they want more.
+8. **Length follows content.** A near-trivial proof gets two sentences. A
+   proof with sub-goal decomposition, parametric intermediate results, or
+   chosen witnesses gets a paragraph or two. Don't pad; don't be terse
+   for terseness's sake.
+
+## Worked example: terse vs thorough
+
+Suppose the worker is on a lemma whose body looks like:
+
+```lean
+theorem eisensteinSeries_holomorphic (k : ℕ) (hk : 4 ≤ k) :
+    Holomorphic (eisensteinSeries k) := by
+  obtain ⟨M, hM_pos, hM_bound⟩ := exists_dominant_bound hk
+  have h_summable : Summable (fun n : ℕ => M / (n : ℝ)^k) := by
+    exact summable_const_div_pow_of_lt hk hM_pos
+  have h_termwise : ∀ n, Holomorphic (fun τ => term n τ) := termwise_holomorphic
+  refine holomorphic_of_uniform_limit ?_ ?_
+  · exact h_summable
+  · sorry
+```
+
+**Terse (don't):**
+
+> The worker has shown a dominant bound exists and is summable, and that
+> each term is holomorphic. The remaining sorry needs uniform convergence.
+
+This tells the cold reader nothing concrete. They cannot guess what $M$ is,
+what the parametric `h_termwise` actually says, what the sub-goal split is.
+
+**Thorough (do):**
+
+> The proof reduces holomorphy of the series to two ingredients via
+> `holomorphic_of_uniform_limit`, which says: a uniform limit of
+> holomorphic functions is holomorphic provided the convergence is
+> dominated by a summable bound.
+>
+> The worker has chosen $M > 0$ from the auxiliary lemma
+> `exists_dominant_bound`; concretely, $M$ depends only on $k$ and
+> dominates $|(c\tau + d)^{-k}|$ uniformly on the upper half-plane. The
+> auxiliary fact $\sum_n M / n^k < \infty$ for $k \geq 4$ has been
+> established (one of the two ingredients). Termwise holomorphy of each
+> $(c\tau + d)^{-k}$ has also been established via the parametric lemma
+> `termwise_holomorphic`, which asserts that for every fixed
+> $(c, d) \neq 0$ the map $\tau \mapsto (c\tau + d)^{-k}$ is holomorphic
+> on $\mathbb{H}$.
+>
+> The goal has been split into two sub-goals: (a) summability of the
+> dominant series — discharged using $h_{\text{summable}}$; (b) uniform
+> bound of the series partial sums by the dominant series — outstanding.
+> Sub-goal (b) is the remaining sorry.
+>
+> **What discharging the sorry would establish.** A pointwise bound
+> $|E_k(\tau) - S_N(\tau)| \leq \sum_{n > N} M / n^k$ holding uniformly
+> for $\tau$ in any compact subset of $\mathbb{H}$, where $S_N$ is the
+> $N$-th partial sum.
+
+Notice: every name from the body has been translated to a mathematical
+claim. The witness $M$ is characterised. The parametric `h_termwise` is
+spelled out as a universal claim. The two sub-goals from `refine` are
+listed and marked.
 
 ## Drill-down
 
