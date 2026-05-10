@@ -130,28 +130,60 @@ This is a coarse measure. If the project has detailed proof sketches in
 ticket contributes one weight per numbered sketch step). The simple count
 is usually fine and faster.
 
-**Progress bar (binding).** Width is 20 cells. Filled cells =
-`round(percent / 5)`. Empty cells = `20 − filled`. Use `█` for filled
-and `░` for empty. The bar must always be exactly 20 cells inside the
-brackets — not 12, not 10, not "however many feel right". Format:
+**Progress bar (binding).** The progress line is a single mandatory
+string. Do not improvise the format, the bar width, the bar characters,
+or omit any field.
 
 ```
-[<filled █s><empty ░s>] N% — done/total declarations …
+[<20-cell bar>] <percent>% — <done>/<total> declarations sorry-free, <has_sorry> with sorry
 ```
 
-Worked examples:
+- The brackets `[` and `]` are mandatory.
+- The bar is exactly 20 cells. Filled cells = `round(percent / 5)`.
+  Empty cells = `20 − filled`.
+- Use `█` for filled and `░` for empty. ASCII fallback only if you have
+  evidence the user's terminal mangles those characters: `#` for filled,
+  `-` for empty, still 20-cell. Do not use other characters (no `▰`, no
+  `▱`, no `=`, no `■`).
+- The percentage is mandatory even at 0% or 100%. Show as a plain
+  integer with `%` suffix, no decimals.
+- Both counts (`done`/`total` and `has_sorry`) are mandatory.
+- The literal word "declarations" stays — it tells the reader what's
+  being counted.
+
+Worked examples (note every field is present in every case):
 
 ```
-0%    →  filled=0   →  [░░░░░░░░░░░░░░░░░░░░] 0%
-25%   →  filled=5   →  [█████░░░░░░░░░░░░░░░] 25%
-38%   →  filled=8   →  [████████░░░░░░░░░░░░] 38%
-50%   →  filled=10  →  [██████████░░░░░░░░░░] 50%
-100%  →  filled=20  →  [████████████████████] 100%
+0%    [░░░░░░░░░░░░░░░░░░░░] 0% — 0/30 declarations sorry-free, 30 with sorry
+25%   [█████░░░░░░░░░░░░░░░] 25% — 8/30 declarations sorry-free, 22 with sorry
+38%   [████████░░░░░░░░░░░░] 38% — 12/32 declarations sorry-free, 20 with sorry
+50%   [██████████░░░░░░░░░░] 50% — 15/30 declarations sorry-free, 15 with sorry
+100%  [████████████████████] 100% — 14261/14261 declarations sorry-free, 0 with sorry
 ```
 
-If your terminal renders `█` and `░` with inconsistent widths, fall back
-to `#` and `-` with the same 20-cell rule. Either character pair is
-fine; mixing them within one bar is not.
+**The 100% case (binding).** If the bar shows 100% (= every named
+declaration is sorry-free), the "Currently working on" and "Blocked"
+sections cannot legitimately describe new proof work — there is none.
+The active work, if any, is necessarily something else: an axiom audit,
+a refactor, a generalisation, decomposition of a proof, performance
+tuning, or work happening in a sub-step / scratch file the discovery
+walk missed. State this honestly. Two acceptable shapes:
+
+- "All 14261 declarations are sorry-free. The active work is a refactor
+  of the projector-compatibility lemmas to remove a custom axiom — no
+  new theorems, just changing how existing ones are proved."
+
+- "All named declarations are sorry-free, but the discovery walk only
+  scanned files under `<root>/Project/`; there is residual work in
+  `<other path>` that this report didn't see. Re-run from the wider
+  root, or pass the path explicitly."
+
+What you must NOT do at 100%:
+
+- Show the bar at 100% AND describe new lemma-proving as "active work"
+  in the same report. That is internally inconsistent. Either the bar
+  is wrong (rare — investigate where the missed sorries are) or the
+  active-work framing is wrong (rephrase as refactor / audit / etc.).
 
 ## Phase 6 — Render the report
 
@@ -248,8 +280,9 @@ step. Mathematical guidance, not encouragement.>
 
 ## Progress
 
-[<20-cell bar per Phase 5 rule>] <percent>% — <done> of <total>
-declarations have a complete proof; <has_sorry> still contain `sorry`.
+[<20-cell bar>] <percent>% — <done>/<total> declarations sorry-free, <has_sorry> with sorry
+(See Phase 5 for the binding format. Every field above is mandatory —
+the brackets, the percentage, both counts, the word "declarations".)
 
 <One or two sentences placing the current frontier in the project's arc.
 "The basic API is in place; the main holomorphy result is the current
