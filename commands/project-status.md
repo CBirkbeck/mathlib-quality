@@ -29,7 +29,7 @@ be in the report itself. Concretely:
 - **Define what is non-standard.** The first time a project-specific
   notion appears (`eisensteinSeries`, `cauchyPrincipalValue`,
   `fooBar`, etc.), state its mathematical content in one phrase:
-  "the Eisenstein series $E_k(\tau) = \sum_{(c,d) \neq 0}(c\tau + d)^{-k}$",
+  "the Eisenstein series E_k(τ) = ∑_{(c,d) ≠ 0} (cτ + d)^(−k)",
   not "eisensteinSeries (the project's main object)".
 
 - **Translate structural moves.** When the proof body uses Lean's
@@ -40,14 +40,13 @@ be in the report itself. Concretely:
   know mathematics.
 
 - **Spell out parametric / universally-quantified intermediate results.**
-  When the proof builds a fact of shape "for every $\varepsilon > 0$
-  there is $N$ such that …", state the universal claim explicitly. Don't
-  hide it behind a name like `h_cauchy`.
+  When the proof builds a fact of shape "for every ε > 0 there is N such
+  that …", state the universal claim explicitly. Don't hide it behind a
+  name like `h_cauchy`.
 
 - **Name the witnesses.** When the proof chooses a specific bound,
-  constant, or function, say what it is. "The worker chose
-  $M = \pi^2/6$ as the upper bound, motivated by $\sum n^{-2} = \pi^2/6$."
-  Not "fixes a constant".
+  constant, or function, say what it is. "The worker chose M = π²/6 as
+  the upper bound, motivated by ∑ n⁻² = π²/6." Not "fixes a constant".
 
 - **List sub-goals.** When the goal has been refined into several parts,
   list every part in mathematical terms and mark each as discharged or
@@ -123,12 +122,36 @@ Simple counts:
 
 - `done` = body contains no `sorry`
 - `has_sorry` = body contains `sorry`
-- `percent = done / (done + has_sorry)`
+- `total = done + has_sorry`
+- `percent = round(100 × done / total)` (with `total = 0` → `percent = 0`)
 
 This is a coarse measure. If the project has detailed proof sketches in
 `tickets.md`, you may report a step-weighted percentage instead (each
 ticket contributes one weight per numbered sketch step). The simple count
 is usually fine and faster.
+
+**Progress bar (binding).** Width is 20 cells. Filled cells =
+`round(percent / 5)`. Empty cells = `20 − filled`. Use `█` for filled
+and `░` for empty. The bar must always be exactly 20 cells inside the
+brackets — not 12, not 10, not "however many feel right". Format:
+
+```
+[<filled █s><empty ░s>] N% — done/total declarations …
+```
+
+Worked examples:
+
+```
+0%    →  filled=0   →  [░░░░░░░░░░░░░░░░░░░░] 0%
+25%   →  filled=5   →  [█████░░░░░░░░░░░░░░░] 25%
+38%   →  filled=8   →  [████████░░░░░░░░░░░░] 38%
+50%   →  filled=10  →  [██████████░░░░░░░░░░] 50%
+100%  →  filled=20  →  [████████████████████] 100%
+```
+
+If your terminal renders `█` and `░` with inconsistent widths, fall back
+to `#` and `-` with the same 20-cell rule. Either character pair is
+fine; mixing them within one bar is not.
 
 ## Phase 6 — Render the report
 
@@ -156,8 +179,8 @@ non-standard notions. Don't paste Lean code here.>
 
 **What this asserts.** <2-4 sentences in mathematical English. Be precise.
 Define every non-standard term the first time it appears
-(e.g. "the Eisenstein series $E_k(\tau) = \sum_{(c,d) \neq 0}(c\tau+d)^{-k}$",
-not "eisensteinSeries"). Use mathematical notation freely.>
+(e.g. "the Eisenstein series E_k(τ) = ∑_{(c,d) ≠ 0} (cτ + d)^(−k)",
+not "eisensteinSeries"). Use Unicode mathematical symbols directly — no LaTeX.>
 
 **Setup** (only when needed: ambient hypotheses, parameters, structures).
 <List what the variables are and what context they live in. Skip this
@@ -172,15 +195,14 @@ body. Translate every structural step into mathematics:
   the `have` was needed only for the current attempt or is a genuine
   intermediate result.
 - For each `obtain`, `let`, or `use`, name the witness mathematically.
-  "The worker fixes $M = \pi^2/6$ as the dominant bound, since
-  $\sum_n n^{-2} = \pi^2/6$" — not "obtains a witness M".
+  "The worker fixes M = π²/6 as the dominant bound, since
+  ∑ₙ n⁻² = π²/6" — not "obtains a witness M".
 - If the goal has been refined into sub-goals (`refine ⟨?_, ?_, ?_⟩`,
   `constructor`, `cases`), list every sub-goal mathematically and
   mark which are discharged and which remain.
 - When the proof leans on a project-internal lemma, gloss what that
   lemma says in math — don't just name it. "This step uses the
-  absolute-summability lemma (which states $\sum_n n^{-k} < \infty$
-  for $k \geq 4$)".
+  absolute-summability lemma (which states ∑ₙ n^(−k) < ∞ for k ≥ 4)".
 
 If the body is essentially `sorry` with no structural progress, say
 "The declaration is stated but the proof has not been started" and stop.
@@ -226,8 +248,8 @@ step. Mathematical guidance, not encouragement.>
 
 ## Progress
 
-[████░░░░░░░░] <percent>% — <done> of <total> declarations have a complete
-proof; <has_sorry> still contain `sorry`.
+[<20-cell bar per Phase 5 rule>] <percent>% — <done> of <total>
+declarations have a complete proof; <has_sorry> still contain `sorry`.
 
 <One or two sentences placing the current frontier in the project's arc.
 "The basic API is in place; the main holomorphy result is the current
@@ -279,10 +301,16 @@ mathematician decides what's hard.
    invent a project goal richer than what's in `plan.md` plus the
    top-level signatures.
 
-5. **Use mathematical notation.** $\mathbb{R}$, $\sum$, $\int$, $\tau$ —
-   render naturally. Markdown supports inline math via `$...$` and the
-   user's chat may render it; even when not rendered, the source remains
-   readable. Don't fall back to plain ASCII when notation is clearer.
+5. **Unicode math, not LaTeX.** The chat is shown in a terminal; LaTeX
+   delimiters render as literal source (`$\mathbb{R}$` shows as
+   `$\mathbb{R}$`, not as ℝ) and that's hard to read. Use Unicode math
+   characters directly: ℝ ℂ ℕ ℤ ℚ ℍ τ ε δ π η ω σ α β γ Σ Π ∫ ∂ ∇ ∀ ∃ ∈
+   ∉ ⊂ ⊆ ⊇ ∪ ∩ ∅ ≤ ≥ ≠ ≈ → ↔ ⇒ ∞ ⌊⌋ ⌈⌉. For exponents, prefer Unicode
+   superscripts when natural (n², x³, ⁻¹) and fall back to caret
+   notation when not (n^k, (cτ+d)^(−k)). Same for subscripts: ₀…₉ ₊ ₋
+   when they exist, underscore notation otherwise. **Do not use any
+   LaTeX delimiters (`$...$`, `\(...\)`, `\[...\]`) or commands
+   (`\sum`, `\mathbb`, `\frac`, `\tau`, etc.).**
 
 6. **No file paths in the rendered output.** The mathematician doesn't
    read `.lean` files. The agent reads them — but doesn't display the paths.
@@ -317,7 +345,7 @@ theorem eisensteinSeries_holomorphic (k : ℕ) (hk : 4 ≤ k) :
 > The worker has shown a dominant bound exists and is summable, and that
 > each term is holomorphic. The remaining sorry needs uniform convergence.
 
-This tells the cold reader nothing concrete. They cannot guess what $M$ is,
+This tells the cold reader nothing concrete. They cannot guess what M is,
 what the parametric `h_termwise` actually says, what the sub-goal split is.
 
 **Thorough (do):**
@@ -327,30 +355,28 @@ what the parametric `h_termwise` actually says, what the sub-goal split is.
 > holomorphic functions is holomorphic provided the convergence is
 > dominated by a summable bound.
 >
-> The worker has chosen $M > 0$ from the auxiliary lemma
-> `exists_dominant_bound`; concretely, $M$ depends only on $k$ and
-> dominates $|(c\tau + d)^{-k}|$ uniformly on the upper half-plane. The
-> auxiliary fact $\sum_n M / n^k < \infty$ for $k \geq 4$ has been
-> established (one of the two ingredients). Termwise holomorphy of each
-> $(c\tau + d)^{-k}$ has also been established via the parametric lemma
-> `termwise_holomorphic`, which asserts that for every fixed
-> $(c, d) \neq 0$ the map $\tau \mapsto (c\tau + d)^{-k}$ is holomorphic
-> on $\mathbb{H}$.
+> The worker has chosen M > 0 from the auxiliary lemma
+> `exists_dominant_bound`; concretely, M depends only on k and dominates
+> |(cτ + d)^(−k)| uniformly on the upper half-plane ℍ. The auxiliary
+> fact ∑ₙ M / n^k < ∞ for k ≥ 4 has been established (one of the two
+> ingredients). Termwise holomorphy of each (cτ + d)^(−k) has also been
+> established via the parametric lemma `termwise_holomorphic`, which
+> asserts that for every fixed (c, d) ≠ 0 the map τ ↦ (cτ + d)^(−k) is
+> holomorphic on ℍ.
 >
 > The goal has been split into two sub-goals: (a) summability of the
-> dominant series — discharged using $h_{\text{summable}}$; (b) uniform
-> bound of the series partial sums by the dominant series — outstanding.
+> dominant series — discharged using `h_summable`; (b) uniform bound of
+> the series partial sums by the dominant series — outstanding.
 > Sub-goal (b) is the remaining sorry.
 >
 > **What discharging the sorry would establish.** A pointwise bound
-> $|E_k(\tau) - S_N(\tau)| \leq \sum_{n > N} M / n^k$ holding uniformly
-> for $\tau$ in any compact subset of $\mathbb{H}$, where $S_N$ is the
-> $N$-th partial sum.
+> |E_k(τ) − S_N(τ)| ≤ ∑_{n > N} M / n^k holding uniformly for τ in any
+> compact subset of ℍ, where S_N is the N-th partial sum.
 
 Notice: every name from the body has been translated to a mathematical
-claim. The witness $M$ is characterised. The parametric `h_termwise` is
-spelled out as a universal claim. The two sub-goals from `refine` are
-listed and marked.
+claim. The witness M is characterised. The parametric `termwise_holomorphic`
+is spelled out as a universal claim. The two sub-goals from `refine` are
+listed and marked. All math symbols are Unicode — no LaTeX.
 
 ## Drill-down
 
