@@ -4,7 +4,7 @@
 A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up to mathlib standards before PR submission.
 
 ## Current Status
-**Version:** 0.22.0
+**Version:** 0.23.0
 
 ### Completed
 - Plugin architecture with 5 commands defined in `commands/`
@@ -67,7 +67,7 @@ A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up
 - `/cleanup-all` - Run /cleanup on every file in the project, one at a time, with progress tracking
 - `/decompose-proof` - Break long proofs into helpers (two-pass: analysis with DECOMPOSE plans → parallel agent decomposition)
 - `/overview` - Project declaration inventory — lists every def/lemma/theorem with descriptions, dependencies, and consolidation analysis
-- `/project-status` - **Mathematician's snapshot driven by un-formalising the Lean code (not the ticket file) — chat summary + live browser dashboard.** Source of truth is the project's `.lean` files. Server (`scripts/project_status_server.py`) walks every `.lean` file, extracts every declaration with its body, infers the dependency graph from references in proof bodies, and overlays ticket statuses by declaration name. Agent's job on each invocation: read every declaration's body and write English annotations (math name, 1-3 sentence description, proof-state narrative for sorries, ingredients in scope, what-would-help for blockers) to `.mathlib-quality/.status_annotations.json`. Body-hash caching skips unchanged declarations on re-runs. The dashboard at `http://127.0.0.1:8765/` renders the un-formalisation (clickable tree from the call graph, arrow-key nav, KaTeX, Lean syntax highlighting) and live-updates structural data every 3 s. Drill-down by declaration name: `/project-status fooBar_comp` (unqualified) or `/project-status MyProj.fooBar_comp` (qualified). Flags: `--no-browser`, `--skip-unformalise`, `--stop`. Tickets demoted to a status-overlay role.
+- `/project-status` - **Chat-only mathematical status of a `/develop` project.** The agent reads the project's `.lean` files (plus `.mathlib-quality/plan.md` and `tickets.md` if present) and reports in mathematical English: what result the worker is currently on, what (if anything) is blocked and what is mathematically missing, how the current work connects to the project's overall goal, and how far along the whole project is. Read-only — no server, no browser, no sidecar files. Audience is an expert mathematician glancing between work sessions; tone is descriptive math reportage, not difficulty rhetoric.
 - `/expert-review` - Two-mode external-review workflow. Mode 1 produces a self-contained `REVIEW_BRIEF.md` (no Lean, no file paths) with goals, plan, references, established results, in-progress work, blockers, numbered questions, then **stops and waits**. Mode 2 (`/expert-review --reply`) takes the reviewer's response, maps it onto the questions, and proposes ticket/work-order updates — applies only after user approval. State persists in `.mathlib-quality/expert-review/<date>/`. Ticket names allowed where mathematically meaningful.
 - `/generalise` - Weaken a lemma's or def's assumptions. Tries mechanical weakenings from `references/generalisation-patterns.md` (typeclass parents, drop-unused, point-localise, strict→weak); does a mandatory literature search (WebSearch + ChatGPT MCP + mathlib search). Small safe changes auto-apply with verification; big changes (public-API, renames, restating) become a numbered options menu for user approval — no auto-apply.
 - `/pre-submit` - Pre-PR submission checklist
