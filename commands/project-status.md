@@ -116,26 +116,90 @@ this lemma is used by X, which is used by Y, which proves the project's
 main theorem Z. Express the chain in mathematical English using math names
 (not Lean identifiers) where you can. One or two sentences per declaration.
 
-## Phase 5 — Compute progress
+## Phase 5 — Compute progress (three tiers)
 
-Simple counts:
+A flat declaration count understates mathematical distance to the goal:
+thousands of supporting lemmas weight the same as the actual frontier,
+so the bar pegs at 100% while the main result is still conditional.
+Compute three views; report all three in Phase 6.
 
-- `done` = body contains no `sorry`
-- `has_sorry` = body contains `sorry`
+### Tier 1 — Code-level coverage (coarse)
+
+The flat count.
+
+- `done` = declarations whose body contains no `sorry`
+- `has_sorry` = declarations whose body contains `sorry`
 - `total = done + has_sorry`
-- `percent = round(100 × done / total)` (with `total = 0` → `percent = 0`)
+- `percent = round(100 × done / total)` (`total = 0` → `percent = 0`)
 
-This is a coarse measure. If the project has detailed proof sketches in
-`tickets.md`, you may report a step-weighted percentage instead (each
-ticket contributes one weight per numbered sketch step). The simple count
-is usually fine and faster.
+This includes scratch chains and orthogonal work. Useful as a sanity
+check, not as the main metric.
 
-**Progress bar (binding).** The progress line is a single mandatory
-string. Do not improvise the format, the bar width, the bar characters,
-or omit any field.
+### Tier 2 — Main-goal chain coverage
+
+First identify the project's **main goal(s)** — the user-facing theorem(s)
+the project exists to prove. Sources, in order of priority:
+
+1. `plan.md` names a specific declaration → use it.
+2. The top-level public theorems / lemmas (kind = `theorem`/`lemma`,
+   not `private`, not used by any other declaration). If there are
+   one or two such, those are the main goal(s).
+3. If there's a clear naming pattern in the user-facing theorems (e.g.
+   `fermatLastTheoremFor_thirtyseven_*`), report each as a main goal.
+4. If genuinely unclear, say so and skip Tier 2.
+
+Compute the **dependency closure** of each main goal: every declaration
+the main goal transitively uses (follow `depends_on` chains). Then:
+
+- `main_done` = sorry-free declarations in the closure
+- `main_total` = total declarations in the closure
+- `main_percent = round(100 × main_done / main_total)`
+
+Crucially, this **excludes** parallel chains the main goal doesn't use
+(scratch, orthogonal explorations, alternate-route experiments). On a
+project with `6709/6714` Tier 1 and 5 sorries in a parallel scratch
+chain, Tier 2 is `100%` if the main chain is clean — and the report
+should say so plainly, not bury the user in an unrelated bar.
+
+### Tier 3 — Conditional → unconditional progress (deepest metric)
+
+Read each main goal's **signature**. List every hypothesis. Classify:
+
+- **Ambient** — typeclass instances (`[CommMonoid α]`), index variables
+  (`(n : ℕ)`, `(p : ℕ)`), standard mathlib propositions (`p.Prime`,
+  `0 < n`, `Fintype α`). These are inputs to the statement, not
+  assumptions to discharge.
+- **Parametric assumption** — a hypothesis whose type names a
+  project-defined `Prop` (or `def X : Prop := …` somewhere in the
+  project). Examples: `(h : Vandiver37PlusCoprime)`,
+  `(h : EigenspaceCondition p k)`. These are conditional inputs.
+
+Detection rule: a hypothesis is parametric iff its type refers (by name)
+to a declaration in the project's own decl set. Anything resolving to
+mathlib or stdlib only is ambient.
+
+For each parametric assumption, check whether the project also contains
+a sorry-free theorem of the same type — that is the **discharge**. If
+present, the assumption is `discharged`. If not, it is `still
+parametric`.
+
+The project becomes unconditional when every parametric assumption of
+every main goal is discharged. Report:
+
+- `parametric_count` = total parametric hypotheses across all main goals
+- `discharged_count` = how many of those have a sorry-free discharge
+- `still_parametric` = `parametric_count − discharged_count`
+
+If a main goal has zero parametric assumptions, it is already
+unconditional — say so explicitly.
+
+### Bar-rendering rules (apply to all tiers)
+
+Each bar follows the same template. Do not improvise width, characters,
+or fields.
 
 ```
-[<20-cell bar>] <percent>% — <done>/<total> declarations sorry-free, <has_sorry> with sorry
+[<20-cell bar>] <percent>% — <tier-specific description>
 ```
 
 - The brackets `[` and `]` are mandatory.
@@ -145,45 +209,55 @@ or omit any field.
   evidence the user's terminal mangles those characters: `#` for filled,
   `-` for empty, still 20-cell. Do not use other characters (no `▰`, no
   `▱`, no `=`, no `■`).
-- The percentage is mandatory even at 0% or 100%. Show as a plain
-  integer with `%` suffix, no decimals.
-- Both counts (`done`/`total` and `has_sorry`) are mandatory.
-- The literal word "declarations" stays — it tells the reader what's
-  being counted.
+- The percentage is mandatory even at 0% or 100%. Plain integer + `%`,
+  no decimals.
 
-Worked examples (note every field is present in every case):
+Tier-specific descriptions:
 
 ```
-0%    [░░░░░░░░░░░░░░░░░░░░] 0% — 0/30 declarations sorry-free, 30 with sorry
-25%   [█████░░░░░░░░░░░░░░░] 25% — 8/30 declarations sorry-free, 22 with sorry
-38%   [████████░░░░░░░░░░░░] 38% — 12/32 declarations sorry-free, 20 with sorry
-50%   [██████████░░░░░░░░░░] 50% — 15/30 declarations sorry-free, 15 with sorry
-100%  [████████████████████] 100% — 14261/14261 declarations sorry-free, 0 with sorry
+Tier 1: 38% — 12/32 declarations sorry-free, 20 with sorry
+Tier 2: 75% — 18/24 declarations on the main-goal closure are sorry-free
+Tier 3: 33% — 1/3 parametric assumptions discharged
 ```
 
-**The 100% case (binding).** If the bar shows 100% (= every named
-declaration is sorry-free), the "Currently working on" and "Blocked"
-sections cannot legitimately describe new proof work — there is none.
-The active work, if any, is necessarily something else: an axiom audit,
-a refactor, a generalisation, decomposition of a proof, performance
-tuning, or work happening in a sub-step / scratch file the discovery
-walk missed. State this honestly. Two acceptable shapes:
+Worked examples for the bar itself (any tier):
 
-- "All 14261 declarations are sorry-free. The active work is a refactor
-  of the projector-compatibility lemmas to remove a custom axiom — no
-  new theorems, just changing how existing ones are proved."
+```
+0%    [░░░░░░░░░░░░░░░░░░░░] 0% — …
+25%   [█████░░░░░░░░░░░░░░░] 25% — …
+38%   [████████░░░░░░░░░░░░] 38% — …
+50%   [██████████░░░░░░░░░░] 50% — …
+75%   [███████████████░░░░░] 75% — …
+100%  [████████████████████] 100% — …
+```
 
-- "All named declarations are sorry-free, but the discovery walk only
-  scanned files under `<root>/Project/`; there is residual work in
-  `<other path>` that this report didn't see. Re-run from the wider
-  root, or pass the path explicitly."
+### The 100% case (binding, tier-aware)
 
-What you must NOT do at 100%:
+It is **expected and normal** for Tier 1 to be at or near 100% while
+Tiers 2 and 3 are not. That gap is the whole point of the three-tier
+view: a project can have 6709/6714 declarations sorry-free and still
+be far from its mathematical goal.
 
-- Show the bar at 100% AND describe new lemma-proving as "active work"
-  in the same report. That is internally inconsistent. Either the bar
-  is wrong (rare — investigate where the missed sorries are) or the
-  active-work framing is wrong (rephrase as refactor / audit / etc.).
+The binding rule applies to **Tier 2** (main-goal chain coverage) and
+**Tier 3** (parametric inputs):
+
+- If Tier 2 is at 100%, every declaration the main goal depends on is
+  sorry-free. New lemma-proving cannot legitimately be the "active
+  work" *on the main chain*. Active work is either: discharging
+  parametric assumptions (Tier 3), an off-chain refactor / axiom
+  audit, or work in a parallel scratch chain — say which.
+- If Tier 3 is at 100%, the project's main goal is unconditional. Say
+  so plainly. If the user is still framing active work, it is either
+  optimisation/refactoring or a new goal.
+
+What you must NOT do:
+
+- Show Tier 1 at 100% and quietly imply the project is done. The reader
+  needs Tiers 2 and 3 to know whether the *main result* is unconditional.
+- Hide a parallel scratch chain inside the Tier 1 number without
+  surfacing it. If the 5 outstanding sorries are off-chain, name the
+  chain ("the Furtwängler residue-symbol scratch under `Reflection.…`")
+  and say it is not on the main goal's import path.
 
 ## Phase 6 — Render the report
 
@@ -280,9 +354,41 @@ step. Mathematical guidance, not encouragement.>
 
 ## Progress
 
+### Code-level (all declarations)
 [<20-cell bar>] <percent>% — <done>/<total> declarations sorry-free, <has_sorry> with sorry
-(See Phase 5 for the binding format. Every field above is mandatory —
-the brackets, the percentage, both counts, the word "declarations".)
+(Coarse: includes scratch chains and parallel/orthogonal work. <one-line note about where the with-sorry declarations live, e.g. "the 5 outstanding are in the Furtwängler residue-symbol scratch chain, off the main import path".>)
+
+### Main-goal chain
+The main goal is **<math name>** (`<lean_name>`).
+[<20-cell bar>] <main_percent>% — <main_done>/<main_total> declarations on the main-goal closure are sorry-free
+(<one-line note: which chain is excluded, e.g. "Excludes the Furtwängler scratch and the parallel Vandiver-IV exploration.">)
+
+### Distance to unconditional goal
+<If the main goal has parametric assumptions:>
+The main goal is currently conditional on <N> parametric hypothesis(es):
+[<20-cell bar>] <tier3_percent>% — <discharged>/<N> assumptions discharged
+
+- 🚧 `<hypothesis_name>` — <math description in 1-2 sentences>. Still parametric.
+- ✅ `<hypothesis_name>` — <math description>. Discharged via `<theorem_name>`.
+- ...
+
+<If parametric_count = discharged_count = 0:>
+The main goal is unconditional — no parametric assumptions in its
+signature. ✅
+
+<One paragraph in mathematical English placing the current frontier in
+the project's arc. State which chain is closed, which assumption is the
+next to discharge, and what mathematical move is needed. Example:
+
+"The main FLT37 chain is sorry-free; the project becomes unconditional
+once the Vandiver37PlusCoprime hypothesis is discharged (currently the
+sole remaining parametric input). The route is the rank-one Pollaczek
+specialisation: with the projector-compatibility lemmas just landed,
+the chain to discharging Vandiver37PlusCoprime — eigenspace
+surjectivity → Nakayama-rank-one → atomic rank-one at Λ = ℤ_37 → Kučera
+→ Cor 8.19 contrapositive — is mechanical from existing
+infrastructure."
+>
 
 <One or two sentences placing the current frontier in the project's arc.
 "The basic API is in place; the main holomorphy result is the current
