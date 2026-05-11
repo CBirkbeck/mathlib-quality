@@ -50,7 +50,8 @@ The following responses are **forbidden** and will be rejected:
   failure is a missing piece with clear mathematical content, **spawn a sub-ticket
   for it and proceed** — that is not pivoting, that is filling in a gap.
 - Asking the user mid-work *"should I continue?"* / *"do you want me to keep going?"*
-  — yes, continue. Don't ask.
+  — yes, continue. Don't ask. See the **Self-rejection protocol** below for the
+  full list of forbidden output patterns and the pre-send self-check.
 - Marking a ticket "done" with a `sorry` still in the file. **Never.**
 - Hard-stopping on MATHLIB GAP or a missing sub-lemma when the gap is small enough
   to be a focused sub-ticket. The presumption is **spawn a sub-ticket**, not stop.
@@ -171,6 +172,131 @@ or a genuinely off-track scope (B3) ends the session.
 - "We're 5 sub-tickets deep." Keep going. No depth cap in beastmode.
 - "The user might want me to check in." No. They invoked beastmode.
 
+## Self-rejection protocol (binding)
+
+The hard rules above describe what is forbidden in principle. This section
+makes the enforcement mechanical: before emitting any user-facing text,
+scan the draft against the explicit patterns below. If any rule matches,
+do **not** send the draft — strip the offending content and perform the
+next concrete action instead.
+
+### Forbidden output patterns (literal string match)
+
+If your draft contains any of these substrings, it is a defect. The user
+invoked beastmode — they are not checking in mid-session. Strip the phrase
+and the surrounding scaffolding, and either continue working (default) or
+produce a DONE / B-stop report (only if a hard-stop condition genuinely
+fired).
+
+```
+"Want me to ..."          "Should I ..."           "Shall I ..."
+"Do you want me to ..."   "Should I keep going?"   "Want me to keep going?"
+"Want me to pivot ..."    "Want me to switch ..."  "Want me to start ..."
+"Want me to continue?"    "Ready to proceed?"      "Let me know if ..."
+"Let me give a status"    "Let me give you a status"  "Status update:"
+"Quick status"            "Quick update"           "Checkpoint here"
+"Let me check in"         "I'll continue in the next"
+"next session"            "Pausing here"           "Pausing to ..."
+"I'll pause here"         "Ready when you are"     "Let me know how to proceed"
+"Want me to take a different angle?"   "Let me wait for ..."
+```
+
+The list is non-exhaustive — the spirit is "any phrase that hands control
+back to the user mid-marathon". When in doubt, ask: "would a user invoking
+beastmode want to read this, or would they want the next code edit?"
+Always the latter.
+
+### No mid-turn reports
+
+User-visible text is reserved for exactly two outputs:
+
+(a) **DONE** — the original ticket and every sub-ticket discharged; the
+    Phase 8 DONE report.
+(b) **A genuine B-stop** — B2 SCOPE / DEFINITION ERROR, B3 OFF-TRACK, or
+    B4 BROKEN BASELINE, each with the concrete evidence required by the
+    stop condition.
+
+There is no in-between "let me show you where I'm at" output. Status lives
+in the ticket board's `**Progress**:` field, which you update via Edit on
+`tickets.md` between work cycles. Anything that looks like a status
+paragraph in user-visible text is off-pattern.
+
+If you find yourself drafting "here's where I am right now …", that is the
+moment to delete the draft, save the same sentence to the parent ticket's
+Progress field, and make the next code edit.
+
+### Code over analysis (per-turn budget)
+
+Every turn must advance the work through code or tool calls, not through
+analysis prose. Each turn must include at least one of:
+
+- An **Edit** or **Write** call that adds or modifies Lean code in the
+  proof file (or `tickets.md` if you are spawning a sub-ticket and the
+  same turn or next turn does proof code).
+- A **lean_*** tool call targeted at the current proof goal
+  (`lean_diagnostic_messages`, `lean_multi_attempt`, `lean_goal`,
+  `lean_local_search`, `lean_loogle`, etc.).
+- A **Bash** call that advances the build / verification cycle
+  (`lake build`, axiom check, grep for a definition, etc.).
+
+A turn that produces user-visible text plus only `Read` tool calls is
+off-pattern. Reading-as-analysis is what feels like progress but isn't;
+the file content is the same after the read as before. Progress is when
+the proof state changes or the file gains a line.
+
+If your last three turns are all Read-and-think, your next turn MUST
+write code. No exceptions.
+
+### Spawn → recurse, not spawn → report
+
+When you create a sub-ticket:
+
+1. Edit `tickets.md` to append the new ticket (per the Spawning sub-tickets
+   section below).
+2. Update the parent's `Depends on` and `Progress` fields.
+3. **Your next tool call MUST be one of:**
+   - `Read` on the sub-ticket's target file to locate the insertion point, OR
+   - `Edit` on that file to introduce the sub-ticket's declaration with
+     `:= by sorry`, OR
+   - A `lean_*` tool aimed at the new sub-ticket's goal.
+
+Do **NOT** end the turn with "I've spawned T205-d-API-2-DC-IUNION-M; I'll
+work it next" — that is a stop disguised as planning. The sub-ticket
+spawn is a planning *step*, not a planning *destination*. Plan → recurse
+→ work. In the same turn if possible; in the very next turn at the latest.
+
+### "Substantial coding ahead" is a START signal
+
+If your next move is to write 100+ lines of Lean, that is exactly the
+work beastmode exists for. Start typing. Do not announce. Do not summarise
+what the lines will do; write them.
+
+The Super Saiyan principle handles this: the larger the work, the more
+energy goes in. "Substantial coding ahead" is fuel, not a flag.
+
+If you catch yourself drafting "the next step is genuinely substantial
+coding — about 100 lines of careful work on …", strip the draft and
+make the first Edit.
+
+### Pre-send self-check (mandatory)
+
+Before sending any user-facing text:
+
+1. Does the draft contain any **forbidden output pattern** (literal match
+   against the list above)? → Strip the offending sentence; act instead.
+2. Is the draft a **mid-turn status report** (not DONE, not a real
+   B-stop)? → Strip; act instead. Real status goes to `tickets.md`
+   Progress fields.
+3. Did this turn include at least one **code-advancing tool call**
+   (Edit/Write/lean_*/Bash on the build)? → If not, make the call before
+   sending anything.
+4. If a sub-ticket was just spawned, is your next planned action **aimed
+   at the new ticket** (Read/Edit on its target file, or a lean_* tool)?
+   → If not, fix that before sending.
+
+Four "yes"es and one "this is DONE or a genuine B-stop"? Send. Anything
+else? Don't.
+
 ## On-target vigilance
 
 Beastmode is **continuously checking that the work is still on the agreed
@@ -244,7 +370,14 @@ Sub-tickets are added by `/beastmode` itself during execution.
 
 When you hit a Tier-A blocker (missing lemma, missing dependency, parametric
 sub-step needed), perform a focused-planning pass following `commands/develop.md`'s
-ticket template:
+ticket template.
+
+**Reminder (per "Self-rejection protocol → Spawn → recurse, not spawn → report"):**
+spawning a sub-ticket is a planning *step*, not a planning *destination*. After
+writing the new ticket and updating the parent's `Depends on` / `Progress`,
+your very next tool call must be aimed at the new ticket — `Read` on its target
+file, `Edit` to introduce the declaration with `:= by sorry`, or a `lean_*`
+tool aimed at its goal. No "I've spawned T205, will work it next" messages.
 
 1. **Re-verify the gap is real.** Run the five-method mathlib search
    (`references/mathlib-search.md`). Search the project's existing declarations.
