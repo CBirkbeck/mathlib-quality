@@ -1,28 +1,42 @@
 ---
-name: extended-work
-description: Pick up a ticket and work it to completion. When a sub-step needs a missing lemma, a missing dependency, or a sub-result not on the board, spawn a sub-ticket following /develop's template and recurse. Only stop on genuine off-track conditions — a wrong statement, scope outside the project, depth limit, or broken baseline build.
+name: beastmode
+description: Marathon work session. Pick up a ticket and stop at nothing to discharge it — fill every sorry, develop whatever API is needed, invoke /develop to plan more tickets whenever the path forks, and immediately work those tickets too. The session ends only when the target is fully proven or the work is genuinely outside the project's scope. No depth caps, no time caps, no "this is hard".
 ---
 
-# /extended-work — Single-Ticket Work Session With Sub-Ticket Spawning
+# /beastmode — Marathon Work Session
 
-Pick up one ticket and work it to completion. If you encounter a blocker that has
-a clear mathematical content — a missing lemma whose statement you can articulate,
-a missing dependency that needs creating, a sub-step that needs its own intermediate
-result — do **not** stop. Spawn a sub-ticket following `/develop`'s template, mark the
-current ticket as depending on it, and recursively work the sub-ticket. When the
-sub-ticket completes, return to the parent.
+This is the relentless execution mode. Pick up a ticket and **stop at nothing** to
+discharge it. Fill every sorry on the path to the goal. Build whatever API is
+needed along the way. When the parent ticket's sketch turns out to be incomplete
+— a missing mathlib lemma, a missing dependency, a parametric sub-step worth its
+own lemma — invoke `/develop`'s planning template inline, add the focused ticket,
+and immediately get to work on it. When that completes, return to the parent.
+Repeat. As deep and as long as it takes.
 
-This skill is the execution counterpart to `/develop`. `/develop` does the original
-project plan; `/extended-work` executes it, and when execution surfaces a gap that
-the plan didn't anticipate, fills the gap by adding focused tickets *in /develop's
-format* and proceeding. The role separation is preserved — every new ticket follows
-the planning rules in `commands/develop.md` (statement, proof sketch, mathlib lemmas,
-sources, generality decision).
+This is a marathon session. There is no time budget. There is no recursion cap.
+"It's late", "this is taking a while", "let me come back tomorrow" — none of
+those are legitimate. The only legitimate stops are:
 
-The only legitimate hard stops are: completion of the original ticket and all its
-sub-tickets; a ticket whose statement is mathematically wrong; a blocker that's
-genuinely outside the project's scope; sub-ticket recursion depth exhausted; the
-baseline `lake build` already broken on entry.
+- The original target is fully proven (DONE).
+- The statement on the board is mathematically wrong and the user needs to
+  decide (SCOPE / DEFINITION ERROR).
+- The work has drifted onto something genuinely outside the project's
+  mathematical area, not just deep within it (OFF-TRACK, very narrowly).
+- The baseline `lake build` is already broken when you start — the project
+  is in a state where work cannot proceed (BROKEN BASELINE).
+
+Note what's **not** on the list: depth limit, sketch fundamentally wrong, "this
+is a long proof", "this is a hard step", "the mathlib lemma I expected isn't
+there", "I'd like to try a different approach". None of those stop beastmode.
+Sub-tickets, replanning via `/develop --continue`, deeper sub-tickets — that's
+how beastmode handles each.
+
+This skill is the execution counterpart to `/develop`. `/develop` produces the
+original plan; `/beastmode` executes it, and when execution surfaces a gap the
+plan didn't anticipate, fills the gap by adding focused tickets *in /develop's
+template format* and proceeding. The role separation is preserved — every new
+ticket follows the planning rules in `commands/develop.md` (statement, proof
+sketch, mathlib lemmas, sources, generality decision).
 
 ## Hard rules (read these first; they are non-negotiable)
 
@@ -60,7 +74,7 @@ The following are **mandatory**:
 
 These conditions used to be hard stops. They are now triggers to spawn a sub-ticket
 via the focused-planning flow below, then continue working. The intent is that
-`/extended-work` is **self-sufficient at filling in gaps within the project's scope**.
+`/beastmode` is **self-sufficient at filling in gaps within the project's scope**.
 
 A1. **MATHLIB GAP that can be a project lemma** — a mathlib lemma the sketch
     references doesn't exist (after the five-method search), and the missing fact
@@ -93,67 +107,136 @@ B1. **DONE** — The original ticket and every sub-ticket it transitively spawne
     `sorry` anywhere in the new declarations; `#print axioms` clean; `lake build`
     clean on the modules touched.
 
-B2. **PROOF-SKETCH FUNDAMENTALLY WRONG** — the parent's sketch is not just
-    missing an ingredient (Tier A); it is wrong as a proof strategy. For example,
-    "induction on n" but the inductive step would need a hypothesis the
-    statement doesn't grant. No reasonable sub-ticket fixes this — only a
-    replan does. Your report MUST name:
-    - which step is fundamentally wrong
-    - why no sub-ticket of bounded scope can fix it
-    - a concrete replanning suggestion (re-state with extra hypothesis, replace
-      strategy with X, etc.)
-
-B3. **SCOPE / DEFINITION ERROR** — the ticket's stated declaration is
+B2. **SCOPE / DEFINITION ERROR** — the ticket's stated declaration is
     mathematically wrong (conclusion false as stated; hypotheses don't entail
     the conclusion). Report a counterexample or a concrete reason. User decides
-    whether to fix the statement or pivot.
+    whether to fix the statement or pivot. This is a **statement** error, not
+    a strategy error — if the strategy is wrong but the statement is right,
+    invoke `/develop --continue` to replan the sketch and keep going (see
+    "Replan and continue" below).
 
-B4. **OFF-TRACK** — the work the worker is being asked to do isn't a
-    recognisable extension of the project's plan. Specifically, one of:
-    - The missing lemma is large enough to be a mathlib contribution in its
-      own right, not a focused project lemma (= upstream contribution
-      candidate, not a sub-ticket)
-    - The sub-ticket needed would itself require sub-tickets of unbounded
-      mathematical depth (= the gap is research-scale, not engineering-scale)
-    - The work the worker is on contradicts a stated intent in `plan.md` or
-      the parent ticket's generality decision
-    - Re-planning the parent's sketch is needed before sub-tickets can be
-      added meaningfully
+B3. **OFF-TRACK** — the work has drifted onto something genuinely outside the
+    project's mathematical area, not just deep within it. The bar is high:
+    - The missing fact is at the scale of a published-paper theorem nobody
+      has formalised — i.e., the sub-ticket itself would need its own
+      multi-week development by mathlib standards
+    - The work the worker is on contradicts an explicit statement in
+      `plan.md` (e.g., plan says "stay within finite group theory", the
+      worker is now proving facts in scheme theory)
+    - The whole project's premise is broken in a way no replanning fixes
 
-    "Off-track" requires evidence. It is **not** "I don't like this approach".
-    Your report MUST cite the specific reason from the list above.
+    "Off-track" requires concrete evidence — name the plan paragraph that's
+    being violated, or name the published theorem the sub-ticket would
+    require. It is **not** "I don't like this approach", "this is taking a
+    while", or "this is harder than I expected". Those are the opposite of
+    off-track; they are evidence the marathon is working.
 
-B5. **DEPTH LIMIT** — sub-ticket recursion has reached depth 3 (configurable;
-    see below). Past this, sub-ticketing is getting away from the parent's
-    scope. Stop, report the spawned chain, let the user decide.
-
-B6. **BROKEN BASELINE** — `lake build` was already broken when work started.
+B4. **BROKEN BASELINE** — `lake build` was already broken when work started.
     The project isn't in a workable state. Hard stop on entry (Phase 2b).
 
-What is **not** a stop condition:
+That is the complete list. Three real conditions plus DONE.
+
+### Replan and continue (was B2 in previous versions; no longer a stop)
+
+If the parent's proof sketch is fundamentally wrong as a strategy — not just
+missing an ingredient but using an approach that can't work — do **not** stop.
+Instead:
+
+1. Document specifically what's wrong with the sketch: which step, why no
+   bounded sub-ticket fixes it. Add this to the parent ticket's progress notes.
+2. Invoke `/develop --continue` on the parent ticket (or perform the equivalent
+   focused replanning inline): replace the broken sketch with a new one.
+3. Continue working the parent ticket from the new sketch.
+
+A wrong strategy is a planning gap, not a goal gap. Beastmode fills planning
+gaps via `/develop`. Only a wrong **statement** (B2 SCOPE / DEFINITION ERROR)
+or a genuinely off-track scope (B3) ends the session.
+
+### What is NOT a stop condition
 
 - "I've been trying for a while." Keep going.
 - "This is harder than I thought." Keep going.
+- "This is taking a long time." Beastmode sessions are marathons. Keep going.
+- "It's late / I'm tired / let me come back tomorrow." You are an agent. You
+  have no fatigue. Keep going.
 - "I want to try a different approach." If the planned approach fails because
   of a missing ingredient with clear content, spawn a sub-ticket — that is
-  filling in a gap, not pivoting.
+  filling a gap, not pivoting.
 - "The proof is long." Long is fine. Keep going.
-- "I think there's a more elegant proof." Implement the planned proof. Golf
-  in `/cleanup` later.
+- "I think there's a more elegant proof." Implement the planned proof first.
+  Golf in `/cleanup` later.
 - "The mathlib lemma I expected isn't there." Spawn a sub-ticket per A1.
 - "A dependency isn't on the board yet." Spawn a sub-ticket per A3.
+- "The sketch is wrong." Replan via `/develop --continue`. Keep going.
+- "We're 5 sub-tickets deep." Keep going. No depth cap in beastmode.
+- "The user might want me to check in." No. They invoked beastmode.
+
+## On-target vigilance
+
+Beastmode is **continuously checking that the work is still on the agreed
+plan**. This is not stop-prone caution — vigilance is *for* on-target work,
+not against it.
+
+Before spawning any sub-ticket and before starting any new step, ask:
+
+1. **Does this serve the main goal** stated in `plan.md` (or the parent
+   ticket's intent if no plan paragraph applies)?
+2. **Does it stay within the project's mathematical area**, as defined by
+   `plan.md` and the existing decl base?
+3. **Is the new direction a refinement of the plan, or a divergence**?
+
+If yes to 1 and 2, the work is on-target — proceed even if it grows the
+scope. If 3 is "divergence", that's the B3 OFF-TRACK signal; pause and
+report.
+
+The check itself is fast: one or two sentences in the parent's progress
+notes documenting why the new step or sub-ticket is on-target. Skipping
+the check is a defect; the wrong answer to the check (concluding off-target
+when on-target) is also a defect — it produces a premature stop.
+
+## More work than expected = great news
+
+A common surprise: a step estimated as "two lemmas" turns out to need ten;
+a sub-result that looked one-line is actually a small theorem. In lesser
+modes this triggers second-guessing — "is this still feasible?", "should
+I check with the user?", "is this scope creep?". In beastmode, the
+response is the opposite.
+
+**More work that stays on target is more mathematics captured. That is
+exactly the point of the marathon.** The response is:
+
+1. Run the on-target check (above). Confirm the additional work is part
+   of the plan, not a divergence.
+2. If on-target: plan the new tickets via `/develop`'s template format.
+   List them in the parent ticket's progress notes with a one-line note
+   per ticket explaining why each is on-target.
+3. Immediately start working the new tickets. The marathon got longer;
+   the marathon continues. There is no celebration of completion of an
+   intermediate estimate — the goal is the goal, and intermediate
+   estimates are estimates.
+
+The harder the work turns out to be, the more energy beastmode brings.
+Like a Super Saiyan: the stronger the opponent, the stronger you get.
+A lemma that was supposed to take two steps and actually takes twenty is
+the best kind of surprise — more mathematics worth formalising in this
+session. Embrace it.
+
+What's the line between this and B3 OFF-TRACK? On-target work that grows
+in scope is still on-target — there is no upper bound on scope growth as
+long as the work stays within the plan's area. B3 fires when the work
+itself drifts onto unrelated mathematics, not when on-track work gets big.
 
 ## Usage
 
 ```
-/extended-work                              # Auto-pick the next available ticket
-/extended-work --ticket T042                # Specific ticket
-/extended-work --resume                     # Resume an in_progress ticket
-/extended-work --max-depth N                # Override sub-ticket recursion limit (default 3)
+/beastmode                              # Auto-pick the next available ticket
+/beastmode --ticket T042                # Specific ticket
+/beastmode --resume                     # Resume an in_progress ticket
+/beastmode --max-depth N                # Optional safety cap; default is uncapped
 ```
 
 For new projects, run `/develop` first to create the original ticket board.
-Sub-tickets are added by `/extended-work` itself during execution.
+Sub-tickets are added by `/beastmode` itself during execution.
 
 ---
 
@@ -187,7 +270,7 @@ ticket template:
    - `Sources`: inherit from the parent if the source covers this; otherwise
      leave empty (the worker doesn't research literature)
    - `Generality decision`: minimal — match the use site. Don't over-generalise
-     in a sub-ticket; that's `/develop`'s job, not `/extended-work`'s.
+     in a sub-ticket; that's `/develop`'s job, not `/beastmode`'s.
 
 3. **Update the parent ticket:**
    - Append the new ticket ID to `Depends on`
@@ -197,7 +280,7 @@ ticket template:
 4. **Save `tickets.md`.** This is the only file you write.
 
 5. **Recurse.** Re-enter Phase 0 with `--ticket <new-id>`. Track the recursion
-   depth (default cap = 3; see Tier-B condition B5).
+   depth for the final report; do not cap it unless `--max-depth` was passed.
 
 6. **On sub-ticket completion**, return to the parent's Phase 4 from the
    step that triggered the spawn. The parent's progress notes record where
@@ -207,12 +290,18 @@ ticket template:
 
 The depth is the count of ancestors a ticket has in the sub-ticket chain. Top-level
 tickets (created by `/develop`) have depth 0. A sub-ticket spawned while working
-a depth-0 ticket has depth 1. And so on. Default cap is 3 — past that, the work
-has clearly drifted from the original ticket's scope and the user should judge.
+a depth-0 ticket has depth 1. And so on.
 
-Track the depth in each sub-ticket's `Parent` chain. When deciding whether to
-spawn, check the current ticket's depth; if it's already at `--max-depth`, do
-NOT spawn — hard stop with condition B5.
+**Beastmode has no default depth cap.** Marathon sessions can go as deep as the
+math requires. Track the depth in each sub-ticket's `Parent` chain for reporting
+purposes (the final report surfaces the deepest chain reached), but do not gate
+work on it.
+
+`--max-depth N` exists as an opt-in safety cap if the user explicitly wants one
+(e.g., "don't let this session run away unbounded — cap at 5"). When it is
+passed and the depth would exceed N, the worker reports the situation and
+asks the user whether to continue past the cap, rather than hard-stopping. The
+default — no flag — is uncapped.
 
 ### What to put in the parent's progress notes when spawning
 
@@ -295,7 +384,7 @@ Read the entire ticket in `.mathlib-quality/tickets.md`. The ticket has been wri
 - The **mathlib lemmas** needed at each step
 - The **sources** (papers, books) the sketch is drawn from
 - The **generality decision** (which typeclasses, which abstraction level)
-- **Progress notes** from previous `/extended-work` sessions on this ticket (if `--resume`)
+- **Progress notes** from previous `/beastmode` sessions on this ticket (if `--resume`)
 
 If any of the above fields is missing or vague, the ticket isn't ready. Stop and report
 to the user with: `Ticket TXXX is not fully specified — needs <field>. Re-run /develop
@@ -323,7 +412,7 @@ If any dependency fails the check:
   the dependency finishes, return to the current ticket.
 - **If the dependency ticket exists but its declaration's signature differs**
   from what the current ticket assumes: this is a real planning bug — the
-  parent's signature drifted. Hard stop B3 (SCOPE / DEFINITION ERROR) so the
+  parent's signature drifted. Hard stop B2 (SCOPE / DEFINITION ERROR) so the
   user can reconcile.
 - **If the dependency ticket is missing entirely** (named in `Depends on`
   but no ticket in the board with that ID, or named declaration doesn't
@@ -331,7 +420,7 @@ If any dependency fails the check:
   return.
 
 Only hard-stop here if the dependency situation is genuinely off-track
-(B3 or B4).
+(B2 or B3).
 
 ### 2b. Baseline build
 
@@ -403,26 +492,33 @@ If the lemma exists with a slightly different name: use the actual name. Update 
 ticket's progress notes with the actual name found.
 
 If the lemma doesn't exist after the **five-method search** (`mathlib-search.md`):
-this is a Tier-A MATHLIB GAP. Decide whether it qualifies for A1 (focused
-project lemma) or B4 (off-track, mathlib-contribution scale):
+this is a Tier-A MATHLIB GAP. In beastmode, the default response is spawn
+a sub-ticket and continue (A1). Only escalate to B3 (off-track) if the
+missing fact is genuinely research-scale:
 
-- **A1 (spawn sub-ticket and continue)** if the missing fact is:
-  - Statable in one or two Lean lines
-  - Provable from facts already in mathlib or already in the project
-  - Naturally part of the project's mathematical area (not an isolated
-    abstract algebra fact when the project is about analysis, etc.)
+- **A1 (spawn sub-ticket and continue) — the default**:
+  - The missing fact is statable in a few Lean lines
+  - It's provable from facts already in mathlib or already in the project
+  - It's naturally part of the project's mathematical area
 
-  Then spawn a sub-ticket per the "Spawning sub-tickets" section. Statement
-  is the needed lemma's type; sketch is what you would do to prove it from
-  the existing infrastructure. Recurse into the new ticket.
+  Spawn a sub-ticket per the "Spawning sub-tickets" section. Statement
+  is the needed lemma's type; sketch is what you would do to prove it
+  from the existing infrastructure. Recurse into the new ticket.
 
-- **B4 (off-track, real stop)** if the missing fact is:
-  - A major mathlib API gap that would need a multi-file contribution
-  - A research-scale result (a published-paper theorem nobody has formalised)
-  - Outside the project's stated area
+  In beastmode, "the proof of this sub-ticket will itself need sub-tickets"
+  is **not** an escalation reason — it's expected. Spawn whatever depth
+  the math requires.
 
-  Report B4 with the concrete reason and let the user decide whether to
-  ticket it upstream, redirect the parent, or pause the project.
+- **B3 (off-track, real stop)** only if the missing fact is at
+  published-paper-theorem scale:
+  - A research-level result nobody has formalised, requiring its own
+    multi-week development by mathlib standards
+  - Outside the project's stated mathematical area (`plan.md` explicitly
+    excludes it)
+
+  Report B3 with concrete evidence (cite the plan paragraph, name the
+  published theorem) and let the user decide whether to ticket it
+  upstream, redirect the parent, or pause the project.
 
 In neither case do you invent a "substitute that looks similar" — that's how
 silent inconsistency creeps in.
@@ -463,7 +559,7 @@ required >1 lemma), update the ticket's progress notes:
 - ...
 ```
 
-The progress notes serve two purposes: a future `/extended-work --resume` can pick up
+The progress notes serve two purposes: a future `/beastmode --resume` can pick up
 exactly where you left off, and the user can scan the ticket board to see how things are
 going without reading the full Lean files.
 
@@ -551,7 +647,7 @@ Append a final progress note:
 ### On DONE
 
 ```
-## /extended-work report — [TXXX] <title>
+## /beastmode report — [TXXX] <title>
 
 Status: DONE
 Time on ticket: from <start ISO> to <end ISO>
@@ -588,11 +684,10 @@ Cycles: <approximate number of try-diagnose-adjust loops>
 ### On a Tier-B hard stop
 
 ```
-## /extended-work report — [TXXX] <title>
+## /beastmode report — [TXXX] <title>
 
-Status: BLOCKED — <one of: PROOF-SKETCH FUNDAMENTALLY WRONG (B2) /
-                  SCOPE-DEFINITION ERROR (B3) / OFF-TRACK (B4) /
-                  DEPTH LIMIT (B5) / BROKEN BASELINE (B6)>
+Status: BLOCKED — <one of: SCOPE-DEFINITION ERROR (B2) /
+                  OFF-TRACK (B3) / BROKEN BASELINE (B4)>
 
 ### Sub-tickets spawned during this session
 - [TYYY] <math name> (depth 1) — DONE / in_progress / blocked
@@ -600,10 +695,11 @@ Status: BLOCKED — <one of: PROOF-SKETCH FUNDAMENTALLY WRONG (B2) /
 
 ### What stopped the work
 <concrete description as required by the corresponding stop condition.
-For B4 (OFF-TRACK), cite the specific bullet from the B4 definition that
-applies: mathlib-contribution scale, research-scale depth, plan
-contradiction, or replanning needed. "I don't like this approach" is not
-a valid B4 reason.>
+For B3 (OFF-TRACK), cite the specific bullet from the B3 definition that
+applies: published-theorem scale, or explicit plan paragraph contradiction.
+"I don't like this approach", "this is taking long", "this is hard" are
+NOT valid B3 reasons in beastmode. If you find yourself reaching for one
+of those, the right move is to keep working — not to stop.>
 
 ### What was tried
 <specific tactics, mathlib searches, sub-tickets considered but not spawned
@@ -629,17 +725,17 @@ or move on.
 
 ## Multi-ticket / batch usage
 
-`/extended-work` is single-ticket. To work several in sequence:
+`/beastmode` is single-ticket. To work several in sequence:
 
 ```bash
 # bash loop in the user's terminal
 for i in $(seq 1 10); do
   echo "iteration $i"
-  # invoke /extended-work; capture exit; break if BLOCKED
+  # invoke /beastmode; capture exit; break if BLOCKED
 done
 ```
 
-Or run `/extended-work` repeatedly in Claude Code, each time letting it auto-pick the
+Or run `/beastmode` repeatedly in Claude Code, each time letting it auto-pick the
 next ticket. The pattern keeps each ticket's context isolated, which matches the
 "deep focus on one ticket" principle.
 
@@ -650,26 +746,29 @@ proof-tickets followed by their cleanup-tickets followed by the next proof-ticke
 
 ## Why this design
 
-`/develop` produced the original plan. The ticket has a statement, sketch, sources,
-lemmas. But in practice no plan anticipates every sub-step — proofs surface ingredients
-the planner didn't foresee. Past versions of this command hard-stopped on those
-surprises, which felt productive (concrete report back) but in practice left workers
-parked, waiting for the user to manually add a ticket and resume.
+`/develop` produces the original plan. The ticket has a statement, sketch,
+sources, lemmas. But no plan anticipates every sub-step — proofs surface
+ingredients the planner didn't foresee. Past versions of this command hard-
+stopped on those surprises, which felt productive (concrete report back) but
+in practice left workers parked, waiting for the user to manually add a ticket
+and resume. Earlier versions also imposed a recursion depth cap and a "sketch
+fundamentally wrong" hard stop, both of which broke the marathon flow.
 
-The new design is: **gaps that have clear mathematical content become sub-tickets,
-and the worker keeps going**. The role separation with `/develop` is preserved —
-every sub-ticket follows `/develop`'s ticket template (Statement / Proof Sketch /
-Mathlib Lemmas / Sources / Generality), so a `/develop --continue` would recognise
-the work. The split is no longer "develop plans, extended-work executes blindly"
-but "develop plans the original, extended-work fills focused gaps and executes
-both".
+Beastmode's design: **the worker is responsible for finishing the goal, end
+to end, without manual intervention except on genuine off-track or wrong-
+statement situations.** Gaps with mathematical content become sub-tickets via
+`/develop`'s template. Wrong strategies become replans via `/develop --continue`.
+Sub-tickets can recurse to any depth the math requires. There is no time
+budget. The role separation with `/develop` is preserved — every sub-ticket
+and every replan follows `/develop`'s template, so the work is recognisable
+to a later planning pass.
 
-Hard stops are reserved for cases where sub-ticketing genuinely doesn't help:
-the parent's sketch is wrong as a strategy (B2); the parent's statement is
-mathematically wrong (B3); the gap is research-scale rather than engineering-scale
-(B4); the sub-ticket chain has gone too deep (B5); the baseline build is broken
-(B6). For each, the stop produces a concrete, evidenced report back. "It's hard"
-is still not evidence.
+Hard stops are reserved for the three cases where the worker genuinely
+cannot proceed: the **statement** is wrong (B2 SCOPE / DEFINITION ERROR),
+the work has drifted onto material genuinely outside the project's
+mathematical scope (B3 OFF-TRACK), or the project doesn't build to start
+with (B4 BROKEN BASELINE). "It's hard" is still not evidence. Neither is
+"this is taking a while" — marathon sessions are expected to take a while.
 
 ---
 

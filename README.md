@@ -6,11 +6,11 @@ Built on **14,000+ real mathlib PR review comments** with **7,273 before/after c
 
 ## What It Does
 
-### Develop New Mathematics — Plan with `/develop`, then Execute with `/extended-work`
+### Develop New Mathematics — Plan with `/develop`, then Execute with `/beastmode`
 
 The development workflow is **split into planning and execution** to prevent the "agent
 reconsiders the whole approach mid-proof" failure mode. `/develop` does the strategic
-thinking; `/extended-work` does the tactical implementation; neither does the other's
+thinking; `/beastmode` does the tactical implementation; neither does the other's
 job.
 
 **`/develop` — planning only.**
@@ -18,14 +18,17 @@ job.
 - **Comprehensive plan** from your references; exhaustive mathlib search; API design for every new declaration.
 - **Detailed self-contained tickets.** Every proof/definition ticket contains the full **Lean Statement**, a numbered **Proof Sketch** citing sources, the **Mathlib lemmas needed** (verified to exist), the **Sources** with bibliographic info, and the **Generality decision**. Detailed enough that no replanning is needed once execution starts.
 - **Algorithmic cleanup-cadence**: every 3 proof tickets per file → cleanup ticket; per-file finals; pre-milestone `/cleanup-all`; final-of-everything cleanup. The cadence is verified at planning time and re-checked at every resume audit.
-- **Resume & takeover modes**: `--continue` audits the ticket board against the current code and proposes updates (including missing cleanup tickets); `--takeover` creates a plan for an existing project. Both end with a hand-off to `/extended-work`.
+- **Resume & takeover modes**: `--continue` audits the ticket board against the current code and proposes updates (including missing cleanup tickets); `--takeover` creates a plan for an existing project. Both end with a hand-off to `/beastmode`.
 - **No execution.** Once the board is approved, `/develop` stops.
 
-**`/extended-work` — execution only.**
+**`/beastmode` — marathon execution. Stops at nothing — but stays on-target.**
 
-- **Single ticket focus.** Picks the next available ticket (or `--ticket TXXX`) and works it to completion or a concrete approach error. Forbidden phrases include *"this is a multi-week effort"*, *"this is too complex"*, *"let me try a different approach"* (without first proving the planned one fails).
-- **Strict stop conditions.** Stops only on DONE / PROOF-SKETCH FAILURE / MATHLIB GAP / SCOPE-DEFINITION ERROR / DEPENDENCY NOT MET. Each requires a concrete report — which step failed, what was tried, why each attempt failed, a specific replanning suggestion. Vague excuses are not stop conditions.
-- **Quality enforced throughout** — no `sorry`, no new axioms (`#print axioms` checked), maximum generality, gates run on the diff before marking the ticket done (definition_protected, theorem_statement_protected, lake_build_file).
+- **Pick a ticket, finish the goal.** No matter how deep the path goes. When a sub-step needs a missing lemma, missing dependency, or sub-result that isn't on the board, the worker spawns a sub-ticket *in /develop's ticket-template format* and immediately works it. When the parent's sketch turns out to be wrong as a strategy, the worker invokes `/develop --continue` to replan inline and keeps going.
+- **On-target vigilance, continuously.** Before each sub-ticket and step, the worker confirms: serves the plan's main goal? stays in the project's mathematical area? a refinement, not a divergence? Vigilance is *for* on-target work, not against it.
+- **Scope growth that stays on-target is great news.** A "two lemmas" step turning out to need ten is more mathematics captured — exactly the point of the marathon. The harder the work, the more energy goes in (Super Saiyan ethos: the stronger the opponent, the stronger you get).
+- **No recursion cap, no time budget.** "It's late", "this is taking a while", "we're 5 sub-tickets deep", "let me try a different approach" — none of these are legitimate stops.
+- **Only legitimate stops**: DONE / SCOPE-DEFINITION ERROR (statement actually wrong) / OFF-TRACK (drift onto material genuinely outside the project's mathematical area, with concrete evidence) / BROKEN BASELINE (`lake build` broken on entry).
+- **Quality enforced throughout** — no `sorry`, no new axioms (`#print axioms` checked), maximum generality, gates run on the diff before marking the ticket done.
 
 ### Clean Up Existing Code (`/cleanup`)
 
@@ -141,7 +144,7 @@ activate the new tool.
 | Command | Description |
 |---------|-------------|
 | `/develop` | **Planning only.** Mathlib search, API design, detailed tickets (Statement + Proof Sketch + Mathlib lemmas + Sources + Generality per ticket). Stops after approval. |
-| `/extended-work` | **Execution only.** Pick one ticket, work non-stop to DONE or concrete approach error. Strict no-complain mode. |
+| `/beastmode` | **Marathon execution. Stops at nothing.** Pick a ticket and finish the goal — spawn sub-tickets in `/develop`'s format for missing lemmas, replan via `/develop --continue` for wrong strategies, no recursion cap, no time budget. Only stops: DONE / SCOPE-DEFINITION ERROR / OFF-TRACK (genuine, with evidence) / BROKEN BASELINE. |
 | `/cleanup` | Style audit + cleanup + golf (whole file or single declaration). 7-phase methodical workflow; absorbed `/check-style` (Phase 2 audit) and `/check-mathlib` (Phase 4 item 13: five-method search-status block + six strict mathlib-replacement rules). |
 | `/cleanup-all` | Run /cleanup on every file in the project |
 | `/expert-review` | Two-mode external review: produce a self-contained math brief (`REVIEW_BRIEF.md`), wait for the reviewer's response, then integrate their guidance into the ticket board |
@@ -165,9 +168,9 @@ activate the new tool.
 /develop --takeover        # Plan a takeover of an existing project
 
 # Execute
-/extended-work             # Pick the next available ticket and work it to completion
-/extended-work --ticket T042   # Specific ticket
-/extended-work --resume    # Resume an in_progress ticket from its progress notes
+/beastmode             # Pick the next available ticket and work it to completion
+/beastmode --ticket T042   # Specific ticket
+/beastmode --resume    # Resume an in_progress ticket from its progress notes
 
 # Finish
 /pre-submit                # Final-review checklist after all tickets are done
@@ -184,7 +187,7 @@ activate the new tool.
 7. **(Optional)** ChatGPT plan validation if MCP available.
 8. **User approval.** After approval, `/develop` stops.
 
-**How `/extended-work` works (execution):**
+**How `/beastmode` works (execution):**
 
 1. **Pick** — auto-pick the next ticket whose dependencies are done, or honour `--ticket TXXX`.
 2. **Read** the ticket fully. If any required field (Statement / Proof Sketch / Mathlib lemmas / Sources / Generality) is missing, refuse to start and ask the user to re-run `/develop` to complete the ticket.
@@ -336,7 +339,7 @@ All data is privacy-preserving -- only technical content is collected, no person
 mathlib-quality/
 ├── commands/                    # Slash command implementations
 │   ├── develop.md               # Planning-only: mathlib search, API design, detailed tickets
-│   ├── extended-work.md         # Execution-only: single ticket, work to done-or-error, no complaints
+│   ├── beastmode.md            # Marathon execution: spawn sub-tickets, replan, stop at nothing
 │   ├── cleanup.md               # Style audit + fix + golf (8-phase; absorbed /check-style + /check-mathlib)
 │   ├── cleanup-all.md           # Project-wide cleanup (one /cleanup per file)
 │   ├── decompose-proof.md       # Break long proofs into helper lemmas (with approval gate)

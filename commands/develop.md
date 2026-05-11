@@ -1,6 +1,6 @@
 ---
 name: develop
-description: Plan a mathematical development project (planning-only). Searches mathlib, designs the API, drafts proof sketches from your sources, and writes detailed self-contained tickets. Workers run via /extended-work, not here.
+description: Plan a mathematical development project (planning-only). Searches mathlib, designs the API, drafts proof sketches from your sources, and writes detailed self-contained tickets. Workers run via /beastmode, not here.
 ---
 
 # /develop — Mathematical Development Planner
@@ -12,13 +12,13 @@ the full proof sketch with cited sources** — detailed enough that no replannin
 needed once execution starts.
 
 **`/develop` is planning-only.** Workers don't run here. Once the ticket board is
-approved, invoke `/extended-work` to pick up the next available ticket and work it to
+approved, invoke `/beastmode` to pick up the next available ticket and work it to
 completion.
 
 This split keeps strategic thinking (mathlib search, API design, proof sketching from
 sources, generality decisions) in `/develop` and tactical execution (state declaration,
-call planned lemmas, iterate to compilation) in `/extended-work`. It prevents the
-"agent reconsiders the whole approach mid-proof" failure mode — once `/extended-work`
+call planned lemmas, iterate to compilation) in `/beastmode`. It prevents the
+"agent reconsiders the whole approach mid-proof" failure mode — once `/beastmode`
 starts a ticket, the plan is fixed; the worker either implements it or hard-stops with
 a concrete reason it can't.
 
@@ -31,7 +31,7 @@ a concrete reason it can't.
 /develop --takeover                 # Force takeover mode on existing code (creates tickets to bring it to completion)
 ```
 
-After any of these completes and the ticket board is approved, run `/extended-work` to
+After any of these completes and the ticket board is approved, run `/beastmode` to
 start (or resume) work.
 
 ---
@@ -48,8 +48,8 @@ This is **not required** — the command works without it — but catches errors
 - **Sketch sanity-check**: when drafting a proof sketch for a ticket, ask ChatGPT
   whether the sketch's argument structure is sound
 
-(`/extended-work` may also consult ChatGPT during execution if available; that's
-documented separately in `extended-work.md`.)
+(`/beastmode` may also consult ChatGPT during execution if available; that's
+documented separately in `beastmode.md`.)
 
 All ChatGPT questions must be **fully self-contained** — ChatGPT has no access to
 local files. Include all definitions, theorem statements, and reference citations
@@ -188,16 +188,16 @@ Shall I apply these updates? Anything else to change?
 Wait for user confirmation, then update `.mathlib-quality/tickets.md`. Items 6–9 are not
 optional unless the user explicitly opts out — they're the cadence rule, not a suggestion.
 
-### R5: Hand off to `/extended-work`
+### R5: Hand off to `/beastmode`
 
 After updating the ticket board, `/develop --continue` is done. Tell the user:
 
 ```
 Plan updated. Next available ticket: TXXX (<title>).
-Run `/extended-work` to pick it up and work it to completion.
+Run `/beastmode` to pick it up and work it to completion.
 ```
 
-`/develop` does not execute. Workers run via `/extended-work`.
+`/develop` does not execute. Workers run via `/beastmode`.
 
 ---
 
@@ -270,16 +270,16 @@ After the user confirms understanding:
    - Any structural work needed (file splits, import cleanup)
 3. Get user approval on the ticket board
 
-### T4: Hand off to `/extended-work`
+### T4: Hand off to `/beastmode`
 
 After ticket board approval, `/develop --takeover` is done. Tell the user:
 
 ```
 Takeover plan ready. N tickets created from the existing code.
-Run `/extended-work` to start working through them.
+Run `/beastmode` to start working through them.
 ```
 
-Same separation as the new-project flow: `/develop` plans, `/extended-work` executes.
+Same separation as the new-project flow: `/develop` plans, `/beastmode` executes.
 
 ---
 
@@ -495,19 +495,19 @@ theorem fooBar_insert {α : Type*} [CommMonoid α] [DecidableEq α]
 
 1. **Status / File / Depends on / Parallel / Type / (Parent)** — the metadata header
    (as before). The optional `Parent: TXXX` field is added when a sub-ticket is
-   spawned during execution by `/extended-work` to discharge a focused blocker
+   spawned during execution by `/beastmode` to discharge a focused blocker
    (missing lemma, missing dependency, parametric sub-step). Top-level tickets
    created by `/develop` itself never have a `Parent` field — `/develop` plans the
-   original; `/extended-work` adds focused sub-tickets in `/develop`'s template
-   format while it runs. See `commands/extended-work.md` for the sub-ticket flow
+   original; `/beastmode` adds focused sub-tickets in `/develop`'s template
+   format while it runs. See `commands/beastmode.md` for the sub-ticket flow
    and recursion-depth rules.
 2. **Statement** — the full Lean statement of the declaration, including the type
-   signature with all hypotheses, ending in `:= by sorry`. The `/extended-work` worker
+   signature with all hypotheses, ending in `:= by sorry`. The `/beastmode` worker
    must be able to copy this verbatim into the file. **No abbreviations, no "etc."**
 3. **Proof sketch** — a numbered list of steps. Each step names the *mathematical idea*
    ("Apply Cauchy's residue theorem"), the *tactical realisation* ("Use `Complex.residue`"),
    and any *bridging tactics* that may be needed. The sketch is detailed enough that the
-   `/extended-work` worker doesn't need to think strategically — only execute.
+   `/beastmode` worker doesn't need to think strategically — only execute.
 4. **Mathlib lemmas needed** — every mathlib lemma the proof sketch references, by exact
    name. The planner verifies each name exists before writing the ticket (search via
    `lean_loogle`/`lean_leansearch`/`lean_local_search`). If a lemma isn't found in
@@ -521,7 +521,7 @@ theorem fooBar_insert {α : Type*} [CommMonoid α] [DecidableEq α]
 
 The point of this level of detail is **no mid-work pivots**. The user explicitly asked
 for tickets detailed enough to avoid replanning due to unforeseen complications. If a
-ticket lacks any of fields 2–6, `/extended-work` will refuse to start and report
+ticket lacks any of fields 2–6, `/beastmode` will refuse to start and report
 "Ticket TXXX is not fully specified" — that's a planning bug, not a worker bug.
 
 **Other ticket rules:**
@@ -643,9 +643,9 @@ After the user approves, **`/develop` is done.** It does not execute the plan.
 
 `/develop` is **planning-only**. After the ticket board is approved:
 
-- **To start working tickets**: invoke `/extended-work` (single-ticket focused work session
+- **To start working tickets**: invoke `/beastmode` (single-ticket focused work session
   that picks the next available ticket and works it to completion or concrete approach
-  error). See `commands/extended-work.md`.
+  error). See `commands/beastmode.md`.
 - **To check progress**: `/develop --status` prints the current ticket board.
 - **When all tickets are done**: invoke `/pre-submit` for the final-review checklist
   (`lake build` clean, no `sorry`, no new axioms, etc.). The "Phase 3 Review & Iterate"
@@ -653,15 +653,15 @@ After the user approves, **`/develop` is done.** It does not execute the plan.
 
 The split is deliberate. `/develop` does the strategic thinking — searches mathlib,
 designs the API, drafts the proof sketches from the user's references, makes generality
-decisions. `/extended-work` does the tactical implementation — states the declaration,
+decisions. `/beastmode` does the tactical implementation — states the declaration,
 calls the planned mathlib lemmas, iterates to compilation. This separation prevents the
 "agent reconsiders the whole approach mid-proof" failure mode that motivated the
 detailed-tickets requirement (see Phase 1f's "Ticket rules").
 
 Tickets are written to be **complete and self-contained** so a worker doesn't need to
-think strategically — only execute. If a `/extended-work` worker finds the plan is
+think strategically — only execute. If a `/beastmode` worker finds the plan is
 genuinely wrong (proof-sketch failure, mathlib gap, scope/definition error per the stop
-conditions in `extended-work.md`), it stops with a concrete report and the user
+conditions in `beastmode.md`), it stops with a concrete report and the user
 re-invokes `/develop` to replan.
 
 ---
@@ -723,8 +723,8 @@ If ANY other axiom appears (especially `sorryAx`), the ticket is NOT done.
 
 ### 5. Tickets that prove insufficient on contact with reality
 
-If a `/extended-work` worker hits a hard-stop condition (proof-sketch failure, mathlib
-gap, scope/definition error per `extended-work.md`), the worker reports the failure and
+If a `/beastmode` worker hits a hard-stop condition (proof-sketch failure, mathlib
+gap, scope/definition error per `beastmode.md`), the worker reports the failure and
 stops. The user then re-invokes `/develop --continue`, which runs the resume-mode audit
 (R1–R5) — this is when the plan gets repaired:
 
@@ -739,13 +739,13 @@ stops. The user then re-invokes `/develop --continue`, which runs the resume-mod
    per-file cadence rule from §1f. This is the most common path by which cleanup tickets
    get skipped — new tickets get added during the resume audit without re-running the
    cadence rule.
-4. Once the board is updated and re-approved, the user runs `/extended-work` again to
+4. Once the board is updated and re-approved, the user runs `/beastmode` again to
    continue.
 
 ### 6. Periodic Cleanup (this is the rule, see §1f for the algorithm)
 
 Cleanup tickets are inserted **algorithmically** at planning time (§1f), re-checked at
-each `/extended-work` ticket pickup, and re-checked again whenever new tickets are added
+each `/beastmode` ticket pickup, and re-checked again whenever new tickets are added
 during a `/develop --continue` resume (§5 step 3 above). The cadence is:
 - **Per-file**: cleanup ticket every 3 proof tickets touching that file
 - **Final per-file**: one cleanup ticket after the last proof ticket on each file
