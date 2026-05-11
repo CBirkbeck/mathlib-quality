@@ -493,7 +493,14 @@ theorem fooBar_insert {α : Type*} [CommMonoid α] [DecidableEq α]
 
 **Ticket rules — every proof/definition ticket MUST include:**
 
-1. **Status / File / Depends on / Parallel / Type** — the metadata header (as before).
+1. **Status / File / Depends on / Parallel / Type / (Parent)** — the metadata header
+   (as before). The optional `Parent: TXXX` field is added when a sub-ticket is
+   spawned during execution by `/extended-work` to discharge a focused blocker
+   (missing lemma, missing dependency, parametric sub-step). Top-level tickets
+   created by `/develop` itself never have a `Parent` field — `/develop` plans the
+   original; `/extended-work` adds focused sub-tickets in `/develop`'s template
+   format while it runs. See `commands/extended-work.md` for the sub-ticket flow
+   and recursion-depth rules.
 2. **Statement** — the full Lean statement of the declaration, including the type
    signature with all hypotheses, ending in `:= by sorry`. The `/extended-work` worker
    must be able to copy this verbatim into the file. **No abbreviations, no "etc."**

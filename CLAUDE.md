@@ -4,7 +4,7 @@
 A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up to mathlib standards before PR submission.
 
 ## Current Status
-**Version:** 0.25.0
+**Version:** 0.26.0
 
 ### Completed
 - Plugin architecture with 5 commands defined in `commands/`
@@ -62,7 +62,7 @@ A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up
 
 ## Commands Available
 - `/develop` - **Planning-only.** Searches mathlib, designs API, drafts proof sketches from user-provided sources, writes detailed self-contained tickets (Statement + numbered Proof Sketch + Mathlib Lemmas + Sources + Generality Decision per ticket). Stops once the board is approved. Workers run via `/extended-work`.
-- `/extended-work` - **Execution-only.** Single-ticket focused work session; picks the next available ticket and works it to completion or concrete approach error. Strict no-complain / no-pivot / no-divergence mode. Stop conditions are explicit: DONE / PROOF-SKETCH FAILURE / MATHLIB GAP / SCOPE-DEFINITION ERROR / DEPENDENCY NOT MET — each requires a concrete report (which step failed, what was tried, why each attempt failed, replanning suggestion). Vague excuses like "this is a multi-week effort" are forbidden.
+- `/extended-work` - **Execution with sub-ticket spawning.** Picks a ticket and works to completion. When a sub-step needs something not on the board (missing mathlib lemma that's small enough to be a focused project lemma, missing dependency declaration, parametric sub-step worth its own lemma), the worker spawns a sub-ticket *in /develop's ticket-template format* (Statement / Proof Sketch / Mathlib Lemmas / Sources / Generality / Parent), marks the parent as depending on it, recurses into the new ticket, and returns when done. Sub-ticket recursion is capped (default depth 3). Hard-stops are reserved for genuine off-track: DONE / PROOF-SKETCH FUNDAMENTALLY WRONG / SCOPE-DEFINITION ERROR / OFF-TRACK (mathlib-contribution scale, research-scale, plan-contradiction, or replanning needed) / DEPTH LIMIT / BROKEN BASELINE. "It's hard" and "the mathlib lemma I expected isn't there" are explicitly NOT stop conditions — the latter triggers a sub-ticket.
 - `/cleanup` - **9-phase methodical workflow**: doctor (baseline build, abort if broken) → prepare → style-audit punch-list → file-level fixes → per-declaration deep golf (with diff gates) → refactoring → final-gates + cumulative checks → **Phase 6.5 hand-off to the built-in `/simplify` skill for holistic review** → report. Absorbed `/check-style` (Phase 2 audit), `/check-mathlib` (Phase 4 item 13: five-method search + six strict rules + common-equivalents lookup — `references/mathlib-search.md`), the inline mechanical pass of `/generalise` (Phase 4 item 18), and shouyi-style diff gates (`references/cleanup-gates.md`).
 - `/cleanup-all` - Run /cleanup on every file in the project, one at a time, with progress tracking
 - `/decompose-proof` - Break long proofs into helpers (two-pass: analysis with DECOMPOSE plans → parallel agent decomposition)

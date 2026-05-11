@@ -1,20 +1,28 @@
 ---
 name: extended-work
-description: Pick up one ticket from the /develop ticket board and work it to completion or concrete approach error. Strict no-complaining, no-pivoting, no-divergence mode. Single-ticket focus, non-stop until a hard stop condition.
+description: Pick up a ticket and work it to completion. When a sub-step needs a missing lemma, a missing dependency, or a sub-result not on the board, spawn a sub-ticket following /develop's template and recurse. Only stop on genuine off-track conditions — a wrong statement, scope outside the project, depth limit, or broken baseline build.
 ---
 
-# /extended-work — Single-Ticket Work Session
+# /extended-work — Single-Ticket Work Session With Sub-Ticket Spawning
 
-Pick up one ticket and work on it. Don't stop until either the ticket is **done** or you
-have a **concrete, evidenced reason** the planned approach doesn't work.
+Pick up one ticket and work it to completion. If you encounter a blocker that has
+a clear mathematical content — a missing lemma whose statement you can articulate,
+a missing dependency that needs creating, a sub-step that needs its own intermediate
+result — do **not** stop. Spawn a sub-ticket following `/develop`'s template, mark the
+current ticket as depending on it, and recursively work the sub-ticket. When the
+sub-ticket completes, return to the parent.
 
-This skill is the execution counterpart to `/develop`. `/develop` plans, designs the API,
-writes detailed tickets including the Lean statement and proof sketch from the user's
-sources. `/extended-work` *executes* those tickets.
+This skill is the execution counterpart to `/develop`. `/develop` does the original
+project plan; `/extended-work` executes it, and when execution surfaces a gap that
+the plan didn't anticipate, fills the gap by adding focused tickets *in /develop's
+format* and proceeding. The role separation is preserved — every new ticket follows
+the planning rules in `commands/develop.md` (statement, proof sketch, mathlib lemmas,
+sources, generality decision).
 
-The split is deliberate: `/develop` does the thinking, `/extended-work` does the doing. A
-worker that's been given a complete plan with the proof sketch should not need to think
-about strategy — only about implementing the planned approach.
+The only legitimate hard stops are: completion of the original ticket and all its
+sub-tickets; a ticket whose statement is mathematically wrong; a blocker that's
+genuinely outside the project's scope; sub-ticket recursion depth exhausted; the
+baseline `lake build` already broken on entry.
 
 ## Hard rules (read these first; they are non-negotiable)
 
@@ -23,13 +31,16 @@ The following responses are **forbidden** and will be rejected:
 - *"This is a multi-week effort"* / *"This will take a long time"* / *"This is non-trivial"*
 - *"Let me come back to this"* / *"I'll skip this for now"* / *"This needs more time"*
 - *"I'm not sure I can do this"* / *"This might be too complex"*
-- *"Let me try a different approach"* — **only** allowed after you have proven the
-  planned approach fails, with concrete evidence (specific tactic that fails, specific
-  mathlib lemma that turns out to not exist, specific hypothesis that's genuinely
-  insufficient). General "I don't like this approach" is not evidence.
+- *"Let me try a different approach"* without evidence. Pivoting away from the
+  planned sketch is only allowed after proving the planned approach fails. If the
+  failure is a missing piece with clear mathematical content, **spawn a sub-ticket
+  for it and proceed** — that is not pivoting, that is filling in a gap.
 - Asking the user mid-work *"should I continue?"* / *"do you want me to keep going?"*
   — yes, continue. Don't ask.
 - Marking a ticket "done" with a `sorry` still in the file. **Never.**
+- Hard-stopping on MATHLIB GAP or a missing sub-lemma when the gap is small enough
+  to be a focused sub-ticket. The presumption is **spawn a sub-ticket**, not stop.
+  Stops are reserved for genuinely off-track cases (criteria below).
 
 The following are **mandatory**:
 
@@ -43,54 +54,183 @@ The following are **mandatory**:
   meaningful step. Future sessions resume from these notes.
 - Stop only on the hard stop conditions below.
 
-## Hard stop conditions
+## Stop conditions — two tiers
 
-Stop the work and report **only** when one of these is true:
+### Tier A — Spawn-and-continue (the default response to blockers)
 
-1. **DONE** — The ticket's declaration is stated and proven; `lean_diagnostic_messages`
-   clean; no `sorry`; `#print axioms <decl>` shows only `propext`, `Quot.sound`,
-   `Classical.choice` (or no axioms beyond mathlib's standard set); `lake build` clean
-   on this module.
-2. **PROOF-SKETCH FAILURE** — A specific step in the ticket's proof sketch cannot
-   succeed, and you've exhausted the search/retry strategy. Your report MUST name:
-   - which step failed (e.g., "Step 3: apply `Finset.prod_image`")
-   - what you tried (specific tactics, specific mathlib searches, specific alternative
-     formulations)
-   - why each attempt failed (concrete error, not "didn't work")
-   - a concrete replanning suggestion (e.g., "the proof sketch assumes `f` is injective,
-     but the statement doesn't enforce that — needs an extra hypothesis")
-3. **MATHLIB GAP** — A mathlib lemma the proof sketch references does not exist (and no
-   equivalent variant does either, after the five-method search). Your report MUST name:
-   - the missing lemma (the name the sketch expected)
-   - the type signature that would be needed
-   - what you tried as a substitute
-   - whether the gap is a candidate for upstream contribution
-4. **SCOPE / DEFINITION ERROR** — The ticket's stated declaration is mathematically
-   wrong (the conclusion is false as stated; the hypotheses don't actually entail the
-   conclusion). Your report MUST include a counterexample or a concrete reason the
-   statement is wrong, not just "I think this might be wrong".
-5. **DEPENDENCY NOT MET** — A ticket the current one depends on isn't actually done
-   (the dependent declaration has `sorry`, doesn't compile, or has a different
-   signature than the current ticket assumes). Stop and flag for the user.
+These conditions used to be hard stops. They are now triggers to spawn a sub-ticket
+via the focused-planning flow below, then continue working. The intent is that
+`/extended-work` is **self-sufficient at filling in gaps within the project's scope**.
+
+A1. **MATHLIB GAP that can be a project lemma** — a mathlib lemma the sketch
+    references doesn't exist (after the five-method search), and the missing fact
+    is small enough to be a focused project lemma. Spawn a sub-ticket with the
+    lemma's statement and the sketch you would use to prove it. Recurse into the
+    sub-ticket. When done, return to the parent step.
+
+A2. **MISSING SUB-LEMMA** — a step of the parent's sketch needs an intermediate
+    result the sketch didn't surface as its own lemma, but you can state it
+    cleanly. Spawn a sub-ticket. Recurse. Return.
+
+A3. **DEPENDENCY MISSING FROM THE BOARD** — the current ticket's `Depends on`
+    names a ticket that doesn't exist yet, or a declaration the ticket assumes
+    exists but doesn't. Spawn a sub-ticket for the missing dependency (or
+    declarations the parent assumes), recurse, return.
+
+A4. **PARAMETRIC SUB-STEP NEEDED** — the sketch's step is parametric in a way
+    that's better discharged as its own universally-quantified lemma. Spawn a
+    sub-ticket with the universal claim. Recurse. Return.
+
+In every Tier-A case, log to the parent ticket's progress notes what was spawned
+and why, then proceed.
+
+### Tier B — Genuine hard stops (these end the session)
+
+Stop and report **only** when one of these is true:
+
+B1. **DONE** — The original ticket and every sub-ticket it transitively spawned
+    are complete. `lean_diagnostic_messages` clean on every touched file; no
+    `sorry` anywhere in the new declarations; `#print axioms` clean; `lake build`
+    clean on the modules touched.
+
+B2. **PROOF-SKETCH FUNDAMENTALLY WRONG** — the parent's sketch is not just
+    missing an ingredient (Tier A); it is wrong as a proof strategy. For example,
+    "induction on n" but the inductive step would need a hypothesis the
+    statement doesn't grant. No reasonable sub-ticket fixes this — only a
+    replan does. Your report MUST name:
+    - which step is fundamentally wrong
+    - why no sub-ticket of bounded scope can fix it
+    - a concrete replanning suggestion (re-state with extra hypothesis, replace
+      strategy with X, etc.)
+
+B3. **SCOPE / DEFINITION ERROR** — the ticket's stated declaration is
+    mathematically wrong (conclusion false as stated; hypotheses don't entail
+    the conclusion). Report a counterexample or a concrete reason. User decides
+    whether to fix the statement or pivot.
+
+B4. **OFF-TRACK** — the work the worker is being asked to do isn't a
+    recognisable extension of the project's plan. Specifically, one of:
+    - The missing lemma is large enough to be a mathlib contribution in its
+      own right, not a focused project lemma (= upstream contribution
+      candidate, not a sub-ticket)
+    - The sub-ticket needed would itself require sub-tickets of unbounded
+      mathematical depth (= the gap is research-scale, not engineering-scale)
+    - The work the worker is on contradicts a stated intent in `plan.md` or
+      the parent ticket's generality decision
+    - Re-planning the parent's sketch is needed before sub-tickets can be
+      added meaningfully
+
+    "Off-track" requires evidence. It is **not** "I don't like this approach".
+    Your report MUST cite the specific reason from the list above.
+
+B5. **DEPTH LIMIT** — sub-ticket recursion has reached depth 3 (configurable;
+    see below). Past this, sub-ticketing is getting away from the parent's
+    scope. Stop, report the spawned chain, let the user decide.
+
+B6. **BROKEN BASELINE** — `lake build` was already broken when work started.
+    The project isn't in a workable state. Hard stop on entry (Phase 2b).
 
 What is **not** a stop condition:
 
 - "I've been trying for a while." Keep going.
 - "This is harder than I thought." Keep going.
-- "I want to try a different approach." Only after exhausting the planned one.
+- "I want to try a different approach." If the planned approach fails because
+  of a missing ingredient with clear content, spawn a sub-ticket — that is
+  filling in a gap, not pivoting.
 - "The proof is long." Long is fine. Keep going.
-- "I think there's a more elegant proof." Implement the planned proof. If it works,
-  golf in `/cleanup` later. Don't pivot mid-implementation.
+- "I think there's a more elegant proof." Implement the planned proof. Golf
+  in `/cleanup` later.
+- "The mathlib lemma I expected isn't there." Spawn a sub-ticket per A1.
+- "A dependency isn't on the board yet." Spawn a sub-ticket per A3.
 
 ## Usage
 
 ```
-/extended-work                       # Auto-pick the next available ticket
-/extended-work --ticket T042         # Specific ticket
-/extended-work --resume              # Resume an in_progress ticket from its progress notes
+/extended-work                              # Auto-pick the next available ticket
+/extended-work --ticket T042                # Specific ticket
+/extended-work --resume                     # Resume an in_progress ticket
+/extended-work --max-depth N                # Override sub-ticket recursion limit (default 3)
 ```
 
-For new projects, run `/develop` first to create the ticket board.
+For new projects, run `/develop` first to create the original ticket board.
+Sub-tickets are added by `/extended-work` itself during execution.
+
+---
+
+## Spawning sub-tickets (focused planning)
+
+When you hit a Tier-A blocker (missing lemma, missing dependency, parametric
+sub-step needed), perform a focused-planning pass following `commands/develop.md`'s
+ticket template:
+
+1. **Re-verify the gap is real.** Run the five-method mathlib search
+   (`references/mathlib-search.md`). Search the project's existing declarations.
+   A "missing" lemma that actually exists under a different name is not a Tier-A
+   trigger — use the existing lemma and continue.
+
+2. **State the new ticket using `/develop`'s ticket template** (read
+   `commands/develop.md` for the exact field set):
+   - `Status`: open
+   - `Title`: a math-name description in English
+   - `File`: same file as parent unless the new lemma is naturally in a
+     different module
+   - `Depends on`: inherit from the parent's `Depends on` (the sub-ticket
+     can only use what the parent could)
+   - `Parent`: the parent ticket's ID (new field — tracks the sub-ticket
+     relationship; show this in reports)
+   - `Type`: `lemma` / `def` / etc.
+   - `Statement`: the exact Lean statement of the missing piece
+   - `Proof sketch`: numbered steps. Draw from the context in which the gap
+     was hit — the parent's sketch step that referenced this is the
+     starting point for the new sketch
+   - `Mathlib lemmas needed`: anything you've identified during the search
+   - `Sources`: inherit from the parent if the source covers this; otherwise
+     leave empty (the worker doesn't research literature)
+   - `Generality decision`: minimal — match the use site. Don't over-generalise
+     in a sub-ticket; that's `/develop`'s job, not `/extended-work`'s.
+
+3. **Update the parent ticket:**
+   - Append the new ticket ID to `Depends on`
+   - Add a progress entry: `<ISO>: spawning <new-ID> for <math reason>; sub-ticket added`
+   - Status stays `in_progress` — the parent is paused, not blocked
+
+4. **Save `tickets.md`.** This is the only file you write.
+
+5. **Recurse.** Re-enter Phase 0 with `--ticket <new-id>`. Track the recursion
+   depth (default cap = 3; see Tier-B condition B5).
+
+6. **On sub-ticket completion**, return to the parent's Phase 4 from the
+   step that triggered the spawn. The parent's progress notes record where
+   to resume.
+
+### Sub-ticket recursion depth
+
+The depth is the count of ancestors a ticket has in the sub-ticket chain. Top-level
+tickets (created by `/develop`) have depth 0. A sub-ticket spawned while working
+a depth-0 ticket has depth 1. And so on. Default cap is 3 — past that, the work
+has clearly drifted from the original ticket's scope and the user should judge.
+
+Track the depth in each sub-ticket's `Parent` chain. When deciding whether to
+spawn, check the current ticket's depth; if it's already at `--max-depth`, do
+NOT spawn — hard stop with condition B5.
+
+### What to put in the parent's progress notes when spawning
+
+```markdown
+**Progress**:
+- 2026-05-11T09:14: spawning T078 for "absolute summability of M/n^k on k ≥ 4"
+  (parent step 3 needs this; mathlib has tsum_comparison but with shape mismatch).
+  Sub-ticket added with parent=T042. Pausing parent at step 3.
+```
+
+When the sub-ticket completes:
+
+```markdown
+**Progress**:
+- ...
+- 2026-05-11T10:42: resumed from sub-ticket T078 (done). Step 3 now uses
+  `absoluteSummability_inv_pow` (newly proven). Continuing at step 4.
+```
 
 ---
 
@@ -100,15 +240,23 @@ For new projects, run `/develop` first to create the ticket board.
 PHASE 0   PICK             auto-pick next available ticket; or honour --ticket
 PHASE 1   READ             read ticket in full; understand statement, sketch, sources
 PHASE 2   PRE-WORK         dependencies done? lake build clean?
+                           (missing dependency → spawn sub-ticket per Tier A3)
 PHASE 3   STATE            write the declaration with sorry from the ticket's stated form
 PHASE 4   PROVE            iterate to completion using the proof sketch
+                           (mathlib gap → spawn sub-ticket per Tier A1 / A2)
 PHASE 5   VERIFY           no sorry, no axiom, lake build clean
-PHASE 6   GATES            cleanup-gates on the diff (definition / theorem / build)
+PHASE 6   GATES            cleanup-gates on the diff
 PHASE 7   MARK DONE        update ticket status; checkpoint final progress
+                           (if a parent was paused for sub-tickets, return to it)
 PHASE 8   REPORT
 ```
 
-Or, for cleanup tickets:
+Sub-tickets follow the same phase loop with their own depth indicator. The
+agent's stack of active tickets is tracked implicitly via each ticket's
+`Parent` field; resumption after a sub-ticket completes is via the parent's
+progress notes.
+
+For cleanup tickets:
 
 ```
 PHASE 0   PICK             same
@@ -159,7 +307,7 @@ If the ticket is a CLEANUP ticket (type: `cleanup`), skip to Phase 2 (delegate p
 
 ## PHASE 2 — Pre-work checks
 
-### 2a. Dependencies actually done
+### 2a. Dependencies actually done (or spawn a sub-ticket)
 
 For each `Depends on: TYYY`, verify `TYYY` is genuinely done — open the file, find the
 declaration `TYYY` covers, confirm:
@@ -167,7 +315,23 @@ declaration `TYYY` covers, confirm:
 - No `sorry`
 - Signature matches what the current ticket assumes
 
-If any dependency fails the check: hard stop (DEPENDENCY NOT MET, condition 5).
+If any dependency fails the check:
+
+- **If the dependency ticket exists but has `sorry`** (or hasn't been worked
+  yet, status `open`): switch to working that ticket first. Save the current
+  ticket's state, recurse into the dependency with `--ticket <its-id>`. When
+  the dependency finishes, return to the current ticket.
+- **If the dependency ticket exists but its declaration's signature differs**
+  from what the current ticket assumes: this is a real planning bug — the
+  parent's signature drifted. Hard stop B3 (SCOPE / DEFINITION ERROR) so the
+  user can reconcile.
+- **If the dependency ticket is missing entirely** (named in `Depends on`
+  but no ticket in the board with that ID, or named declaration doesn't
+  exist in the project): spawn a sub-ticket for it (Tier A3), recurse,
+  return.
+
+Only hard-stop here if the dependency situation is genuinely off-track
+(B3 or B4).
 
 ### 2b. Baseline build
 
@@ -222,7 +386,7 @@ broke.
 
 Work the proof sketch step by step. For each step:
 
-### 4a. Find the lemma
+### 4a. Find the lemma (or spawn a sub-ticket)
 
 The sketch names a mathlib lemma (e.g., "Apply `Finset.prod_image`"). Verify the lemma
 exists with that exact name and signature:
@@ -238,8 +402,30 @@ If the lemma exists with the exact name: use it.
 If the lemma exists with a slightly different name: use the actual name. Update the
 ticket's progress notes with the actual name found.
 
-If the lemma doesn't exist after the **five-method search** (`mathlib-search.md`): hard
-stop, condition 3 (MATHLIB GAP). Don't invent a substitute that "looks similar".
+If the lemma doesn't exist after the **five-method search** (`mathlib-search.md`):
+this is a Tier-A MATHLIB GAP. Decide whether it qualifies for A1 (focused
+project lemma) or B4 (off-track, mathlib-contribution scale):
+
+- **A1 (spawn sub-ticket and continue)** if the missing fact is:
+  - Statable in one or two Lean lines
+  - Provable from facts already in mathlib or already in the project
+  - Naturally part of the project's mathematical area (not an isolated
+    abstract algebra fact when the project is about analysis, etc.)
+
+  Then spawn a sub-ticket per the "Spawning sub-tickets" section. Statement
+  is the needed lemma's type; sketch is what you would do to prove it from
+  the existing infrastructure. Recurse into the new ticket.
+
+- **B4 (off-track, real stop)** if the missing fact is:
+  - A major mathlib API gap that would need a multi-file contribution
+  - A research-scale result (a published-paper theorem nobody has formalised)
+  - Outside the project's stated area
+
+  Report B4 with the concrete reason and let the user decide whether to
+  ticket it upstream, redirect the parent, or pause the project.
+
+In neither case do you invent a "substitute that looks similar" — that's how
+silent inconsistency creeps in.
 
 ### 4b. Apply the step
 
@@ -362,26 +548,32 @@ Append a final progress note:
 
 ## PHASE 8 — Report
 
-Print:
+### On DONE
 
 ```
 ## /extended-work report — [TXXX] <title>
 
-Status: DONE  (or: BLOCKED-on-<concrete reason>)
+Status: DONE
 Time on ticket: from <start ISO> to <end ISO>
 Cycles: <approximate number of try-diagnose-adjust loops>
 
-### Result
+### Sub-tickets spawned during this session
+- [TYYY] <math name> (depth 1) — DONE
+- [TZZZ] <math name> (depth 2, spawned from TYYY) — DONE
+- ...
+(If none: "None.")
+
+### Result (for the original ticket and each sub-ticket completed)
 - Declaration: `<decl_name>` at <file>:<line>
 - Lines: <N>
 - Mathlib lemmas used: <list>
-- Off-script bridging tactics needed: <list, e.g. push_cast at step 2>
+- Off-script bridging tactics needed: <list>
 
 ### Diagnostics
-✓ lean_diagnostic_messages clean
-✓ No sorry
+✓ lean_diagnostic_messages clean on all touched files
+✓ No sorry in the new declarations
 ✓ #print axioms shows only standard set
-✓ lake build clean on <module>
+✓ lake build clean on <modules>
 
 ### Gates
 ✓ definition_protected
@@ -393,29 +585,45 @@ Cycles: <approximate number of try-diagnose-adjust loops>
 <auto-suggest the next available ticket per dependency analysis, or "none ready">
 ```
 
-If the stop was a hard-stop condition 2–5 instead of DONE:
+### On a Tier-B hard stop
 
 ```
 ## /extended-work report — [TXXX] <title>
 
-Status: BLOCKED — <one of: PROOF-SKETCH FAILURE / MATHLIB GAP / SCOPE-DEFINITION ERROR / DEPENDENCY NOT MET>
+Status: BLOCKED — <one of: PROOF-SKETCH FUNDAMENTALLY WRONG (B2) /
+                  SCOPE-DEFINITION ERROR (B3) / OFF-TRACK (B4) /
+                  DEPTH LIMIT (B5) / BROKEN BASELINE (B6)>
+
+### Sub-tickets spawned during this session
+- [TYYY] <math name> (depth 1) — DONE / in_progress / blocked
+- ...
 
 ### What stopped the work
-<concrete description as required by the corresponding stop condition>
+<concrete description as required by the corresponding stop condition.
+For B4 (OFF-TRACK), cite the specific bullet from the B4 definition that
+applies: mathlib-contribution scale, research-scale depth, plan
+contradiction, or replanning needed. "I don't like this approach" is not
+a valid B4 reason.>
 
 ### What was tried
-<list of specific tactics, mathlib searches, alternative formulations attempted>
+<specific tactics, mathlib searches, sub-tickets considered but not spawned
+because they would also be off-track>
 
-### Concrete suggestion for replanning
-<not a vague "this needs rethinking"; a specific change>
+### Concrete suggestion
+<a specific change: re-state with extra hypothesis, ticket the missing
+lemma upstream to mathlib, replan the parent's sketch via /develop --continue,
+etc. Not "this needs rethinking".>
 
 ### Ticket state
-- Status: in_progress (left for the user to decide whether to mark blocked)
+- Parent: status in_progress (left for the user to decide)
+- Sub-tickets that completed: status done
+- Sub-tickets that didn't complete: in_progress
 - Progress notes updated through <ISO>
 ```
 
-The ticket stays `in_progress` so a `/develop --status` shows it. The user decides
-whether to replan, escalate, or move on to other tickets.
+The original ticket stays `in_progress` so `/develop --status` (or
+`/project-status`) shows it. The user decides whether to replan, escalate,
+or move on.
 
 ---
 
@@ -440,17 +648,28 @@ proof-tickets followed by their cleanup-tickets followed by the next proof-ticke
 
 ---
 
-## Why the strict no-complain mode
+## Why this design
 
-`/develop` produced a complete plan. The ticket has the statement, the sketch, the
-sources, the lemmas. There should be nothing left to "figure out at the strategic
-level." Workers that complain about difficulty have, in practice, been agents that
-slipped into "let me reconsider the whole approach" mode — exactly what `/develop` was
-designed to prevent.
+`/develop` produced the original plan. The ticket has a statement, sketch, sources,
+lemmas. But in practice no plan anticipates every sub-step — proofs surface ingredients
+the planner didn't foresee. Past versions of this command hard-stopped on those
+surprises, which felt productive (concrete report back) but in practice left workers
+parked, waiting for the user to manually add a ticket and resume.
 
-If the plan is wrong (which can happen), the right response is hard-stop condition 2 or
-3 with a concrete replanning suggestion — not "this is a multi-week effort." That's a
-tractable signal back to the user. "It's hard" is not.
+The new design is: **gaps that have clear mathematical content become sub-tickets,
+and the worker keeps going**. The role separation with `/develop` is preserved —
+every sub-ticket follows `/develop`'s ticket template (Statement / Proof Sketch /
+Mathlib Lemmas / Sources / Generality), so a `/develop --continue` would recognise
+the work. The split is no longer "develop plans, extended-work executes blindly"
+but "develop plans the original, extended-work fills focused gaps and executes
+both".
+
+Hard stops are reserved for cases where sub-ticketing genuinely doesn't help:
+the parent's sketch is wrong as a strategy (B2); the parent's statement is
+mathematically wrong (B3); the gap is research-scale rather than engineering-scale
+(B4); the sub-ticket chain has gone too deep (B5); the baseline build is broken
+(B6). For each, the stop produces a concrete, evidenced report back. "It's hard"
+is still not evidence.
 
 ---
 
