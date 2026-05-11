@@ -13,6 +13,9 @@ The non-negotiable rules:
 - **Every comment must be accounted for** — addressed, deferred with a reason, or marked
   unable-to-address with a reason. Silent skipping is a defect.
 - **After pushing, the skill must wait for CI** — it's not done until checks finish.
+- **Every commit and any PR description update follows the conventions in
+  "PR description, commit messages, dependencies" below** — short, concrete,
+  dependencies stated, Claude co-author footer.
 
 ## Usage
 
@@ -29,6 +32,100 @@ If only inline review comments are visible without a PR number, you can also pas
 ```
 
 But the workflow assumes a real PR (the CI-watching phase needs one).
+
+---
+
+## PR description, commit messages, dependencies
+
+Every commit this skill creates and every PR description update it performs
+follows these conventions. They apply equally to the initial fix commits in
+Phase 3 and to any re-push fixes in Phase 7.
+
+### PR description
+
+Default behaviour: do **not** touch the PR description. The user wrote it; the
+fixes are responses, not a re-statement of the PR. Update the description
+only when one of the following is true:
+
+- The fix changes the scope of the PR (new files, removed features, a
+  different conclusion)
+- The fix introduces or resolves a dependency on another PR
+- A reviewer explicitly asked for the description to be updated
+- You are creating a new follow-up PR for deferred items
+
+When you do update it, follow these rules:
+
+- **Short.** A one-line summary, then 1–5 bullets naming the substantive
+  changes. No background paragraphs. No "this PR addresses the following
+  comments" walls of text — comments are visible in the PR thread; don't
+  duplicate them.
+- **Concrete.** Each bullet names *what changed*, not *why* in the abstract.
+  "Renames `wt_eq_zero` → `weight_eq_zero`" not "Improves naming consistency".
+- **Lists dependencies.** If the PR depends on another PR being merged first
+  (a mathlib bump, a sister-project PR, an upstream contribution), state
+  them on a dedicated line:
+
+  ```
+  Depends on #1234 (mathlib bump to v4.30.0), #5678 (FooBar API)
+  ```
+
+  If there are no dependencies, omit the line entirely — don't write
+  "Depends on: none".
+
+- **Co-author footer.** Always include, on its own line at the bottom:
+
+  ```
+  Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+  ```
+
+Use `gh pr edit <PR> --body "$(cat <<'EOF' … EOF)"` with a HEREDOC so the
+body renders with proper line breaks.
+
+### Commit messages
+
+Every commit this skill creates follows the same shape:
+
+- Subject line ≤ 72 characters, imperative mood ("address PR feedback",
+  not "Addressing" or "addressed"). When fixing CI in Phase 7, name the
+  fix concretely: "fix style-linter on Foo.lean" rather than "fix CI".
+- Body (optional, separated from subject by a blank line): short bullets
+  naming the substantive changes. Same concreteness rule as the PR
+  description.
+- Co-author footer on its own line at the bottom:
+
+  ```
+  Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+  ```
+
+Use the HEREDOC pattern (per project convention) so newlines render:
+
+```bash
+git commit -m "$(cat <<'EOF'
+address PR feedback
+
+- rename wt_eq_zero → weight_eq_zero (loefflerd)
+- inline single-use have h := bar in Foo.lean:60 (reviewer2)
+- add docstring to weightedSum (reviewer2)
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+### Dependencies (binding)
+
+If the fix needs another PR merged first, surface the dependency in three
+places:
+
+1. **PR description**'s `Depends on:` line (per above) — visible to
+   reviewers at a glance.
+2. **Phase 5 approval report** — explicit row flagging the dependency
+   to the user so they can verify the prerequisite landed before
+   approving the push.
+3. **Commit message body** if the dependency is what motivated a
+   specific change ("rewrite uses Foo.bar from upstream PR #1234").
+
+Do not push fixes whose dependencies are unmerged — CI will fail.
 
 ---
 
@@ -236,6 +333,34 @@ lake build [target_modules]   # for the changed files
 
 If the project has a `lake exe runLinter`, run it too. Resolve every error before Phase 5.
 
+### 4d. Commit the changes locally (per conventions)
+
+With every Phase-3 fix verified and the build clean, stage and commit the
+changes locally — do NOT push yet (the push is gated by Phase 5 approval).
+
+The commit message follows "PR description, commit messages, dependencies":
+imperative subject ≤ 72 chars, optional bullet body naming the substantive
+changes, Claude co-author footer on its own line.
+
+```bash
+git add <each changed file by name>
+git commit -m "$(cat <<'EOF'
+address PR feedback
+
+- <bullet per substantive change, naming the file or rename or reformulation>
+- <…>
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+If a reviewer asked for separate commits per concern (see the multi-commit
+edge case below), repeat the above per group rather than one bundled commit.
+
+After committing, `git status` should be clean. Phase 5 prints the commit
+list as part of the approval report.
+
 ---
 
 ## PHASE 5 — STOP. Wait for user approval. (Main agent)
@@ -305,6 +430,18 @@ Base: <base_branch>
 - New commits: 1 ("address PR feedback")
 - Files changed: 6 (list…)
 - Lines: +23 −41
+- Commit footer: Co-Authored-By: Claude Opus 4.7 (1M context) ✓
+
+### Dependencies (other PRs that must merge first)
+<If none: omit this section. If any:>
+- ⚠ Depends on <owner>/<repo>#<N> (<one-line: what it provides>). Status:
+  <merged / open / draft>. **Pushing before this lands will fail CI.**
+- ⚠ ...
+
+### PR description update
+<One of:>
+- ✗ No update needed (scope unchanged, no new dependencies, reviewer didn't ask).
+- ✓ Updated. Diff of the description: <show the before/after, or "appended Depends on line and updated bullet 2">.
 
 ### Next step
 **Awaiting your approval to push.** Reply with "push", "ok", or
@@ -317,7 +454,39 @@ Then **stop** and wait. Do not pre-emptively push.
 
 ## PHASE 6 — Push + Watch CI (Main agent, only after user approval)
 
-### 6a. Push
+### 6a. Pre-push check: PR description
+
+Before pushing, decide whether the PR description needs updating per the
+rules in "PR description, commit messages, dependencies" above. The four
+triggers:
+
+- Fix changed the scope of the PR (new files, removed features, different conclusion)?
+- Fix introduced or resolved a dependency on another PR?
+- A reviewer explicitly asked for the description to be updated?
+- You are about to push to a new follow-up PR for deferred items?
+
+If yes, update via:
+
+```bash
+gh pr edit <PR> --body "$(cat <<'EOF'
+<one-line summary>
+
+- <bullet 1>
+- <bullet 2>
+- ...
+
+Depends on #<N> (<what>), #<M> (<what>)   <only if applicable>
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+Verify with `gh pr view <PR> --json body` that the update landed.
+
+If no update needed, leave the description alone.
+
+### 6b. Push
 
 ```bash
 git push
@@ -333,7 +502,7 @@ gh pr view <PR> --json headRefOid
 
 The `headRefOid` should match `git rev-parse HEAD`.
 
-### 6b. Wait for CI to start, then watch to completion
+### 6c. Wait for CI to start, then watch to completion
 
 CI runs are not instant — there's usually a 10–60 second delay between push and the first
 check appearing. Wait briefly, then start watching:
@@ -358,7 +527,7 @@ This typically takes 10–40 minutes for mathlib. I'll come back when checks fin
 Then continue with other work or wait. When `gh pr checks --watch` exits, you'll be
 notified.
 
-### 6c. Read the result
+### 6d. Read the result
 
 When the watch process completes, capture its status:
 
@@ -373,7 +542,7 @@ Three outcomes:
 |---|---|---|
 | `SUCCESS` (all green) | CI passed | Phase 8 report |
 | `FAILURE` (any check failed) | CI flagged something | Phase 7 |
-| `PENDING` (still running) | The watch ended early; re-watch | Loop back to 6b |
+| `PENDING` (still running) | The watch ended early; re-watch | Loop back to 6c |
 
 ---
 
@@ -408,7 +577,25 @@ lake build <affected_modules>
 lake exe runLinter <affected_modules>   # if the CI failure was a linter
 ```
 
-### 7c. Loop back to Phase 5
+### 7c. Commit the fix (per conventions)
+
+Commit the CI fix locally before going back to Phase 5. Follow the same
+commit conventions as Phase 4d: imperative subject naming the fix
+concretely ("fix style-linter on Foo.lean", not "fix CI"), optional bullet
+body, Claude co-author footer.
+
+```bash
+git commit -m "$(cat <<'EOF'
+fix <concrete CI failure>
+
+- <what was fixed and where>
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+### 7d. Loop back to Phase 5
 
 Print a short follow-up report ("CI failed on X; here's the fix; awaiting approval to push
 again") and wait for user approval again. Do not push without approval, even if the fix
@@ -460,8 +647,12 @@ fixes-only mode is fine; the no-push mandate is the default.
 ### Multiple commits requested
 
 If the reviewer wants distinct concerns in separate commits ("please split this PR"):
-group the Phase-3 fixes by reviewer-asked grouping, then make one commit per group rather
-than one big commit. Commit messages should reference the comment(s) addressed.
+group the Phase-3 fixes by reviewer-asked grouping, then make one commit per group
+in Phase 4d rather than one bundled commit. Every commit still follows the
+conventions in "PR description, commit messages, dependencies" — short
+imperative subject, bullet body, Claude co-author footer. Commit subjects
+should reference the comment(s) addressed, e.g. `address naming feedback
+(loefflerd)`.
 
 ### CI is intermittently flaky
 
