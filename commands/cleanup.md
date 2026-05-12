@@ -697,7 +697,7 @@ Phase 2 (automation upgrades — try each, keep if compiles):
   [2.4]  fun_prop                  n/a (no Continuous/Differentiable goal)
   [2.5]  positivity                tried at L92 — succeeded, replaced 3-line linarith block
   [2.6]  gcongr                    n/a
-  [2.7]  omega / lia               applied at L100: `linarith` → `omega`
+  [2.7]  lia (preferred) / omega   applied at L100: `linarith` → `lia`
   [2.8]  aesop                     tried — failed
   [2.9]  norm_num / norm_cast      n/a
   [2.10] decide / decide +kernel   n/a
@@ -710,7 +710,10 @@ Phase 2 (automation upgrades — try each, keep if compiles):
 Phase 3 (cleanup):
   [3.1]  erw → rw                  n/a
   [3.2]  continuity/measurability → fun_prop  n/a
-  [3.3]  omega → lia               applied at L100 (already in 2.7)
+  [3.3]  omega → lia               already in 2.7 (used lia directly)
+                                   — OR if 2.7 produced omega: tried lia at L100,
+                                     succeeded; replaced. If lia failed, leave
+                                     omega and note: "lia couldn't handle <reason>".
   [3.4]  rcases ... with rfl auto-substitutes n/a
   [3.5]  register lemmas for automation       n/a (this is a one-off proof)
   [3.6]  simp_all over simp_all only          n/a

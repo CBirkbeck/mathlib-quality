@@ -85,7 +85,7 @@ When closing a goal, try these in order (most automated first):
 | 4 | `fun_prop` | Continuity, differentiability, measurability | 80 examples; use `(disch := grind)` |
 | 5 | `positivity` | `0 < x`, `0 ≤ x` goals | 60 examples |
 | 6 | `gcongr` | Monotonicity, congruence in inequalities | 67 examples |
-| 7 | `omega` / `lia` | Nat/Int linear arithmetic | `lia` preferred over `omega` in new code |
+| 7 | `lia` (preferred) / `omega` | Nat/Int linear arithmetic | Use `lia` as the default; fall back to `omega` only when `lia` fails |
 | 8 | `norm_num` / `norm_cast` | Numeric computation, cast goals | 14 examples |
 | 9 | `ring` / `ring_nf` | Polynomial equalities | |
 | 10 | `field_simp; ring` | Equalities with denominators | 6 examples |

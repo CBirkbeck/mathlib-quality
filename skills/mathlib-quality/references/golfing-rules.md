@@ -208,12 +208,18 @@ apply div_le_div_of_nonneg
 apply mul_le_mul ...
 ```
 
-### 2.7 Try `omega` / `lia`
-For `Nat`/`Int` arithmetic goals. Prefer `lia` over `omega` in new code.
+### 2.7 Try `lia` / `omega` (prefer `lia`)
+For `Nat`/`Int` arithmetic goals. **Use `lia` as the default in new code; only fall
+back to `omega` if `lia` fails on a specific goal.** This rule and rule 3.3 are
+related — 2.7 reaches for arithmetic automation in the first place; 3.3 ensures
+that when we do, we pick `lia`, not `omega`. If you applied 2.7 with `lia`, 3.3
+is already satisfied. If you applied 2.7 with `omega` (because `lia` failed),
+3.3 is `n/a`.
 ```lean
 -- BEFORE                        -- AFTER
-linarith                         omega  -- or lia
-cases n <;> simp
+linarith                         lia
+cases n <;> simp                 lia
+-- (only if lia fails:)          omega
 ```
 
 ### 2.8 Try `aesop`
@@ -286,8 +292,13 @@ Try `rw` first; only use `erw` when `rw` genuinely fails.
 ### 3.2 `continuity` / `measurability` → `fun_prop`
 These legacy tactics are being replaced.
 
-### 3.3 `omega` → `lia`
-mathlib is migrating to `lia`. Use it in new code.
+### 3.3 `omega` → `lia` (preferred default)
+mathlib is migrating to `lia`. Use `lia` in new code as the default for
+`Nat`/`Int` arithmetic; only fall back to `omega` if `lia` fails on the
+specific goal. If 2.7 already used `lia`, this rule is already satisfied
+(mark "already in 2.7"). If 2.7 produced `omega`, **try `lia` here** and
+keep it if it closes; only fail back to `omega` with a one-line note
+explaining what `lia` couldn't handle.
 
 ### 3.4 `rcases ... with rfl` auto-substitutes
 No need for subsequent `simp [h]` when `rfl` already substituted.
