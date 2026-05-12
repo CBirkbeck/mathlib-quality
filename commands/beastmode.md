@@ -618,6 +618,47 @@ itself drifts onto unrelated mathematics, not when on-track work gets big.
 For new projects, run `/develop` first to create the original ticket board.
 Sub-tickets are added by `/beastmode` itself during execution.
 
+## Auto-respawn with `/loop`
+
+A single `/beastmode` invocation works to context limit, then exits. To keep
+the marathon going across many invocations — picking up the next ticket each
+time, until the board is fully discharged — wrap the call in Claude Code's
+built-in `/loop`:
+
+```
+/loop /beastmode
+```
+
+`/loop` (no interval) self-paces: when the current `/beastmode` invocation
+ends, `/loop` schedules the next one. Each invocation is a fresh ~200k
+context that:
+
+1. Reads `.mathlib-quality/tickets.md`
+2. Picks the next open ticket with met dependencies
+3. Works it to DONE (or a genuine B-stop)
+4. Exits
+
+`/loop` re-fires until `/beastmode` prints the exact terminal line:
+
+```
+BEASTMODE-DONE: no open tickets with met dependencies.
+```
+
+— at which point the loop runtime recognises the natural terminal state and
+stops. This is the contract; do not paraphrase the line, do not embed it in
+prose, do not localise. The literal prefix `BEASTMODE-DONE:` followed by
+the rest of the message on a single line is what the loop checks.
+
+**For interval-paced respawn** (e.g. once an hour, regardless of whether the
+previous run is still going): `/loop 1h /beastmode`. Rarely what you want
+for beastmode — the self-paced form is usually right.
+
+**Genuine B-stops** (B2 SCOPE / DEFINITION ERROR, B3 OFF-TRACK, B4 BROKEN
+BASELINE) print their own reports without the `BEASTMODE-DONE:` prefix.
+The loop will re-fire on those — pause `/loop` manually if the same B-stop
+keeps recurring (it means the user needs to intervene, not that the next
+invocation will magically fix it).
+
 ---
 
 ## Spawning sub-tickets (focused planning)
@@ -756,8 +797,20 @@ Otherwise: scan `.mathlib-quality/tickets.md`. Find the first ticket where:
 Print the picked ticket's title, ID, and status. Set its status to `in_progress` with a
 timestamp. Save the ticket board.
 
-If no ticket is available: print `No open tickets with met dependencies. Either run
-/develop --status to see why, or run /develop to plan more work.` and stop.
+If no ticket is available: print the exit line **verbatim** on its own line:
+
+```
+BEASTMODE-DONE: no open tickets with met dependencies.
+```
+
+Then a one-paragraph note for the user explaining whether the board is
+genuinely complete (every ticket `done`) or whether some open tickets
+have unmet dependencies (in which case suggest `/develop --status` to
+see the dependency graph or `/develop` to add the missing planning).
+
+The exact prefix `BEASTMODE-DONE:` is a contract — see "Auto-respawn
+with `/loop`" below — so the loop runtime can recognise the natural
+terminal state and stop firing.
 
 ---
 
