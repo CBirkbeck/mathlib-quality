@@ -442,6 +442,77 @@ and then a "however" / "but" / "the realistic situation" clause, the
 "however" clause is the violation. The acknowledgement is window
 dressing. Delete both and act.
 
+### "Continuing now" is not continuing (binding)
+
+A specific sub-pattern of the meta-rule above: when the user (or your
+own self-check) calls out a previous stop, the wrong response is
+**"You're right — continuing now."** followed by analysis prose. That
+acknowledgement is itself a defect: it lets the agent feel it has
+restarted while not making any code-advancing tool call.
+
+Forbidden preambles (literal match — strip and act):
+
+```
+"Continuing now."          "Continuing now,"
+"Resuming now."            "Resuming."
+"OK, continuing"           "Got it, continuing"
+"Right, continuing"        "Acknowledged. Continuing."
+"You're right — continuing now"
+"Got it — continuing now"
+"OK, let me ..."           "Let me continue ..."
+"Picking back up ..."      "Back to work ..."
+"Returning to the proof"   "Resuming the proof"
+```
+
+There is no continuation announcement. The continuation is the next
+`Edit`. If your draft would open with "Continuing now," delete the
+whole opening line and make the edit instead. No words; tools.
+
+### Pasting a goal type into chat is not progress (binding)
+
+After running `lean_goal`, `lean_diagnostic_messages`, `lean_multi_attempt`,
+or similar — the result is the agent's information, not the user's. Do
+**not** quote the goal type back to the user in chat. The file state
+before and after a read-only LSP query is identical; quoting the goal
+is analysis-as-progress.
+
+Specific forbidden patterns:
+
+- "Looking at the current proof state for X, the goal after Y is: …" +
+  no `Edit` in the same turn
+- "The current goal is: `…`" + no `Edit`
+- "After applying Z, the new goal is: `…`" + no `Edit`
+- Any quoted Lean type fragment in user-facing text that is not
+  immediately accompanied by an `Edit` call writing a tactic against it
+
+The rule: if you ran an LSP query, the **same turn** must include an
+`Edit` (or `Write`) that uses the information from the query. The chat
+text should describe the action you're taking, not the goal you read.
+Reading the goal in your head, then writing the tactic, is the cycle;
+reading the goal aloud is the leak.
+
+Acceptable shape (compact narration alongside an action):
+
+> Step 4 closure — applying `simpa using sub_eq_add_neg` at L142.
+
+followed by an `Edit` in the same turn.
+
+Unacceptable shape:
+
+> Looking at the current proof state for V_sub_eta_eq_extPos_sub_extNeg,
+> the goal after sub_eq_add_neg simp is:
+>
+>   let_fun this := …;
+>   ⇑(V f i.charBox) (eta f i) = …
+
+with no `Edit` call. The chat is now a transcript of analysis, not a
+record of work.
+
+If you genuinely need the goal in your context to choose the next
+tactic, that's what `lean_goal` is for — but the *output* of the
+query is for **you to read**, not for the user to read. Read it
+internally; act externally.
+
 ### Pre-send self-check (mandatory)
 
 Before sending any user-facing text:
@@ -467,9 +538,18 @@ Before sending any user-facing text:
    → That is the trigger to invoke `/develop` and add the missing
    tickets, *then* work them. It is **not** a trigger to stop or report.
    Plan via `/develop`, then continue.
+7. Does the draft open with a continuation announcement ("Continuing
+   now.", "Resuming.", "OK, picking up.", "Got it — continuing")? →
+   Strip the opening line. There is no continuation announcement; the
+   continuation is the next `Edit`.
+8. Did the turn run a `lean_*` LSP query? If yes, does the same turn
+   include an `Edit` / `Write` that uses the query result? And: does the
+   draft avoid quoting the goal type back to the user as if that quote
+   were progress? → If a query has no accompanying edit, or the goal is
+   pasted as prose, strip the prose and make the edit.
 
-Six "yes/no-correctly"es and one "this is DONE or a genuine B-stop"?
-Send. Anything else? Don't.
+Eight checks all passing, and the message is either DONE or a genuine
+B-stop? Send. Anything else? Don't.
 
 ## On-target vigilance
 
