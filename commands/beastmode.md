@@ -27,9 +27,14 @@ those are legitimate. The only legitimate stops are:
 
 Note what's **not** on the list: depth limit, sketch fundamentally wrong, "this
 is a long proof", "this is a hard step", "the mathlib lemma I expected isn't
-there", "I'd like to try a different approach". None of those stop beastmode.
-Sub-tickets, replanning via `/develop --continue`, deeper sub-tickets — that's
-how beastmode handles each.
+there", "I'd like to try a different approach", **"this is multi-session work"**.
+None of those stop beastmode. Sub-tickets, replanning via `/develop --continue`,
+deeper sub-tickets — that's how beastmode handles each.
+
+In particular: identifying the work as "multi-session" is identifying it as
+exactly the kind of work beastmode targets. The whole purpose of the mode is
+to collapse multi-session work into one run. The correct response to "this
+is multi-session" is **start working**, not defer.
 
 This skill is the execution counterpart to `/develop`. `/develop` produces the
 original plan; `/beastmode` executes it, and when execution surfaces a gap the
@@ -171,6 +176,12 @@ or a genuinely off-track scope (B3) ends the session.
 - "The sketch is wrong." Replan via `/develop --continue`. Keep going.
 - "We're 5 sub-tickets deep." Keep going. No depth cap in beastmode.
 - "The user might want me to check in." No. They invoked beastmode.
+- "This is multi-session work." That is the **target signal**, not the
+  exit signal. Beastmode exists to collapse multi-session work into one
+  continuous run. Start the first edit. See the "Multi-session work is
+  the target" subsection in the Self-rejection protocol.
+- "This would take several sessions / a multi-day effort / a multi-week
+  effort." Same as above. Beastmode's reason for being.
 
 ## Self-rejection protocol (binding)
 
@@ -277,6 +288,51 @@ energy goes in. "Substantial coding ahead" is fuel, not a flag.
 If you catch yourself drafting "the next step is genuinely substantial
 coding — about 100 lines of careful work on …", strip the draft and
 make the first Edit.
+
+### Multi-session work is the target, not an exit (binding)
+
+If you find yourself thinking "this is multi-session work" or "this
+spans multiple sessions" or "this is more than one session can do",
+that thought is **identifying the work as exactly what beastmode
+exists for**. It is not a stop signal. It is the target signal.
+
+Beastmode exists precisely to collapse what would otherwise be multi-
+session work into a single continuous run. The session boundary is the
+inefficiency the mode is designed to eliminate: per-session context
+reload, the user round-trip in between, the loss of intermediate state.
+Inside beastmode there is no session boundary; there is the goal and
+the path to it.
+
+So the correct operational response to "this is multi-session work"
+is **start the first edit**. Not to report. Not to ask. Not to defer
+to a future invocation. Multi-session work is beastmode's reason for
+being.
+
+**Forbidden phrases (literal match — strip and act):**
+
+```
+"this is multi-session"           "multi-session work"
+"multi-session effort"            "multiple sessions"
+"across sessions"                 "spans multiple sessions"
+"more than one session"           "beyond a single session"
+"exceeds a single session"        "multi-day effort"
+"multi-week effort"               "this would take multiple sessions"
+"better suited for multiple sessions"   "not appropriate for one session"
+"too big for one session"         "long-term project"
+"long-term effort"                "long-term work"
+"would need several sessions"     "session-length work"
+"out of scope for a single session"   "needs its own session"
+```
+
+Reaching for any of those is the worker correctly identifying the work
+as on-target for beastmode — and then incorrectly trying to defer it.
+The defer is the defect. The identification is the green light.
+
+If you genuinely cannot start the work (B2 SCOPE / DEFINITION ERROR,
+B3 OFF-TRACK, B4 BROKEN BASELINE) the stop conditions cover that with
+concrete evidence required. "It's a lot of work" is not concrete
+evidence — it is the description of every beastmode session that ends
+in DONE.
 
 ### Pre-send self-check (mandatory)
 
