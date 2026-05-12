@@ -44,12 +44,14 @@ Methodical 8-phase workflow for any Lean file. Replaces what used to be three co
 
 ### Additional Tools
 
+- **`/project-status`** — chat-only mathematical status report. Reads the project's `.lean` files (plus `plan.md` / `tickets.md` if present) and answers four questions in mathematical English: what result is the worker on, what (if anything) is blocked and what is mathematically missing, how does the current work connect to the overall goal, and how far along is the whole project. **Three-tier progress** — code-level coverage (declarations sorry-free), main-goal chain coverage (only the dependency closure of the main result), and distance-to-unconditional (parametric hypotheses on the main goal still to discharge). Unicode math only, no LaTeX. Read-only — no server, no browser.
 - **`/generalise`** — weaken assumptions on a single lemma/def: typeclass-hierarchy walk, drop-test, point-localise, strict→weak, plus mandatory literature search; auto-applies small safe changes, presents big changes as a numbered approval menu (also runs inline as part of `/cleanup` Phase 4)
 - **`/decompose-proof`** — break proofs >30 lines into focused helper lemmas (with mandatory user approval gate before dispatch)
 - **`/expert-review`** — produce a self-contained mathematical brief (`REVIEW_BRIEF.md`) for an external reviewer with no repo access; pure math, no Lean, no file paths; then in Mode 2 (`--reply`) integrate the reviewer's response into ticket-board updates
-- **`/fix-pr-feedback`** — fetch every PR comment, fix locally, **stop for explicit user approval before pushing**, then watch CI to completion (`gh pr checks --watch` runs in background as the wake-timer)
+- **`/fix-pr-feedback`** — fetch every PR comment, fix locally, **stop for explicit user approval before pushing**, then watch CI to completion (`gh pr checks --watch` runs in background as the wake-timer). Every commit and any PR-description update follows binding conventions: short imperative subject, concrete bullet body, dependencies surfaced via a `Depends on #1234` line, Claude co-author footer.
 - **`/bump-mathlib`** — bump mathlib version and fix the resulting breakage; documents recurring patterns from upstream evolution (Splits binary→unary refactor, IsX field-name normalisation, etc.)
 - **`/pre-submit`** — final pre-PR checklist
+- **`/overview`** — project-wide declaration inventory: every `def`/`lemma`/`theorem` with descriptions, dependencies, and consolidation analysis
 - **`/split-file`** — split files >1000 lines (with mandatory user approval gate)
 
 ## Installation
@@ -144,15 +146,20 @@ activate the new tool.
 | Command | Description |
 |---------|-------------|
 | `/develop` | **Planning only.** Mathlib search, API design, detailed tickets (Statement + Proof Sketch + Mathlib lemmas + Sources + Generality per ticket). Stops after approval. |
-| `/beastmode` | **Marathon execution. Stops at nothing.** Pick a ticket and finish the goal — spawn sub-tickets in `/develop`'s format for missing lemmas, replan via `/develop --continue` for wrong strategies, no recursion cap, no time budget. Only stops: DONE / SCOPE-DEFINITION ERROR / OFF-TRACK (genuine, with evidence) / BROKEN BASELINE. |
-| `/cleanup` | Style audit + cleanup + golf (whole file or single declaration). 7-phase methodical workflow; absorbed `/check-style` (Phase 2 audit) and `/check-mathlib` (Phase 4 item 13: five-method search-status block + six strict mathlib-replacement rules). |
+| `/beastmode` | **Marathon execution. Stops at nothing — but stays on-target.** Pick a ticket and finish the goal — spawn sub-tickets in `/develop`'s format for missing lemmas, replan via `/develop --continue` for wrong strategies, no recursion cap, no time budget. **Super Saiyan ethos**: scope growth that stays on-target is great news, not a stop signal. **Multi-session work is the target, not an exit.** Only stops: DONE / SCOPE-DEFINITION ERROR / OFF-TRACK (genuine, with concrete evidence) / BROKEN BASELINE. |
+| `/cleanup` | Style audit + cleanup + golf (whole file or single declaration). **9-phase** methodical workflow; absorbed `/check-style` (Phase 2 audit) and `/check-mathlib` (Phase 4 item 13: five-method search-status block + six strict mathlib-replacement rules). |
 | `/cleanup-all` | Run /cleanup on every file in the project |
+| `/project-status` | Chat-only mathematical status: what's the worker on, what's blocked + missing, how it connects to the goal, how far along. **Three-tier progress** (code-level / main-goal chain / parametric-hypotheses discharged). Unicode math, no LaTeX. |
+| `/overview` | Project-wide declaration inventory: every `def`/`lemma`/`theorem` with descriptions, dependencies, consolidation analysis |
 | `/expert-review` | Two-mode external review: produce a self-contained math brief (`REVIEW_BRIEF.md`), wait for the reviewer's response, then integrate their guidance into the ticket board |
 | `/generalise` | Weaken assumptions on a lemma or definition: mechanical weakenings + literature search; auto-apply small safe changes, propose big changes as a numbered menu |
 | `/decompose-proof` | Break long proofs into helper lemmas |
+| `/split-file` | Split files >1000 lines (with approval gate) |
 | `/pre-submit` | Pre-PR submission checklist |
-| `/fix-pr-feedback` | Address PR reviewer comments |
+| `/fix-pr-feedback` | Fetch PR comments → fix → STOP for approval → push → watch CI. Every commit and PR-description update follows binding conventions (short imperative subject, concrete bullet body, `Depends on` line, Claude co-author footer). |
 | `/bump-mathlib` | Bump mathlib version and fix breakage |
+| `/teach` | Record a project-specific pattern or convention |
+| `/contribute` | Push local learnings back as a PR to this repo |
 | `/setup-rag` | Configure the RAG MCP server |
 | `/setup-chatgpt` | Configure ChatGPT MCP server for mathematical second opinions |
 
@@ -168,9 +175,12 @@ activate the new tool.
 /develop --takeover        # Plan a takeover of an existing project
 
 # Execute
-/beastmode             # Pick the next available ticket and work it to completion
+/beastmode                 # Pick the next available ticket and work it to completion
 /beastmode --ticket T042   # Specific ticket
-/beastmode --resume    # Resume an in_progress ticket from its progress notes
+/beastmode --resume        # Resume an in_progress ticket from its progress notes
+
+# Check status between sessions
+/project-status            # Chat report: what's the worker on, what's blocked, how far from the goal
 
 # Finish
 /pre-submit                # Final-review checklist after all tickets are done
@@ -249,9 +259,9 @@ activate the new tool.
 
 ## Design Philosophy: Methodical Phases + Required Artifacts
 
-The recent rewrites of `/cleanup`, `/fix-pr-feedback`, `/develop`, `/expert-review`,
-`/generalise`, `/decompose-proof`, `/split-file`, `/integrate-learnings`, `/check-mathlib`,
-`/bump-mathlib`, and `/overview` all follow a single pattern:
+The recent rewrites of `/cleanup`, `/fix-pr-feedback`, `/develop`, `/beastmode`,
+`/project-status`, `/expert-review`, `/generalise`, `/decompose-proof`, `/split-file`,
+`/integrate-learnings`, `/bump-mathlib`, and `/overview` all follow a single pattern:
 
 1. **Multi-step procedures with explicit phase numbers.** A workflow that says "do X, then Y, then Z" silently drops Y when the agent gets tired. A workflow with `PHASE 1` … `PHASE 8` makes phase-skipping visible.
 2. **Required artifacts.** Each phase produces a structured output — a punch-list, a status block, a gate-status table, a per-hypothesis classification table. The artifact is the proof the phase actually ran. Skipping a step is detectable in the missing or malformed artifact.
@@ -347,6 +357,7 @@ mathlib-quality/
 │   ├── generalise.md            # Weaken hypotheses; mechanical pass + literature search; user approval for big changes
 │   ├── split-file.md            # Split files >1000 lines (with approval gate)
 │   ├── overview.md              # Per-declaration project inventory
+│   ├── project-status.md        # Chat-only mathematical status: three-tier progress, on-target / blockers
 │   ├── pre-submit.md            # Final pre-PR checklist
 │   ├── fix-pr-feedback.md       # 8 phases: fetch → fix → coverage check → STOP → push → watch CI
 │   ├── bump-mathlib.md          # Bump mathlib + fix breakage (cache verification gate)
