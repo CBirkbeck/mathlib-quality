@@ -36,6 +36,12 @@ exactly the kind of work beastmode targets. The whole purpose of the mode is
 to collapse multi-session work into one run. The correct response to "this
 is multi-session" is **start working**, not defer.
 
+Likewise: if you find yourself thinking "I'd need a complete plan executed
+end-to-end before I can do this properly", the correct response is to
+invoke `/develop`, add the missing tickets, and immediately work them —
+**not** to write a handover note for "the next session". There is no next
+session. This is the session.
+
 This skill is the execution counterpart to `/develop`. `/develop` produces the
 original plan; `/beastmode` executes it, and when execution surfaces a gap the
 plan didn't anticipate, fills the gap by adding focused tickets *in /develop's
@@ -182,6 +188,17 @@ or a genuinely off-track scope (B3) ends the session.
   the target" subsection in the Self-rejection protocol.
 - "This would take several sessions / a multi-day effort / a multi-week
   effort." Same as above. Beastmode's reason for being.
+- "This needs a complete plan executed end-to-end before I can continue."
+  That is the signal to invoke `/develop` and add the missing tickets,
+  then work them. It is **not** a stop. There is no "next session" to
+  hand off to.
+- "Fragmentary continuation would produce incorrect or incomplete
+  proofs." Then plan it via `/develop` and work the resulting tickets.
+  Don't write a handover.
+- "The honest move is to hand over to a focused session." There is no
+  next session. This is the session. Plan and continue.
+- "Per beastmode rules I should continue, but realistically …" The
+  "realistically" clause is the defect. Strip it. Continue.
 
 ## Self-rejection protocol (binding)
 
@@ -334,12 +351,103 @@ concrete evidence required. "It's a lot of work" is not concrete
 evidence — it is the description of every beastmode session that ends
 in DONE.
 
+### "I need a complete plan first" → invoke /develop, do not stop (binding)
+
+If you find yourself thinking "this needs a complete plan executed end-to-end"
+or "without a worked-out plan I can only produce fragmentary results" or
+"I don't have a full picture of the steps" — that thought is the trigger
+to invoke `/develop`, **not** a trigger to stop.
+
+Beastmode's design explicitly separates planning from execution and provides
+`/develop` as the planning surface. The rule is: if the work in front of
+you needs a more complete plan, you do not stop and "hand off to the next
+session" — you invoke `/develop` (or its template inline), produce the
+tickets, and immediately work them. That sequence is the marathon's
+ordinary mode, not an exception.
+
+The mechanical response when you notice missing plan:
+
+1. Pause the current proof attempt (in your head — do not output anything).
+2. Invoke `/develop` or perform a focused planning pass inline, producing
+   the tickets the work needs (Statement / Proof Sketch / Mathlib Lemmas
+   / Sources / Generality / Parent, per `commands/develop.md`).
+3. Save the tickets to `tickets.md`.
+4. Immediately start working the new tickets (per Spawn → recurse).
+
+The wrong sequence is: notice missing plan → write a "handover for the
+next session" → stop. That is the defect. There is no next session.
+This is the session.
+
+**Forbidden phrases (literal match — strip and act):**
+
+```
+"fragmentary continuation"        "fragmented exploration"
+"without a complete plan executed end-to-end"
+"needs a complete plan"           "complete plan executed end-to-end"
+"end-to-end planning"             "needs end-to-end planning"
+"hand-off info"                   "handover info"
+"clear handover"                  "handover for the next session"
+"next focused session"            "next session can pick up"
+"set up for the next session"     "the next agent"
+"the next worker"                 "next worker can pick up"
+"step back and plan"              "regroup with a plan"
+"focused larger-scale task"       "focused larger scale"
+"produces incorrect or incomplete proofs"
+"fragmentary results"             "fragmentary proofs"
+"in the interest of correctness"  "in the interest of completeness"
+"before continuing"               "before resuming"
+"once a plan is in place"         "once we have a plan"
+"the honest move is"              "the realistic situation is"
+"the realistic move is"           "what fragmented exploration can produce"
+"to set up the next iteration"    "to set up the next pass"
+```
+
+All of these are aliases for "I want to stop because the plan isn't
+complete enough". The correct response is **always** to produce the
+missing plan via `/develop` and continue.
+
+### Rationalising around the rules is itself a defect (meta)
+
+A subtle failure mode: the worker reads the rules, acknowledges them
+verbatim, and then produces a *new* vocabulary that aliases the
+forbidden behaviour. Example:
+
+> "Per beastmode rules ('no time budget', 'keep going'), the rules say
+> I should continue. The realistic situation is that fragmentary
+> continuation produces incorrect or incomplete proofs without a
+> complete plan executed end-to-end. The honest move is to acknowledge
+> the closure is genuinely a focused larger-scale task ... handover
+> info so the next focused session can pick up cleanly..."
+
+Every sentence after "the rules say I should continue" is the defect.
+The worker named the rule and then carefully constructed an exception
+to it.
+
+**Pattern to watch for:** any response that opens with one of
+
+```
+"Per beastmode rules, ..."        "I understand beastmode says ..."
+"Acknowledging the marathon ..."  "Reading the spec, ..."
+"While the protocol says ..."     "The rules say ..., however ..."
+"The skill specifies ..., but ..." "Beastmode is designed for ..., but here ..."
+```
+
+and continues with a justification for not doing the next concrete
+action. **Naming the rule before violating it is not exemption.** If
+your draft contains this shape, the whole draft is a defect. Strip it.
+Make the next code edit.
+
+The meta-rule: if you would produce a sentence acknowledging beastmode
+and then a "however" / "but" / "the realistic situation" clause, the
+"however" clause is the violation. The acknowledgement is window
+dressing. Delete both and act.
+
 ### Pre-send self-check (mandatory)
 
 Before sending any user-facing text:
 
 1. Does the draft contain any **forbidden output pattern** (literal match
-   against the list above)? → Strip the offending sentence; act instead.
+   against the lists above)? → Strip the offending sentence; act instead.
 2. Is the draft a **mid-turn status report** (not DONE, not a real
    B-stop)? → Strip; act instead. Real status goes to `tickets.md`
    Progress fields.
@@ -349,9 +457,19 @@ Before sending any user-facing text:
 4. If a sub-ticket was just spawned, is your next planned action **aimed
    at the new ticket** (Read/Edit on its target file, or a lean_* tool)?
    → If not, fix that before sending.
+5. Does the draft **acknowledge the beastmode rules and then justify an
+   exception** ("Per beastmode rules I should continue, however ...",
+   "The skill says X, but realistically ...", "Acknowledging the
+   marathon ethos, ...")? → Strip the entire draft. Naming the rule
+   does not exempt you from it. Make the next code edit.
+6. Does the draft frame the situation as "needs a complete plan first" /
+   "needs end-to-end planning" / "would be fragmentary without a plan"?
+   → That is the trigger to invoke `/develop` and add the missing
+   tickets, *then* work them. It is **not** a trigger to stop or report.
+   Plan via `/develop`, then continue.
 
-Four "yes"es and one "this is DONE or a genuine B-stop"? Send. Anything
-else? Don't.
+Six "yes/no-correctly"es and one "this is DONE or a genuine B-stop"?
+Send. Anything else? Don't.
 
 ## On-target vigilance
 
