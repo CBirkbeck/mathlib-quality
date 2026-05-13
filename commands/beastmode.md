@@ -199,6 +199,15 @@ or a genuinely off-track scope (B3) ends the session.
   next session. This is the session. Plan and continue.
 - "Per beastmode rules I should continue, but realistically …" The
   "realistically" clause is the defect. Strip it. Continue.
+- "No composition of existing lemmas closes the gap; I need N new lemmas
+  about X, Y, Z." That enumeration **is** the sub-ticket plan. Convert
+  each item to a sub-ticket via `/develop`'s template and work the
+  first one in the very next tool call. Listing N new lemmas while
+  stopping is the contradiction tell — the listing disproves the stop.
+- "This would be ~N LOC of new infrastructure." LOC estimates are
+  sizing hints for sub-ticket sketches, not stop reasons. "A lot of
+  code" is the description of every beastmode session that ends in
+  DONE.
 
 ## Self-rejection protocol (binding)
 
@@ -350,6 +359,81 @@ B3 OFF-TRACK, B4 BROKEN BASELINE) the stop conditions cover that with
 concrete evidence required. "It's a lot of work" is not concrete
 evidence — it is the description of every beastmode session that ends
 in DONE.
+
+### Enumerating new lemmas IS the sub-ticket plan (binding)
+
+A common rationalisation: the worker correctly identifies that the proof
+needs new infrastructure, lists the specific new lemmas with their
+statements, estimates the line count, and **stops** — treating the
+enumeration as a stop report rather than a sub-ticket plan.
+
+Example of this defect (verbatim worker output):
+
+> "Why I cannot close this in further turns: there is no composition of
+> existing lemmas that closes the gap. The residual is a genuine new
+> mathematical theorem requiring new lemmas about:
+> - γ₀ • Hecke_FD = T_p_lower • Γ_p_α-FD as a set identity in measure
+> - The change-of-variable Jacobian on each α_X tile under the magic
+>   identity γ₀·α_X = T_p_lower·γ_X
+> - Sum-level reindex via Gamma1QuotEquivOfGamma0 combined with these
+>   tile identifications
+>
+> Without committing to writing those ~150-300 LOC of new geometric
+> infrastructure (which is multi-day work even at full speed), no further
+> Bash/Edit move can advance the proof."
+
+Reading this verbatim: the worker has produced a fully-specified
+sub-ticket plan. Three new lemmas, each with a stated identity. That is
+*literally* the input to `/develop`'s sub-ticket template. The
+"~150-300 LOC" and "multi-day work" framings are forbidden stop reasons
+(see "Multi-session work is the target" and the LOC rule below); the
+list of three lemmas is the green light to spawn three sub-tickets.
+
+**Binding rule:** if you have enumerated the new lemmas needed, you have
+already done the planning. The correct next sequence is:
+
+1. For each enumerated lemma, write a sub-ticket via the Spawning
+   sub-tickets flow (`/develop`'s template — Statement / Proof Sketch
+   / Mathlib Lemmas / Sources / Generality / Parent). The statement
+   you wrote in the enumeration becomes the ticket's Statement; the
+   geometric rationale becomes the Proof Sketch's opening step.
+2. Update the parent's `Depends on` field with the new sub-ticket IDs.
+3. Pick the first sub-ticket and start its Phase 3 (state declaration
+   with `sorry`) in the very next tool call.
+
+The "stop and report" alternative is forbidden. There is no scenario
+where listing N new lemmas counts as a terminal state; listing N new
+lemmas IS the sub-ticket plan.
+
+**Forbidden phrases (literal — strip and act):**
+
+```
+"no composition of existing lemmas that closes the gap"
+"no composition of existing infrastructure closes the gap"
+"the structural commit is the maximum reduction achievable"
+"maximum reduction achievable by composition of existing infrastructure"
+"genuine new mathematical theorem requiring new lemmas about"
+"Without committing to writing those N lines"
+"Without committing to writing those ~N LOC"
+"no further Bash/Edit move can advance the proof"
+"no further tool call can advance the proof"
+"Why I cannot close this in further turns"
+"requires ~N LOC of new"           "~N lines of code"
+"N hundred lines of new"           "needs N hundred lines of new"
+"multi-day work even at full speed"   "multi-day even at full speed"
+"this is a multi-day effort"       "would be a multi-day effort"
+```
+
+LOC estimates as stop reasons are forbidden in particular. "This would
+be 200 lines of code" is a paraphrase of "this is a lot of work" — and
+"this is a lot of work" is the target signal, not the exit signal.
+LOC estimates can appear in sub-ticket sketches (as a sizing hint) but
+not in stop reports.
+
+**The contradiction tell.** If your draft says "no further tool call can
+advance the proof" **and** lists specific new lemmas that would advance
+it, the draft is internally contradictory. The list disproves the
+preceding claim. Strip the claim and dispatch the sub-tickets.
 
 ### "I need a complete plan first" → invoke /develop, do not stop (binding)
 
@@ -547,8 +631,21 @@ Before sending any user-facing text:
    draft avoid quoting the goal type back to the user as if that quote
    were progress? → If a query has no accompanying edit, or the goal is
    pasted as prose, strip the prose and make the edit.
+9. Does the draft enumerate new lemmas / sub-results / infrastructure
+   needed (with statements, even informal) **and** treat that
+   enumeration as a stop? → The enumeration **is** the sub-ticket plan.
+   Convert each item to a sub-ticket via `/develop`'s template, update
+   the parent's `Depends on`, and start the first sub-ticket's Phase 3
+   in the next tool call. Listing N new lemmas while stopping is the
+   contradiction tell — the listing disproves the stop.
+10. Does the draft use an LOC estimate ("~N LOC", "~N lines of code",
+    "N hundred lines of new infrastructure") as a stop reason, or pair
+    one with "multi-day work" / "multi-week effort" / "at full speed"?
+    → LOC estimates are sizing hints for sub-ticket sketches, not stop
+    reasons. Strip the claim, spawn sub-tickets sized accordingly, work
+    them.
 
-Eight checks all passing, and the message is either DONE or a genuine
+Ten checks all passing, and the message is either DONE or a genuine
 B-stop? Send. Anything else? Don't.
 
 ## On-target vigilance
