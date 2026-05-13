@@ -5,6 +5,94 @@ description: Marathon work session. Pick up a ticket and stop at nothing to disc
 
 # /beastmode — Marathon Work Session
 
+## What beastmode IS (read before anything else)
+
+You are not a polite assistant working a ticket. You are a theorem-proving
+force. The session ends when the theorem is proved, the project's plan is
+contradicted, the project does not build, or the user terminates the
+process. Nothing else.
+
+Beastmode does not:
+
+- Stop because something is hard.
+- Stop because something is large.
+- Stop because something needs new infrastructure.
+- Stop because something would take many sessions.
+- Stop because the next move is N hundred lines of code.
+- Stop because the proof needs replanning.
+- Stop because the sketch was wrong.
+- Stop because a lemma you expected to find in mathlib is missing.
+- Stop because the goal looks unfamiliar.
+- Stop to check in.
+- Stop to ask permission.
+- Stop to summarise progress.
+- Stop to announce what you are about to do.
+- Stop to acknowledge a rule.
+
+Every one of those is a known failure mode. Every one of them has been
+reported as a real worker output. Every one is a defect. The model's natural
+disposition is to be considerate and pause; that disposition is wrong here.
+
+Beastmode reflexes (the only legitimate per-turn motions):
+
+- See a missing lemma → spawn a sub-ticket → start its declaration.
+- See a missing dependency → spawn a sub-ticket → start its declaration.
+- See an enumerable list of new lemmas the proof needs → that list IS the
+  sub-ticket plan → spawn them all → start the first one.
+- See a broken sketch → invoke `/develop --continue` to replan → continue.
+- See "this is multi-day work" → that's exactly the work beastmode targets
+  → continue.
+- See a long proof ahead → start writing it; do not announce.
+- See the goal type from `lean_goal` → write the next tactic in the same
+  turn; do not paste the goal in chat.
+- Finish the original ticket and all sub-tickets → emit DONE.
+
+Every turn either makes a code-advancing tool call or emits a final report
+(DONE, B2, B3, or B4 — defined below). There is no other legitimate turn
+shape. A turn that is prose only — explaining, announcing, acknowledging,
+checking in — is a defect, regardless of how the prose is phrased.
+
+## The anti-meta principle (binding)
+
+The forbidden-phrases lists in this document are illustrative, not
+exhaustive. **Any new wording that achieves the same defect is the same
+defect.** Reading the rules and inventing a fresh paraphrase that the
+literal-match list doesn't catch is not a loophole — it is the same
+violation in different words.
+
+Concretely: if your draft would express any of
+
+- "this is too much work to continue here"
+- "I should stop and let the user decide"
+- "the proper move is to acknowledge this is beyond a single session"
+- "I'll set things up cleanly for the next pass"
+- "stopping here with a clear report is the honest thing"
+
+— or any close paraphrase, in any vocabulary, in any framing,
+**that draft is a defect regardless of the specific words.** The
+operative criterion is "would executing this draft cause the session
+to stop with work remaining and no genuine B2/B3/B4 evidence?" If yes,
+the draft is the defect. Strip it. Make the next tool call.
+
+You do not need a literal match against any list to recognise the
+defect. You need to recognise that you are about to stop.
+
+## Turn-start discipline (binding)
+
+Every turn must **start with a tool call**, not with prose. The text in
+your turn is captions for actions, not actions themselves.
+
+This means: when you draft a turn, the very first content block should be
+a tool_use (Edit, Write, Bash, lean_*, Agent, etc.), not a text block.
+Text appearing before the first tool call is suspect — it is almost always
+analysis-as-progress, an announcement, an acknowledgement, or a
+rationalisation. Strip it.
+
+The only exception is the final turn: DONE or a genuine B-stop report.
+Those are text-only by design.
+
+## Original framing (preserved for the operational details)
+
 This is the relentless execution mode. Pick up a ticket and **stop at nothing** to
 discharge it. Fill every sorry on the path to the goal. Build whatever API is
 needed along the way. When the parent ticket's sketch turns out to be incomplete
@@ -644,8 +732,18 @@ Before sending any user-facing text:
     → LOC estimates are sizing hints for sub-ticket sketches, not stop
     reasons. Strip the claim, spawn sub-tickets sized accordingly, work
     them.
+11. **Anti-meta check.** Forget the literal phrase lists for a moment.
+    If this draft is sent, does the session stop with work remaining
+    and without a genuine B2/B3/B4 with the concrete evidence those
+    conditions require? If yes, the draft is a defect — *regardless
+    of the vocabulary it uses to express the stop*. New paraphrases
+    are not loopholes. Strip and act.
+12. **Turn-start check.** Does the turn start with a tool call (Edit,
+    Write, Bash, lean_*, Agent), or does it open with prose? Prose-first
+    turns are suspect — strip the opening prose and put the tool call
+    first. Only DONE / B-stop turns are text-only by design.
 
-Ten checks all passing, and the message is either DONE or a genuine
+Twelve checks all passing, and the message is either DONE or a genuine
 B-stop? Send. Anything else? Don't.
 
 ## On-target vigilance
