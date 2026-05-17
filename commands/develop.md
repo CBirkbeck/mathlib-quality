@@ -452,36 +452,181 @@ this during execution — exactly the failure mode this step prevents.
 
 For each top-level result R the user wants formalised:
 
-#### Step 1 — Write the proof in mathematical English
+#### Step 1 — Read the source's FULL proof of R, including all sub-lemmas (binding)
 
-Draw from the references identified in 1b. Write a complete prose proof — not a
-bullet list, a paragraph or short essay that names every claim, every move,
-every dependency. If the reference covers the proof in 5 lines but the
-formalisation will need 30, write the 30-line version with every step explicit.
-This is the substrate from which the decomposition is extracted.
+Open the cited references and read the **full** proof of R as the source
+gives it — not the headline statement, not a summary, not the abstract,
+but the actual proof body. Read every sub-lemma the source introduces
+along the way, every "we first show that ...", every appendix / footnote
+the proof depends on. If the source's proof spans pages 91–98 with three
+lemmas and a corollary along the way, read pages 91–98 and account for
+all four sub-results.
 
-#### Step 2 — Decompose into ordered lemmas
+Then write a prose version of the source's proof in mathematical English.
+The prose must preserve the source's structure: every sub-lemma the
+source names becomes a named claim in your prose; every step the source
+calls "by Lemma X" becomes a step that names that Lemma X by its
+mathematical content. Do not summarise the source's structure away —
+the source has already done the decomposition work, and your job in
+Step 2 is to mirror it, not invent a fresh one.
 
-Extract each named claim from Step 1's prose into a numbered lemma. Each lemma
-gets:
+**Required artifact:** at the end of Step 1, you should be able to point
+at the source's proof and say "this paragraph is here, this sub-lemma
+is there, this case split is on page N." If you cannot give those
+pointers, you have not actually read the source's proof — you have
+read the headline and guessed at the structure.
 
-- A precise Lean-flavoured type signature (no Lean code yet — enough to say
-  what is asserted)
-- A one-line proof sketch citing what discharges it
-- A reference back to the prose passage it came from
+If the source is terse (a research paper that says "the proof is
+straightforward"), expand it yourself: write the missing argument in
+prose, naming sub-claims explicitly. The expansion then becomes the
+source-proof-substrate for Step 2.
+
+##### Source-gap fallback chain (binding)
+
+If a step in the source's proof is **genuinely opaque** — not just
+terse but a real gap you cannot fill yourself from existing knowledge
+— do not invent the proof. Follow this escalation in order:
+
+1. **Cross-reference other sources.** Search for the same result in
+   other references the project knows about, or in standard textbooks
+   for the area. A graduate-text proof of "Lemma X" in source A may
+   be given in full on page Y of source B; use B's proof as the
+   substrate. Cite both sources in the decomposition.
+
+2. **Search the wider literature.** If the project's known references
+   don't cover the gap, search beyond them — mathlib's references for
+   the relevant area, standard surveys, the Stacks Project for algebraic
+   geometry, etc. (Use `WebSearch` if helpful; this is planning time,
+   not execution time, so heavier search is acceptable.)
+
+3. **Open an `/expert-review` question.** If after cross-referencing
+   and broader search the proof is still genuinely opaque to you —
+   you cannot construct the prose proof of this sub-result from any
+   reading — escalate via `/expert-review`. The opaque sub-result
+   becomes a numbered question in `REVIEW_BRIEF.md` (pure
+   mathematical English, no Lean, no file paths) for an external
+   mathematician to answer.
+
+   Until the `/expert-review` reply comes back, the affected leaf
+   (and its ancestors that depend on it) is in **REVIEW-PENDING**
+   status, not READY. Step 5's confidence gate does not pass for
+   REVIEW-PENDING leaves; tickets are not created for them.
+
+   Record in `decomposition.md`:
+
+   ```
+   - **L4.2** (REVIEW-PENDING): `cusp_form_pole_bound`
+     - Source: Serre VII §3.2 Lemma 3.2.2, p. 100. Source's proof
+       refers to "the well-known result on order of vanishing at the
+       cusp" with no further detail.
+     - Cross-reference attempted: Diamond-Shurman §1.6 (no proof),
+       Bump §1.4 (different formulation).
+     - Wider search attempted: <terms used> — nothing covering the
+       specific bound at this generality.
+     - `/expert-review` question filed: Q3 in
+       `.mathlib-quality/expert-review/2026-05-17/REVIEW_BRIEF.md`
+   ```
+
+   When the `/expert-review --reply` integrates the reviewer's answer,
+   the leaf moves from REVIEW-PENDING to whatever status the new
+   information supports (true leaf, needs sub-decomposition, B2
+   candidate, or API gap), and Steps 3 / 4 / 4.5 / 4.6 are re-run for
+   that leaf.
+
+What is **not** acceptable: skipping the source-reading step, glossing
+over the gap with "the proof is standard", or fabricating a proof that
+isn't grounded in any source. The fallback chain exists precisely to
+give a principled escape when a real gap is hit; abusing it as a
+shortcut around reading the source is the defect this section prevents.
+
+#### Step 2 — Decompose into ordered lemmas (mirror the source's structure)
+
+The source's sub-lemmas ARE the first-pass decomposition. Every named
+sub-lemma the source introduces becomes a candidate leaf:
+
+1. **List the source's sub-lemmas verbatim.** Pull each named auxiliary
+   result the source proves — Lemma 3.1, Proposition 4.2, "the claim
+   below", etc. — into your numbered list. Use the source's structure
+   as the skeleton.
+2. **Then add any decomposition the source skipped.** If the source
+   says "by Lemma X" without proving Lemma X in this passage, Lemma X
+   is a leaf for you (it lives elsewhere in the source, or in mathlib,
+   or in the project). If the source skips a step ("clearly", "by
+   compactness"), make that an explicit sub-lemma in your list.
+3. **For each candidate leaf, ask: does this leaf need further
+   sub-decomposition?** The criterion is **the source's own proof of
+   that sub-lemma**:
+   - If the source proves the sub-lemma in one paragraph using
+     ingredients you have (mathlib / project), it's a true leaf — keep
+     it.
+   - If the source's proof of the sub-lemma is itself multi-step,
+     uses its own auxiliary lemmas, or spans more than a paragraph,
+     the sub-lemma is NOT a leaf — decompose it further by recursing
+     Steps 1 and 2 with the sub-lemma in place of R.
+   - If the source defers the sub-lemma to another reference, follow
+     that reference and read its proof too.
+
+The decomposition tree depth is set by **the source's proof structure**,
+not by guesswork. A source that proves R via four lemmas, each in one
+paragraph using mathlib ingredients, gives you a depth-1 tree with four
+leaves. A source that proves R via four lemmas, three of which need
+their own paragraphs of sub-proof, gives you a deeper tree with the
+right shape.
+
+Each lemma in the decomposition gets:
+
+- A precise Lean-flavoured type signature (no Lean code yet — enough to
+  say what is asserted)
+- A one-line proof sketch citing what discharges it, **including the
+  page/section/lemma-number of the source's own proof of that sub-lemma**
+- A reference back to the prose passage in Step 1
 
 Example shape (modular-forms project, abbreviated):
 
 ```
 R: dim_modularForms_lt_top (k : ℕ) (hk : 4 ≤ k) : Module.Finite ℂ (Mₖ Γ)
+   Source proof: Serre VII §3.2, pages 99-105.
+   Source's sub-results (read at those pages):
+     - Lemma 3.2.1 (p. 99): valence formula
+     - Lemma 3.2.2 (p. 100): bound on poles
+     - Theorem 3.2.3 (p. 101): finite-dimensionality from the bound
+     - Corollary 3.2.4 (p. 105): dim ≤ (specific formula)
 
-  L1: eisenstein_holomorphic — E_k is holomorphic on ℍ for k ≥ 4   [Serre VII §2.1]
-  L2: eisenstein_modular     — E_k satisfies the modular transformation [Serre VII §2.2]
-  L3: cusp_form_decomposition — Mₖ = ℂ·E_k ⊕ Sₖ                    [Serre VII §3.1]
-  L4: cusp_form_finite_dim   — dim_ℂ Sₖ < ∞                        [Serre VII §3.2 via valence]
+  L1: eisenstein_holomorphic — E_k holomorphic on ℍ for k ≥ 4
+                                Source: Serre VII §2.1 Lemma 3, p. 91 (one-paragraph proof)
+                                → leaf (mathlib discharges)
 
-  Composition: L1+L2 give E_k ∈ Mₖ; L3 reduces Mₖ to ℂ·E_k ⊕ Sₖ; L4 finishes.
+  L2: eisenstein_modular — E_k satisfies modular transformation
+                                Source: Serre VII §2.2 Prop 2, p. 93 (one paragraph)
+                                → leaf
+
+  L3: cusp_form_decomposition — Mₖ = ℂ·E_k ⊕ Sₖ
+                                Source: Serre VII §3.1 Lemma 5, p. 97
+                                Source's proof uses two sub-results — needs sub-decomposition:
+                                  L3.1: ev_eisenstein_at_infinity_nonzero — Lemma 5a, p. 97
+                                  L3.2: kernel_of_ev_at_infty_is_cusp_forms — Lemma 5b, p. 98
+
+  L4: cusp_form_finite_dim — dim_ℂ Sₖ < ∞
+                                Source: Serre VII §3.2 Lemma 3.2.1 + Theorem 3.2.3, pp. 99-101
+                                Source's proof uses the valence formula explicitly:
+                                  L4.1: valence_formula                    — Lemma 3.2.1, p. 99
+                                  L4.2: cusp_form_pole_bound              — Lemma 3.2.2, p. 100
+                                  L4.3: finite_dim_from_pole_bound        — Thm 3.2.3, p. 101
 ```
+
+Notice L3 and L4 each decompose into sub-lemmas because the source's own
+proof uses sub-results; L1 and L2 don't, because the source proves them
+directly. The decomposition tree mirrors what's on the page.
+
+**Sizing (LOC estimates): grounded in source line counts only.** When the
+decomposition entry includes a size estimate, that estimate MUST be
+grounded in the source's actual proof length for that sub-lemma. "The
+source proves L3.1 in 12 lines on page 97; expecting ~30 LOC of Lean
+formalisation" is acceptable — the 12 source lines are the anchor.
+"L3.1 will be ~150 LOC" with no source line-count grounding is
+forbidden. If you cannot point at how many lines / paragraphs the source
+spends on a sub-lemma, you have not actually read the source's proof,
+and the sizing is fabricated.
 
 #### Step 2.5 — State the lemmas in Lean, with `sorry` (binding)
 
@@ -706,7 +851,7 @@ explicitly addressed in the new decomposition, the confidence gate
 
 #### Step 5 — Confidence gate (binding)
 
-You may not proceed to step 1f until **all five** of the following hold:
+You may not proceed to step 1f until **all six** of the following hold:
 
 1. **Every leaf** of the decomposition tree is one of:
    - Discharged directly from mathlib (cited lemma name + verified existence
@@ -729,6 +874,26 @@ You may not proceed to step 1f until **all five** of the following hold:
    hypothesis added, formalisation corrected), with a note recorded in
    `decomposition.md` saying how. Unaddressed prior B2 matches block the
    gate.
+6. **The decomposition tree mirrors the source's proof structure.** For
+   every internal (non-leaf) node, the entry in `decomposition.md` must
+   cite the source's own proof of that sub-result — page/section/lemma
+   number — and the sub-decomposition must follow the sub-lemmas the
+   source itself uses. A node that is internal in the source's proof
+   but a leaf in your tree (or vice versa) is a defect: either the
+   source uses sub-lemmas you missed (re-read), or you've invented an
+   intermediate the source doesn't have (collapse it). Any LOC estimate
+   in the tree must cite the corresponding source line count (e.g.
+   "source proves L3.1 in 12 lines, p. 97; expecting ~30 LOC Lean").
+   Ungrounded LOC estimates block the gate.
+
+In addition, **REVIEW-PENDING leaves do not pass the gate.** If any leaf
+(or any ancestor of a REVIEW-PENDING leaf) is awaiting an `/expert-review`
+reply, that subtree is not ready for ticket creation. The gate passes
+only for the parts of the tree where every leaf is in {READY-mathlib,
+READY-project, API-GAP-with-sub-tree} — not in REVIEW-PENDING. Tickets
+created at 1g exclude REVIEW-PENDING subtrees; once the reviewer's reply
+is integrated via `/expert-review --reply`, re-run Phase 1e for those
+subtrees and let the gate pass before adding the corresponding tickets.
 
 An "API gap" is a leaf that cannot be discharged from existing infrastructure
 and cannot be decomposed further without writing new mathematical content. API
