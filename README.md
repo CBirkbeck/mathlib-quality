@@ -145,7 +145,7 @@ activate the new tool.
 
 | Command | Description |
 |---------|-------------|
-| `/develop` | **Planning only, with binding methodical-decomposition pre-work.** Mathlib search, API design, then a per-result decomposition pass: write the prose proof, decompose into ordered lemmas, tension against references, verify every leaf is discharged from existing mathlib (cited + verified) or project code (cited) — gaps become explicit API-gap sub-trees. Saved as `decomposition.md`. Only then is the ticket board created. Stops after approval. |
+| `/develop` | **Planning only, with binding methodical-decomposition pre-work.** Mathlib search, API design, then a per-result decomposition pass: prose proof + ordered lemma list + **`:= by sorry` skeleton stated in the project's Lean files (must `lake build` clean)** + **verbatim source quotes per leaf** + Lean ↔ source match paragraphs + per-leaf provability check. Saved as `decomposition.md`; tickets only after every leaf verified. **`--decompose` flag** runs just this pre-work pass and stops, for iterating on the decomposition before committing to a ticket board. |
 | `/beastmode` | **Marathon execution. Stops at nothing — but stays on-target.** Pick a ticket and finish the goal — spawn sub-tickets in `/develop`'s format for missing lemmas, replan via `/develop --continue` for wrong strategies, no recursion cap, no time budget. **Super Saiyan ethos**: scope growth that stays on-target is great news, not a stop signal. **Multi-session work is the target, not an exit.** Only stops: DONE / SCOPE-DEFINITION ERROR / OFF-TRACK (genuine, with concrete evidence) / BROKEN BASELINE. |
 | `/cleanup` | Style audit + cleanup + golf (whole file or single declaration). **9-phase** methodical workflow; absorbed `/check-style` (Phase 2 audit) and `/check-mathlib` (Phase 4 item 13: five-method search-status block + six strict mathlib-replacement rules). |
 | `/cleanup-all` | **Orchestrator-worker marathon.** Main session dispatches batched `Agent` calls with tight prompts (working dir + branch + build + file list + target); workers do all file reading, LSP, edits, and build verification in fresh contexts. Between dispatches the orchestrator emits a one-line scoreboard, nothing else. The pattern that sustained a real 28-day, 9000-message, 395-dispatch cleanup session. |
@@ -170,6 +170,7 @@ activate the new tool.
 ```
 # Plan
 /develop                   # Plan a new development (creates the ticket board)
+/develop --decompose       # Run ONLY Phase 1e (skeleton + source quotes + feasibility), no tickets
 /develop --continue        # Audit ticket board against the code, propose updates
 /develop --status          # Show current ticket board
 /develop --takeover        # Plan a takeover of an existing project

@@ -29,6 +29,12 @@ a concrete reason it can't.
 /develop --continue                 # Audit the current ticket board against the code, propose updates
 /develop --status                   # Show current ticket board
 /develop --takeover                 # Force takeover mode on existing code (creates tickets to bring it to completion)
+/develop --decompose                # Run ONLY Phase 1e (the methodical-decomposition pre-work pass) and stop.
+                                    # Writes the Lean skeleton (`:= by sorry` lemmas in project files),
+                                    # writes `.mathlib-quality/decomposition.md` with verbatim source
+                                    # quotes per leaf, runs the per-leaf provability check, and exits
+                                    # WITHOUT creating tickets. For iterating on the decomposition
+                                    # before committing to a ticket board.
 ```
 
 After any of these completes and the ticket board is approved, run `/beastmode` to
@@ -69,6 +75,7 @@ On startup, `/develop` determines the mode automatically:
 
 For `--continue`: skip mode detection, go straight to resume.
 For `--status`: just print the ticket board and exit.
+For `--decompose`: skip mode detection, go straight to **Decompose Mode** (see below).
 
 ---
 
@@ -198,6 +205,99 @@ Run `/beastmode` to pick it up and work it to completion.
 ```
 
 `/develop` does not execute. Workers run via `/beastmode`.
+
+---
+
+## Decompose Mode (`--decompose`)
+
+Run **only** Phase 1e (the methodical-decomposition pre-work pass) and stop.
+The flag is for iterating on the decomposition before committing to a
+ticket board.
+
+### When to use
+
+- A new project where you have references and a goal but want to confirm
+  the proof decomposes cleanly into leaves you can actually discharge,
+  before any ticket is created.
+- An existing project where the references have changed, the goal has
+  shifted, or you want to re-verify the source quotes against the
+  current state of the proof.
+- After `/develop --takeover` has surfaced an existing codebase, but
+  before adding tickets — re-derive the decomposition from scratch
+  against the existing skeleton.
+
+### What happens
+
+1. **Determine the goal.** If `.mathlib-quality/plan.md` exists, read it
+   for the project's goal, references, and API design. Otherwise, prompt
+   the user for goal + references the same way `/develop` (new project)
+   does in steps 1a–1c.
+
+2. **Reuse or run API design (step 1d).** If `plan.md` already has an
+   API-design section, reuse it. If not, run step 1d before Phase 1e —
+   you need decisions on namespace, file structure, and generality to
+   know where to put the skeleton declarations.
+
+3. **Run Phase 1e in full** (Steps 1 through 6):
+   - Step 1: write the prose proof per top-level result
+   - Step 2: decompose into ordered lemmas in markdown
+   - Step 2.5: state every lemma in Lean with `:= by sorry`;
+     `lake build` must pass with sorries-only
+   - Step 3: tension against references with verbatim quotes per leaf;
+     Lean ↔ source match paragraphs
+   - Step 4: per-leaf provability check (mathlib / project / API gap)
+   - Step 5: confidence gate (three binding conditions)
+   - Step 6: write `.mathlib-quality/decomposition.md`
+
+4. **Stop. Do NOT create tickets.** This mode is planning-only-planning.
+   Tickets are reserved for a separate `/develop` (full) or `/develop
+   --continue` invocation after the decomposition is approved.
+
+### Output summary (print at end of mode)
+
+```
+## /develop --decompose report
+
+### Lean skeleton
+- Files written: <list, with line counts>
+- `lake build` status: ✓ clean (N sorries) / ✗ broken at <file>:<line>
+- `lean_diagnostic_messages` summary: <only sorry warnings / list of errors>
+
+### Decomposition tree
+- Top-level results: <count>
+- Total leaves: <count>
+- Discharged from mathlib: <count> (each cited + verified)
+- Discharged from project code: <count> (each cited by file:decl)
+- API gaps (need their own sub-development): <count> (each with a sub-tree)
+
+### Source check
+- Leaves with verbatim source quote: <count> / <total>
+- Leaves with Lean ↔ source match paragraph: <count> / <total>
+- Any leaves missing either: <list> — these are defects; rerun
+
+### Feasibility assessment
+<one paragraph in mathematical English summarising whether the project
+as decomposed is feasible: every leaf discharged, no API gaps that
+require multi-week new development, sources support the claims as
+stated. If there are concerns, name them.>
+
+### Next step
+- If feasibility is clean and the user approves: run `/develop` (full)
+  or `/develop --continue` to create tickets from the verified leaves.
+- If feasibility surfaces an issue: revise the goal / references / API
+  design and re-run `/develop --decompose`.
+```
+
+### Iteration
+
+`/develop --decompose` is idempotent and re-runnable. Each invocation:
+- Re-reads the current `plan.md` (if any)
+- Refreshes the skeleton (preserves any already-proven lemmas the user
+  has filled in — does NOT overwrite non-sorry bodies)
+- Re-writes `decomposition.md`
+
+Run it as many times as needed until the decomposition feels right;
+only then proceed to ticket creation.
 
 ---
 
