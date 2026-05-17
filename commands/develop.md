@@ -601,9 +601,112 @@ For each L_i, identify what discharges it. Three categories only:
   categories, OR until further decomposition produces an irreducible new
   mathematical content (= an API gap; see Step 5).
 
+#### Step 4.5 — Disproof attempt for each leaf (binding)
+
+The provability check above asks "can this be proved?" The disproof attempt
+asks the dual question: "could this be false?" A leaf that passes provability
+but is actually false will silently break execution weeks later as a B2
+SCOPE / DEFINITION ERROR.
+
+For each leaf L_i:
+
+1. **Search for a counterexample in the project.** Run `lean_loogle` /
+   `lean_local_search` for the **negation** of L_i's conclusion under L_i's
+   hypotheses, and for statements that would directly contradict L_i. Be
+   specific — search for `¬ P` where `P` is the conclusion, and for
+   `P → False` shapes.
+2. **Edge-case instantiation.** Mentally instantiate L_i at the natural
+   edge cases — zero, empty set, identity element, `n = 0`, `n = 1`, `S = ∅`,
+   `S = {x}`, the trivial group, the prime case if relevant. Does the
+   statement still hold? If it fails at an edge case, the statement is
+   wrong as written — flag B2 candidate.
+3. **Hypothesis-strength test.** Could you weaken any hypothesis and still
+   have the statement hold? If so, the statement is fine but over-specified.
+   Could you remove any hypothesis without the statement collapsing? If
+   yes, the statement is overdetermined — consider strengthening.
+4. **Implausibility check.** Read the Lean signature out loud as a
+   mathematical claim. Does it match what the source actually claims, or
+   has it been transcribed in a way that's stronger / weaker / wrong?
+   (This is the Lean ↔ source match from Step 3, but inverted — looking
+   for ways the formalisation might have drifted from the cited claim.)
+
+If any disproof attempt succeeds (a counterexample exists, an edge case
+fails, the hypothesis-strength check exposes a degeneracy, the
+implausibility check surfaces drift), the leaf is **not** ready to ticket.
+Either:
+- Fix the statement (in both `decomposition.md` and the Lean skeleton)
+  and re-run Steps 3 and 4 with the corrected statement
+- Or flag the leaf as a B2 candidate — open a discussion with the user
+  before any ticket is created from it
+
+Record disproof-attempt results in `decomposition.md` per leaf:
+
+```
+- **L1** ...
+  - Disproof attempt:
+    - Negation search: `lean_loogle "¬ Holomorphic ..." → no contradicting lemma`
+    - Edge cases tried: `k = 4` (boundary), `k = 100` (large) — both hold
+    - Hypothesis test: removing `4 ≤ k` makes the statement false at `k = 2`
+      (Σ n^{-2} diverges at the corners) — hypothesis is necessary, not
+      over-specified
+    - Verdict: PASSES disproof attempt; no counterexample found
+```
+
+#### Step 4.6 — Consult prior-B2 log (binding)
+
+`/beastmode` records every B2 SCOPE / DEFINITION ERROR it hits to
+`.mathlib-quality/b2_log.jsonl` (one JSON object per line, fields:
+`timestamp`, `ticket_id`, `lemma_name`, `lemma_statement`,
+`b2_reason`, `counterexample` if any). The decompose pass MUST read
+this log and check whether any leaf in the current tree matches a
+previously-flagged B2.
+
+Tool call: `Read .mathlib-quality/b2_log.jsonl` (create empty file
+if missing). For each leaf L_i:
+
+1. **Name match.** Does `L_i.name` exactly match a previously-flagged
+   `lemma_name` in the log? If yes, surface that prior B2 immediately
+   — the same statement was flagged before; don't ticket it again
+   without addressing the prior reason.
+2. **Shape match.** Does `L_i.statement` closely resemble (same head
+   constant, same hypothesis shape) any previously-flagged statement?
+   If yes, flag for user review — this might be the same defect
+   reincarnated under a renamed lemma.
+3. **Reason inheritance.** If a prior B2's `counterexample` field is
+   non-empty, the counterexample is reusable evidence. Apply it to
+   the current leaf in Step 4.5's "edge-case instantiation"
+   sub-step.
+
+Record findings in `decomposition.md`:
+
+```
+- **L1** ...
+  - Prior-B2 log consultation:
+    - No match by name (`b2_log.jsonl` checked, 4 entries)
+    - No match by shape
+  - Verdict: clean of prior B2 history
+
+- **L4** ...
+  - Prior-B2 log consultation:
+    - **MATCH BY NAME**: `cusp_form_finite_dim` was flagged B2 in
+      ticket T032 (2026-04-22) with reason "the conclusion is false
+      at weight k = 2 because Δ doesn't divide all such forms".
+      Counterexample: Δ-multiples at weight 14 violate the proposed
+      identity.
+    - **The current L4 statement has the same name and a similar
+      shape.** Has the issue been addressed? If yes, document how
+      below; if no, the leaf is not ready — re-state with the
+      additional hypothesis the prior B2 surfaced (k ≥ 4 instead
+      of k ≥ 2), or open the question with the user.
+```
+
+If a name-match or shape-match surfaces a prior B2 that hasn't been
+explicitly addressed in the new decomposition, the confidence gate
+(Step 5) does NOT pass for that leaf.
+
 #### Step 5 — Confidence gate (binding)
 
-You may not proceed to step 1f until **all three** of the following hold:
+You may not proceed to step 1f until **all five** of the following hold:
 
 1. **Every leaf** of the decomposition tree is one of:
    - Discharged directly from mathlib (cited lemma name + verified existence
@@ -616,6 +719,16 @@ You may not proceed to step 1f until **all three** of the following hold:
    physical proof that the dependency shape type-checks.
 3. **Every leaf has a verbatim source quote** plus a Lean ↔ source match
    paragraph in `decomposition.md` per Step 3.
+4. **Every leaf has passed the disproof attempt** from Step 4.5 — no
+   counterexample found, edge cases hold, hypothesis-strength is
+   justified, no implausibility surfaced. The disproof-attempt results
+   are recorded in `decomposition.md`.
+5. **Every leaf has been checked against the prior-B2 log** from Step 4.6.
+   For each name- or shape-match, the prior B2 reason has been explicitly
+   addressed in the current decomposition (statement strengthened,
+   hypothesis added, formalisation corrected), with a note recorded in
+   `decomposition.md` saying how. Unaddressed prior B2 matches block the
+   gate.
 
 An "API gap" is a leaf that cannot be discharged from existing infrastructure
 and cannot be decomposed further without writing new mathematical content. API

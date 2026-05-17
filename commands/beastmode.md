@@ -215,6 +215,20 @@ B2. **SCOPE / DEFINITION ERROR** — the ticket's stated declaration is
     invoke `/develop --continue` to replan the sketch and keep going (see
     "Replan and continue" below).
 
+    **Required artifact: append to `.mathlib-quality/b2_log.jsonl`** before
+    emitting the B-stop report. One JSON object per line, this exact shape
+    (the decompose pass reads this log; if you skip writing, the next
+    decompose run will re-ticket the same defective statement):
+
+    ```jsonl
+    {"timestamp":"<ISO>", "ticket_id":"<TXXX>", "lemma_name":"<full.qualified.name>", "lemma_statement":"<the Lean signature, single line>", "b2_reason":"<concrete reason>", "counterexample":"<if applicable, a concrete counterexample or null>"}
+    ```
+
+    Tool call: `Bash` `echo '<json>' >> .mathlib-quality/b2_log.jsonl` (or
+    `Edit` on the file). The append must happen before the PHASE-8 report
+    is emitted, and the pre-stop checklist (G-gates) does not pass without
+    it for a B2 stop.
+
 B3. **OFF-TRACK** — the work has drifted onto something genuinely outside the
     project's mathematical area, not just deep within it. The bar is high:
     - The missing fact is at the scale of a published-paper theorem nobody
@@ -1038,6 +1052,24 @@ open tickets with met dependencies.
 defect this gate prevents. The trace must show the re-scan tool call
 immediately after the ticket-DONE write to tickets.md.
 
+### Gate G7 — `b2_log.jsonl` appended (for B2 stops only)
+
+If the stop reason is B2 SCOPE / DEFINITION ERROR, the worker MUST
+have appended a JSON line to `.mathlib-quality/b2_log.jsonl` before
+emitting the B-stop report. Required fields:
+
+```jsonl
+{"timestamp":"<ISO>", "ticket_id":"<TXXX>", "lemma_name":"<full.qualified.name>", "lemma_statement":"<single-line Lean signature>", "b2_reason":"<concrete reason>", "counterexample":"<concrete example or null>"}
+```
+
+Tool call: `Bash` `echo '<json>' >> .mathlib-quality/b2_log.jsonl` or
+an `Edit` on the file. The append must be visible in the trace.
+
+Purpose: the decompose pass (`/develop`'s Phase 1e, Step 4.6) reads
+this log to surface previously-flagged B2s on the same lemma names
+before re-ticketing them. Without G7, the next decompose run
+re-tickets the same defective statement and the defect recurs.
+
 ### Pre-stop checklist (required artifact for any stop report)
 
 Every stop report — whether DONE, BEASTMODE-DONE, or a B-stop —
@@ -1053,6 +1085,7 @@ trace:
 - G4 ≥3 tactic attempts on stuck goal: ✓ (lean_multi_attempt @ turns ..., Edit @ ...) / ✗ / n/a
 - G5 lake build clean: ✓ (Bash lake build @ turn N → success) / ✗ / n/a
 - G6 sequence-continuation: ✓ (re-scan @ turn N → 0 open) / ✗
+- G7 b2_log appended (B2 stops only): ✓ (Bash/Edit @ turn N → jsonl line) / ✗ / n/a
 ```
 
 Each ✓ must cite the turn / tool-call where the gate was satisfied. A
@@ -1466,6 +1499,7 @@ defect — the protocol requires it, and the user is meant to verify each
 - G4 ≥3 tactic attempts on stuck goal: ✓ / n/a
 - G5 lake build clean: ✓ (Bash lake build @ turn <N> → success)
 - G6 sequence-continuation: ✓ (re-scan @ turn <N> → next ticket = T### / 0 open)
+- G7 b2_log appended: n/a (not a B2 stop)
 
 Status: DONE
 Time on ticket: from <start ISO> to <end ISO>
@@ -1511,6 +1545,7 @@ Cycles: <approximate number of try-diagnose-adjust loops>
 - G4 ≥3 tactic attempts on stuck goal: ✓ (cite turns) / ✗ / n/a
 - G5 lake build clean: ✗ / n/a (not a DONE)
 - G6 sequence-continuation: ✓ (re-scan @ turn <N>) / ✗
+- G7 b2_log appended (B2 only): ✓ (Bash/Edit @ turn <N> → jsonl line) / ✗ / n/a
 
 If any ✗ in an applicable row, this report is invalid. The next turn
 must be the missing gate's tool call, not this report.
