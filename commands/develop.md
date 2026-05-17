@@ -1,6 +1,6 @@
 ---
 name: develop
-description: Plan a mathematical development project (planning-only). Searches mathlib, designs the API, then runs a binding **methodical decomposition pre-work pass** — for each top-level result, writes the prose proof, decomposes into ordered lemmas, tensions against the references, and verifies that every leaf is dischargeable from existing mathlib or already-developed project code (or surfaces it as an explicit API gap with its own sub-decomposition). Saves `decomposition.md`. Only after every leaf is verified does the ticket board get written. Workers run via /beastmode.
+description: Plan a mathematical development project (planning-only). Searches mathlib, designs the API, then runs a binding **methodical decomposition pre-work pass** — for each top-level result, writes the prose proof, decomposes into ordered lemmas, **writes every lemma as a `:= by sorry` declaration in the project's Lean files (the skeleton must `lake build` clean)**, tensions against the references with **verbatim source quotes per leaf plus a Lean ↔ source match paragraph**, and verifies that every leaf is dischargeable from existing mathlib or already-developed project code (or surfaces it as an explicit API gap with its own sub-decomposition). Saves `decomposition.md`. Only after every leaf has a Lean declaration, a verbatim source quote, and a citation is verified does the ticket board get written. Workers run via /beastmode.
 ---
 
 # /develop — Mathematical Development Planner
@@ -383,18 +383,106 @@ R: dim_modularForms_lt_top (k : ℕ) (hk : 4 ≤ k) : Module.Finite ℂ (Mₖ Γ
   Composition: L1+L2 give E_k ∈ Mₖ; L3 reduces Mₖ to ℂ·E_k ⊕ Sₖ; L4 finishes.
 ```
 
+#### Step 2.5 — State the lemmas in Lean, with `sorry` (binding)
+
+After the markdown decomposition in Step 2, **write the actual Lean
+declarations** for every lemma in the tree into the appropriate project
+files (per the API design from 1d). Every declaration ends in `:= by sorry`.
+This produces a compilable skeleton: a set of `.lean` files where every
+lemma exists as a real declaration, all with `sorry`, and the whole project
+still passes `lake build` (sorries are warnings, not errors).
+
+Each Lean declaration is the **canonical** form of the lemma — the
+markdown signature in Step 2 was a draft; the Lean form is the source of
+truth from here on. If the Lean elaborator rejects a draft signature
+(missing universe, wrong instance argument, ambiguous typeclass), that
+rejection is the lemma needing further design, not a sign to skip the
+step. Fix the signature.
+
+For each lemma L_i:
+
+1. Place the declaration in the file decided at 1d (the API design).
+2. Write the full signature including all hypotheses, universes, and
+   typeclass arguments.
+3. Add a docstring naming the source reference in one line (no proof
+   strategy — see the docstring style rule):
+   ```lean
+   /-- Source: Serre, *Cours d'arithmétique*, Ch. VII §2.1 Lemma 3 (p. 91). -/
+   theorem eisenstein_holomorphic (k : ℕ) (hk : 4 ≤ k) :
+       Holomorphic (eisensteinSeries k) := by sorry
+   ```
+4. After all lemmas are stated, run `lake build` and `lean_diagnostic_messages`
+   on every touched file. Every file MUST compile (sorries permitted; type
+   errors not). If any file doesn't compile, fix the signatures before
+   proceeding to Step 3.
+
+The skeleton is the binding artifact of this step. A reviewer who opens
+the project should see every lemma in the decomposition tree existing as
+a `:= by sorry` declaration, with the file passing `lake build`. If a
+lemma is in `decomposition.md` but not in any `.lean` file, the step
+was skipped.
+
+Why this matters: a skeleton enforces dependency-shape consistency. Lemma
+B can only `exact L1 ... L2 ...` if L1 and L2 actually elaborate to the
+expected types. By stating everything as `sorry` up front, you catch
+"this composition doesn't type-check" at planning time instead of weeks
+later during execution. Tickets created from this skeleton in 1g are
+"fill the sorry at file:line" — a much tighter contract than "prove this
+informal statement".
+
 #### Step 3 — Tension against the references (binding)
 
-For each lemma L_i, cross-check against the reference passages:
+For each lemma L_i, cross-check against the reference passages.
 
-- Does L_i's statement match what the reference's step actually claims?
+**Required artifact per leaf: a verbatim source quote.** For each leaf
+lemma, the `decomposition.md` entry must include a **literal quoted
+passage** from the cited reference — not a paraphrase. Format:
+
+```
+- **L1** (leaf, mathlib): `eisenstein_holomorphic`
+  - Lean statement: see `MyProj/ModularForms/Eisenstein.lean:42`
+  - Source: Serre, *Cours d'arithmétique*, Ch. VII §2.1 Lemma 3 (p. 91)
+  - Source claim (verbatim):
+    > "For k ≥ 4, the Eisenstein series E_k(τ) = Σ_{(c,d) ≠ 0} (cτ + d)^{−k}
+    > converges absolutely and uniformly on every compact subset of ℍ,
+    > and hence defines a holomorphic function on ℍ."
+  - Lean ↔ source match: the Lean statement asserts `Holomorphic
+    (eisensteinSeries k)` for `4 ≤ k`. The reference's claim is precisely
+    this (compact-set absolute convergence ⟹ holomorphic limit; the
+    `Holomorphic` predicate in mathlib bundles both).
+  - Discharged by: `ContinuousOn.differentiable`, `EisensteinSeries.summable`
+    (verified: `lean_loogle` returned both at expected signatures)
+```
+
+The verbatim quote is what makes the source check mechanical. A reviewer
+reading `decomposition.md` can:
+
+1. Open the cited reference at the named page
+2. Confirm the quoted passage exists there
+3. Confirm the quoted passage actually says what the Lean lemma claims
+4. Confirm the Lean ↔ source match paragraph is honest, not hand-waving
+
+If you cannot produce a verbatim quote — because the reference is not
+to hand, or because the cited section actually doesn't claim what the
+lemma says — that is a defect at planning time, exactly the kind this
+step is meant to catch.
+
+For internal (non-leaf) lemmas, the quote can be replaced by a structural
+note ("L2 is the composition of L2.1 and L2.2; see those leaves for source
+quotes"). Every leaf gets a quote.
+
+For each lemma L_i, cross-check beyond the quote:
+
+- Does L_i's Lean statement (from Step 2.5) match what the quoted passage
+  actually claims?
 - Does Step 1's prose actually compose L_1, ..., L_k correctly to get R?
 - Are there gaps in the prose that L_1, ..., L_k don't cover?
 
-If a tension surfaces — a statement mismatch, a missing step, a composition gap
-— fix the decomposition or the prose. **Iterate.** Do not silently absorb the
-tension; an unsurfaced tension at this step becomes a "PROOF-SKETCH
-FUNDAMENTALLY WRONG" stop during execution, weeks later.
+If a tension surfaces — a statement mismatch, a missing step, a composition
+gap, a quote that doesn't actually say what the lemma claims — fix the
+decomposition, the Lean skeleton, or the prose. **Iterate.** Do not silently
+absorb the tension; an unsurfaced tension at this step becomes a
+"PROOF-SKETCH FUNDAMENTALLY WRONG" stop during execution, weeks later.
 
 #### Step 4 — Provability check for each leaf (binding)
 
@@ -415,11 +503,19 @@ For each L_i, identify what discharges it. Three categories only:
 
 #### Step 5 — Confidence gate (binding)
 
-Iterate until **every leaf** of the decomposition tree is one of:
+You may not proceed to step 1f until **all three** of the following hold:
 
-- Discharged directly from mathlib (cited, verified)
-- Discharged from already-developed project code (cited)
-- An explicit **API gap** with its own sub-decomposition tree
+1. **Every leaf** of the decomposition tree is one of:
+   - Discharged directly from mathlib (cited lemma name + verified existence
+     via `lean_loogle` / `lean_leansearch` / `lean_local_search`)
+   - Discharged from already-developed project code (cited by file:decl)
+   - An explicit **API gap** with its own sub-decomposition tree
+2. **The Lean skeleton compiles.** `lake build` returns success across the
+   files touched by Step 2.5; `lean_diagnostic_messages` shows only `sorry`
+   warnings, no type errors. The set of `:= by sorry` declarations is the
+   physical proof that the dependency shape type-checks.
+3. **Every leaf has a verbatim source quote** plus a Lean ↔ source match
+   paragraph in `decomposition.md` per Step 3.
 
 An "API gap" is a leaf that cannot be discharged from existing infrastructure
 and cannot be decomposed further without writing new mathematical content. API
@@ -427,18 +523,28 @@ gaps get the same Steps 1–5 treatment recursively — each gap is treated as a
 mini-project whose tickets will be created at 1g before any ticket that
 depends on the gap.
 
-**You may not proceed to step 1f until every leaf in the tree is either
-discharged-with-citation or surfaced as an API gap with its own
-sub-decomposition.** If you find yourself reaching for "we'll figure this
-step out during execution", that step is an API gap — surface it now, not
-later.
+If you find yourself reaching for "we'll figure this step out during
+execution", that step is an API gap — surface it now, not later. If you
+find yourself reaching for "the source says something like ..." instead
+of a verbatim quote, the source check was not done — fix that before
+proceeding.
 
 #### Step 6 — Write the decomposition artifact (REQUIRED)
 
-Save the final decomposition tree to `.mathlib-quality/decomposition.md`:
+Save the final decomposition tree to `.mathlib-quality/decomposition.md`.
+Every leaf MUST include: a pointer to its Lean declaration in the skeleton
+(file:line), a precise source citation (chapter / section / lemma number /
+page), and a **verbatim source quote** plus a Lean ↔ source match paragraph.
 
 ```markdown
 # Decomposition for [project title]
+
+## Skeleton location
+The Lean skeleton (every lemma stated with `:= by sorry`) lives in:
+- `MyProj/ModularForms/Eisenstein.lean`
+- `MyProj/ModularForms/CuspForms.lean`
+- `MyProj/ModularForms/Main.lean`
+`lake build` passes (sorries only, no type errors) — verified at <timestamp>.
 
 ## Result: dim_modularForms_lt_top
 
@@ -448,18 +554,34 @@ Save the final decomposition tree to `.mathlib-quality/decomposition.md`:
 ### Lemmas (in order)
 
 - **L1** (leaf, mathlib): `eisenstein_holomorphic`
-  - Statement: `(k : ℕ) (hk : 4 ≤ k) : Holomorphic (eisensteinSeries k)`
+  - Lean declaration: `MyProj/ModularForms/Eisenstein.lean:42`
+  - Statement (verbatim from skeleton):
+    ```lean
+    theorem eisenstein_holomorphic (k : ℕ) (hk : 4 ≤ k) :
+        Holomorphic (eisensteinSeries k) := by sorry
+    ```
+  - Source: Serre, *Cours d'arithmétique*, Ch. VII §2.1 Lemma 3 (p. 91)
+  - Source claim (verbatim quoted from p. 91):
+    > "For k ≥ 4, the Eisenstein series E_k(τ) = Σ_{(c,d) ≠ 0} (cτ+d)^{−k}
+    > converges absolutely and uniformly on every compact subset of ℍ, and
+    > hence defines a holomorphic function on ℍ."
+  - Lean ↔ source match: the Lean statement asserts `Holomorphic
+    (eisensteinSeries k)` for `4 ≤ k`. The quoted passage says compact-set
+    absolute convergence ⟹ holomorphic limit for the same series; the
+    `Holomorphic` predicate bundles both.
   - Discharged by: `ContinuousOn.differentiable`, `EisensteinSeries.summable`
-    (verified: `lean_loogle` returned both at expected signatures)
-  - Reference: Serre VII §2.1
+    (verified: `lean_loogle "Summable …" → EisensteinSeries.summable`
+    at expected signature)
 
 - **L2** (internal):
-  - Statement: `E_k satisfies the modular transformation`
+  - Statement: `E_k satisfies the modular transformation` (see skeleton)
+  - Lean declaration: `MyProj/ModularForms/Eisenstein.lean:74`
   - Sub-decomposition:
     - **L2.1** (leaf, project): existing `modular_transform_formula`
-      in `MyProj/ModularForms/Basic.lean:142`
+      in `MyProj/ModularForms/Basic.lean:142` (verified to compile)
     - **L2.2** (leaf, mathlib): `SL2Z.holomorphic_action` (verified)
-  - Reference: Serre VII §2.2
+  - Source: Serre VII §2.2 (composition of leaves; see L2.1 and L2.2 for
+    individual source quotes)
 
 - **L3** (internal):
   - ...
@@ -468,14 +590,28 @@ Save the final decomposition tree to `.mathlib-quality/decomposition.md`:
 
 - **AG1**: `q_expansion_principle_for_periodic_holomorphic`
   - Needed by: L4
+  - Lean declaration: `MyProj/ModularForms/QExpansion.lean:18`
+    (stated with `:= by sorry`)
   - Status: not in mathlib, not in project
+  - Source: Diamond-Shurman, *A First Course in Modular Forms*, Ch. 1 §2.2
+    Theorem 1.2.4 (p. 17–18)
+  - Source claim (verbatim):
+    > "Any holomorphic function f : ℍ → ℂ satisfying f(τ + 1) = f(τ)
+    > admits a Fourier expansion f(τ) = Σ_{n ∈ ℤ} a_n q^n where q = e^{2πiτ},
+    > convergent on …"
   - Sub-decomposition tree below
   - Tickets will be created for AG1's leaves before L4's leaves
 ```
 
-The artifact is the proof that the methodical pass actually ran. A reviewer who
-finds a leaf without a verified citation has found a defect — the pass was
-skipped on that leaf.
+The artifact is the proof that the methodical pass actually ran. A reviewer
+who finds:
+- A leaf without a Lean declaration pointer in the skeleton → step 2.5 skipped
+- A leaf without a verbatim source quote → step 3's source check skipped
+- A leaf without a Lean ↔ source match paragraph → step 3's mapping skipped
+- A leaf whose claimed source quote doesn't appear at the cited page → defect
+
+— has found a defect, and the pass should be re-run before tickets are
+created.
 
 ### 1f: Write the Plan
 
