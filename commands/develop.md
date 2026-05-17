@@ -1,6 +1,6 @@
 ---
 name: develop
-description: Plan a mathematical development project (planning-only). Searches mathlib, designs the API, drafts proof sketches from your sources, and writes detailed self-contained tickets. Workers run via /beastmode, not here.
+description: Plan a mathematical development project (planning-only). Searches mathlib, designs the API, then runs a binding **methodical decomposition pre-work pass** — for each top-level result, writes the prose proof, decomposes into ordered lemmas, tensions against the references, and verifies that every leaf is dischargeable from existing mathlib or already-developed project code (or surfaces it as an explicit API gap with its own sub-decomposition). Saves `decomposition.md`. Only after every leaf is verified does the ticket board get written. Workers run via /beastmode.
 ---
 
 # /develop — Mathematical Development Planner
@@ -131,7 +131,7 @@ Present findings to the user:
 ### R3: Cleanup-Cadence Audit
 
 Before proposing updates to the user, audit whether the existing ticket board still
-satisfies the cleanup cadence from §1f. Resumed projects routinely drift on cleanup
+satisfies the cleanup cadence from §1g. Resumed projects routinely drift on cleanup
 discipline because new tickets were added during execution without re-running the
 cadence rule.
 
@@ -336,7 +336,148 @@ For each new definition:
 **Rule: No one-off definitions without API.** Every definition must have at least
 basic API lemmas (membership, composition, monotonicity as appropriate).
 
-### 1e: Write the Plan
+### 1e: Methodical Decomposition (pre-work for tickets — binding)
+
+**This is the pre-work pass. No tickets exist yet.** The goal is to verify, before
+any ticket is created, that every leaf of the project's decomposition tree is
+discharged from existing infrastructure — mathlib lemmas or already-developed
+project code. Tickets only get created at step 1g, from the verified leaves of
+this tree.
+
+Skip 1e **only** if the project is a near-trivial single-theorem translation
+where the proof sketch fits in one paragraph and every step is a one-liner.
+The cost of skipping in a non-trivial project is producing tickets for steps
+that turn out to be unreachable from current infrastructure, then discovering
+this during execution — exactly the failure mode this step prevents.
+
+For each top-level result R the user wants formalised:
+
+#### Step 1 — Write the proof in mathematical English
+
+Draw from the references identified in 1b. Write a complete prose proof — not a
+bullet list, a paragraph or short essay that names every claim, every move,
+every dependency. If the reference covers the proof in 5 lines but the
+formalisation will need 30, write the 30-line version with every step explicit.
+This is the substrate from which the decomposition is extracted.
+
+#### Step 2 — Decompose into ordered lemmas
+
+Extract each named claim from Step 1's prose into a numbered lemma. Each lemma
+gets:
+
+- A precise Lean-flavoured type signature (no Lean code yet — enough to say
+  what is asserted)
+- A one-line proof sketch citing what discharges it
+- A reference back to the prose passage it came from
+
+Example shape (modular-forms project, abbreviated):
+
+```
+R: dim_modularForms_lt_top (k : ℕ) (hk : 4 ≤ k) : Module.Finite ℂ (Mₖ Γ)
+
+  L1: eisenstein_holomorphic — E_k is holomorphic on ℍ for k ≥ 4   [Serre VII §2.1]
+  L2: eisenstein_modular     — E_k satisfies the modular transformation [Serre VII §2.2]
+  L3: cusp_form_decomposition — Mₖ = ℂ·E_k ⊕ Sₖ                    [Serre VII §3.1]
+  L4: cusp_form_finite_dim   — dim_ℂ Sₖ < ∞                        [Serre VII §3.2 via valence]
+
+  Composition: L1+L2 give E_k ∈ Mₖ; L3 reduces Mₖ to ℂ·E_k ⊕ Sₖ; L4 finishes.
+```
+
+#### Step 3 — Tension against the references (binding)
+
+For each lemma L_i, cross-check against the reference passages:
+
+- Does L_i's statement match what the reference's step actually claims?
+- Does Step 1's prose actually compose L_1, ..., L_k correctly to get R?
+- Are there gaps in the prose that L_1, ..., L_k don't cover?
+
+If a tension surfaces — a statement mismatch, a missing step, a composition gap
+— fix the decomposition or the prose. **Iterate.** Do not silently absorb the
+tension; an unsurfaced tension at this step becomes a "PROOF-SKETCH
+FUNDAMENTALLY WRONG" stop during execution, weeks later.
+
+#### Step 4 — Provability check for each leaf (binding)
+
+For each L_i, identify what discharges it. Three categories only:
+
+- **Direct from mathlib** — an existing mathlib lemma (or a small composition,
+  ≤ 3 lemmas) with the same shape. Cite the lemma name(s). Verify each cited
+  name exists, with the expected type, using `lean_loogle` / `lean_leansearch`
+  / `lean_local_search`. A cited name that doesn't exist is an unverified
+  citation, not a discharge.
+- **From already-developed project code** — an existing project decl. Cite it
+  by file and decl name.
+- **Neither (gap)** — requires new mathematical content. **This means L_i is
+  NOT a leaf — decompose it further.** Recursively apply Steps 1–4 with L_i
+  in place of R. Continue until every leaf is in one of the first two
+  categories, OR until further decomposition produces an irreducible new
+  mathematical content (= an API gap; see Step 5).
+
+#### Step 5 — Confidence gate (binding)
+
+Iterate until **every leaf** of the decomposition tree is one of:
+
+- Discharged directly from mathlib (cited, verified)
+- Discharged from already-developed project code (cited)
+- An explicit **API gap** with its own sub-decomposition tree
+
+An "API gap" is a leaf that cannot be discharged from existing infrastructure
+and cannot be decomposed further without writing new mathematical content. API
+gaps get the same Steps 1–5 treatment recursively — each gap is treated as a
+mini-project whose tickets will be created at 1g before any ticket that
+depends on the gap.
+
+**You may not proceed to step 1f until every leaf in the tree is either
+discharged-with-citation or surfaced as an API gap with its own
+sub-decomposition.** If you find yourself reaching for "we'll figure this
+step out during execution", that step is an API gap — surface it now, not
+later.
+
+#### Step 6 — Write the decomposition artifact (REQUIRED)
+
+Save the final decomposition tree to `.mathlib-quality/decomposition.md`:
+
+```markdown
+# Decomposition for [project title]
+
+## Result: dim_modularForms_lt_top
+
+### Plain-English proof
+[the paragraph from Step 1, verbatim]
+
+### Lemmas (in order)
+
+- **L1** (leaf, mathlib): `eisenstein_holomorphic`
+  - Statement: `(k : ℕ) (hk : 4 ≤ k) : Holomorphic (eisensteinSeries k)`
+  - Discharged by: `ContinuousOn.differentiable`, `EisensteinSeries.summable`
+    (verified: `lean_loogle` returned both at expected signatures)
+  - Reference: Serre VII §2.1
+
+- **L2** (internal):
+  - Statement: `E_k satisfies the modular transformation`
+  - Sub-decomposition:
+    - **L2.1** (leaf, project): existing `modular_transform_formula`
+      in `MyProj/ModularForms/Basic.lean:142`
+    - **L2.2** (leaf, mathlib): `SL2Z.holomorphic_action` (verified)
+  - Reference: Serre VII §2.2
+
+- **L3** (internal):
+  - ...
+
+### API gaps (must develop before tickets that depend on them)
+
+- **AG1**: `q_expansion_principle_for_periodic_holomorphic`
+  - Needed by: L4
+  - Status: not in mathlib, not in project
+  - Sub-decomposition tree below
+  - Tickets will be created for AG1's leaves before L4's leaves
+```
+
+The artifact is the proof that the methodical pass actually ran. A reviewer who
+finds a leaf without a verified citation has found a defect — the pass was
+skipped on that leaf.
+
+### 1f: Write the Plan
 
 Create a comprehensive plan document at `.mathlib-quality/plan.md`:
 
@@ -372,7 +513,7 @@ Def E → Lemma F ──────────↗
 - [Explain key generality choices: why CommRing vs Ring, etc.]
 ```
 
-### 1f: Create Tickets
+### 1g: Create Tickets
 
 Create the ticket board at `.mathlib-quality/tickets.md`:
 
@@ -584,11 +725,11 @@ CLEANUP-FINAL  /cleanup-all      (depends on T010)
 `⌈total_proof_tickets / 3⌉` cleanup tickets, plus one final per-file cleanup per file?
 If not, you skipped some — re-check.
 
-In the Phase-1g ChatGPT validation request below, include "Cleanup tickets:
+In the Phase-1h ChatGPT validation request below, include "Cleanup tickets:
 N (1 per ~3 proof tickets + 1 final per file + project-wide cleanups)" in the **Planned
 Approach** section so ChatGPT can flag a planner that skipped them.
 
-### 1g: Validate Plan with ChatGPT (if available)
+### 1h: Validate Plan with ChatGPT (if available)
 
 Before showing the plan to the user, ask ChatGPT for a sanity check. Call
 `ask_chatgpt_math` with a self-contained question:
@@ -620,7 +761,7 @@ for mathematical soundness.
 If ChatGPT flags issues, revise the plan before presenting to the user.
 Note any ChatGPT suggestions in the plan for transparency.
 
-### 1h: Get User Approval
+### 1i: Get User Approval
 
 Show the plan and ticket board to the user. Ask:
 ```
@@ -656,7 +797,7 @@ designs the API, drafts the proof sketches from the user's references, makes gen
 decisions. `/beastmode` does the tactical implementation — states the declaration,
 calls the planned mathlib lemmas, iterates to compilation. This separation prevents the
 "agent reconsiders the whole approach mid-proof" failure mode that motivated the
-detailed-tickets requirement (see Phase 1f's "Ticket rules").
+detailed-tickets requirement (see Phase 1g's "Ticket rules").
 
 Tickets are written to be **complete and self-contained** so a worker doesn't need to
 think strategically — only execute. If a `/beastmode` worker finds the plan is
@@ -736,15 +877,15 @@ stops. The user then re-invokes `/develop --continue`, which runs the resume-mod
 3. **Re-run the cleanup-cadence check on the new tickets.** Adding N new proof tickets to
    a file may push it over the 3-ticket-since-last-cleanup threshold; if so, insert a
    cleanup ticket for that file as a dependency before any of the new tickets. Use the
-   per-file cadence rule from §1f. This is the most common path by which cleanup tickets
+   per-file cadence rule from §1g. This is the most common path by which cleanup tickets
    get skipped — new tickets get added during the resume audit without re-running the
    cadence rule.
 4. Once the board is updated and re-approved, the user runs `/beastmode` again to
    continue.
 
-### 6. Periodic Cleanup (this is the rule, see §1f for the algorithm)
+### 6. Periodic Cleanup (this is the rule, see §1g for the algorithm)
 
-Cleanup tickets are inserted **algorithmically** at planning time (§1f), re-checked at
+Cleanup tickets are inserted **algorithmically** at planning time (§1g), re-checked at
 each `/beastmode` ticket pickup, and re-checked again whenever new tickets are added
 during a `/develop --continue` resume (§5 step 3 above). The cadence is:
 - **Per-file**: cleanup ticket every 3 proof tickets touching that file
