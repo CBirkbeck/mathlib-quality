@@ -946,6 +946,146 @@ When the sub-ticket completes:
 
 ---
 
+## Pre-stop gates (binding — tool-call gates, not text checks)
+
+The previous rule layers (identity, anti-meta, self-rejection, forbidden
+phrases) were all checks on the *content* of what the worker writes. They
+have been worked around by every new paraphrase. The fix is to make the
+stop conditional on **tool calls actually visible in the recent conversation
+history**, not on what the worker says.
+
+Before any text-only output that would end the session (DONE, B-stop, or
+anything indistinguishable from a stop), the worker MUST have completed
+the gates below as real tool calls visible in the recent turns. A stop
+without all applicable gates satisfied is **invalid** — the next turn
+must be the missing gate's tool call, not the stop.
+
+The gates work by being checkable post-hoc: the user (or a reviewer)
+scans the conversation log, looks for each required tool call, and
+confirms it was made. If the worker emitted a stop report without the
+gates' tool calls visible in the preceding turns, the stop is illegitimate
+regardless of how persuasive the prose is.
+
+### Gate G1 — Re-scan tickets.md before any stop
+
+Tool call: `Read .mathlib-quality/tickets.md` (or `Bash grep -n '^- \*\*Status\*\*'
+.mathlib-quality/tickets.md` for a focused view) **within the last 5 turns**
+before any stop.
+
+Purpose: confirm there is no other open ticket with met dependencies the
+worker should pick up. If the re-scan shows such a ticket, the stop is
+invalid — the worker picks it up via PHASE 0 of the same session.
+
+The "BEASTMODE-DONE: no open tickets with met dependencies." terminal
+line is only permitted when G1's most recent scan returned zero open
+tickets with met dependencies. Otherwise the line is a lie.
+
+### Gate G2 — Mathlib search exhaustion (for MATHLIB-GAP claims)
+
+If the stop reason names a "missing mathlib lemma" or "needs new
+infrastructure", the worker MUST have made **at least 3 distinct mathlib
+search tool calls** during the current ticket's execution. The five
+methods are `lean_loogle`, `lean_leansearch`, `lean_local_search`,
+`lean_leanfinder`, `lean_hammer_premise`. At least three of these must
+have been invoked, each with a query targeted at the missing lemma's
+type or natural-language description.
+
+Without 3 search-tool-call entries in the trace, the "mathlib lemma is
+missing" claim is unsupported. The stop is invalid; the next turn is
+the missing search call.
+
+### Gate G3 — Sub-ticket actually written (for Tier-A "spawned and continued" claims)
+
+If the worker has identified a missing lemma / dependency / parametric
+sub-step, the sub-ticket MUST actually exist in `.mathlib-quality/tickets.md`
+**before** the worker can claim it was spawned. Required tool call:
+`Edit .mathlib-quality/tickets.md` appending a `### [Tnnn]` section
+with all of: Status / Title / File / Depends on / Parent / Type /
+Statement / Proof Sketch / Mathlib Lemmas / Sources / Generality.
+
+Without that `Edit` in the trace, the "spawn" was an announcement, not
+an action. The stop or "continuing on sub-ticket" claim is invalid.
+
+### Gate G4 — At least 3 distinct tactic attempts on the stuck goal
+
+If the stop reason is "the proof strategy doesn't work" / "no further
+move can advance" / B2 PROOF-SKETCH-FUNDAMENTALLY-WRONG / B3 OFF-TRACK,
+the worker MUST have made **at least 3 distinct tactic attempts** on
+the current goal, each with a different strategy. Tool calls accepted:
+`lean_multi_attempt`, or `Edit` + `lean_diagnostic_messages` cycles
+where each `Edit` writes a distinctly different proof strategy.
+
+Without 3 attempt-traces in the trace, the "strategy doesn't work"
+claim is unsupported. The stop is invalid; the next turn is the next
+attempt.
+
+### Gate G5 — `lake build` clean (for DONE only)
+
+For any DONE report on a ticket: tool call `Bash lake build <module>`
+returning a success status in the last 3 turns. Without this in the
+trace, the DONE is unsupported.
+
+### Gate G6 — Sequence-continuation after every ticket-DONE
+
+When a ticket is marked done (Phase 7), the IMMEDIATE next tool call
+must be `Read .mathlib-quality/tickets.md` (re-scan) to identify the
+next open ticket with met dependencies. If one exists, the worker
+moves to its PHASE 0 in the same session. The DONE-of-the-project
+terminal line is **only** permitted when the re-scan returns zero
+open tickets with met dependencies.
+
+"I finished ticket X, that was a long one, I'll stop here" is the
+defect this gate prevents. The trace must show the re-scan tool call
+immediately after the ticket-DONE write to tickets.md.
+
+### Pre-stop checklist (required artifact for any stop report)
+
+Every stop report — whether DONE, BEASTMODE-DONE, or a B-stop —
+**MUST** begin with this status block, populated against the actual
+trace:
+
+```
+## PRE-STOP CHECKLIST
+
+- G1 re-scanned tickets.md: ✓ (last scan at turn N: M open, K with met deps) / ✗
+- G2 mathlib search exhaustion: ✓ (3+ tool calls: loogle@..., leansearch@..., ...) / ✗ / n/a
+- G3 sub-ticket written: ✓ (Edit @ tickets.md adding T### at turn N) / ✗ / n/a
+- G4 ≥3 tactic attempts on stuck goal: ✓ (lean_multi_attempt @ turns ..., Edit @ ...) / ✗ / n/a
+- G5 lake build clean: ✓ (Bash lake build @ turn N → success) / ✗ / n/a
+- G6 sequence-continuation: ✓ (re-scan @ turn N → 0 open) / ✗
+```
+
+Each ✓ must cite the turn / tool-call where the gate was satisfied. A
+checklist without citations is itself a defect — the worker is meant
+to point at the visible trace, not assert.
+
+**Any `✗` in an applicable gate invalidates the stop.** The next turn
+must be the missing gate's tool call, not the stop report. The
+checklist artifact is itself a part of the stop protocol; emitting a
+stop without the checklist is also a defect.
+
+### Why this layer should work where the others didn't
+
+The previous layers (identity, anti-meta, self-rejection, forbidden
+phrases) were all gates on text. Text gates are evaded by inventing new
+phrasings — the model can always find a vocabulary the literal-match
+list doesn't catch.
+
+These gates are on **tool calls in the conversation history**. The
+worker cannot fake the presence of a `Read tickets.md` call that didn't
+happen; the call either exists in the recent turns or it doesn't. The
+checklist artifact requires citing the turn where each gate was
+satisfied, which is a thing the user can verify by scrolling.
+
+If a worker emits a stop with `G1 ✗`, the user can point at the missing
+`Read` and instruct the worker to make it. If a worker emits a stop
+with no checklist at all, the user can refuse the stop.
+
+The mechanical nature is the load-bearing part. Not "follow this rule"
+but "did this tool call happen in the last 5 turns? show me where."
+
+---
+
 ## Phases
 
 ```
@@ -1275,14 +1415,57 @@ Append a final progress note:
 - 2026-05-06T11:42: DONE — `decl_name` proven, lake build clean, all gates pass
 ```
 
+### Phase 7.5 — Sequence-continuation gate (G6, binding)
+
+After writing the DONE update to `tickets.md`, the **immediate next tool
+call** must be `Read .mathlib-quality/tickets.md` to scan for the next
+open ticket with met dependencies. This is Gate G6 from the Pre-stop
+gates section.
+
+Three possible outcomes:
+
+1. **An open ticket with met dependencies exists.** The session
+   continues — go to PHASE 0 with that ticket. Do NOT emit a PHASE-8
+   report yet; the session is not finished. The ticket-DONE for the
+   one just completed is recorded in `tickets.md` (Phase 7); the
+   PHASE-8 report is reserved for the project-level terminal state.
+
+2. **No open ticket with met dependencies, but some open tickets remain
+   blocked.** Emit a PHASE-8 report with status "all dispatchable
+   tickets done; blocked tickets remain — user intervention needed".
+   Include the pre-stop checklist with G1 / G6 entries citing the
+   re-scan. Do **not** emit `BEASTMODE-DONE:` — that prefix is for
+   genuinely-empty boards only.
+
+3. **No open tickets at all.** Emit `BEASTMODE-DONE: no open tickets
+   with met dependencies.` (verbatim, per the auto-respawn contract),
+   followed by the PHASE-8 report including a satisfied G1/G6.
+
+The trace before any PHASE-8 emission MUST show the `Read tickets.md`
+tool call from this phase. A PHASE-8 report whose preceding turn is
+not the re-scan is a Gate-G6 violation; the stop is invalid.
+
 ---
 
 ## PHASE 8 — Report
+
+Every PHASE-8 report **MUST** open with the pre-stop checklist artifact
+(per the Pre-stop gates section). A report without the checklist is a
+defect — the protocol requires it, and the user is meant to verify each
+✓ against the visible trace.
 
 ### On DONE
 
 ```
 ## /beastmode report — [TXXX] <title>
+
+## PRE-STOP CHECKLIST
+- G1 re-scanned tickets.md: ✓ (turn <N>, scan returned <M> open, <K> with met deps)
+- G2 mathlib search exhaustion: ✓ / n/a
+- G3 sub-ticket written: ✓ / n/a
+- G4 ≥3 tactic attempts on stuck goal: ✓ / n/a
+- G5 lake build clean: ✓ (Bash lake build @ turn <N> → success)
+- G6 sequence-continuation: ✓ (re-scan @ turn <N> → next ticket = T### / 0 open)
 
 Status: DONE
 Time on ticket: from <start ISO> to <end ISO>
@@ -1320,6 +1503,17 @@ Cycles: <approximate number of try-diagnose-adjust loops>
 
 ```
 ## /beastmode report — [TXXX] <title>
+
+## PRE-STOP CHECKLIST
+- G1 re-scanned tickets.md: ✓ (turn <N>) / ✗
+- G2 mathlib search exhaustion: ✓ (3+ tool calls: cite turns) / ✗ / n/a
+- G3 sub-ticket written: ✓ (Edit @ turn <N>) / ✗ / n/a
+- G4 ≥3 tactic attempts on stuck goal: ✓ (cite turns) / ✗ / n/a
+- G5 lake build clean: ✗ / n/a (not a DONE)
+- G6 sequence-continuation: ✓ (re-scan @ turn <N>) / ✗
+
+If any ✗ in an applicable row, this report is invalid. The next turn
+must be the missing gate's tool call, not this report.
 
 Status: BLOCKED — <one of: SCOPE-DEFINITION ERROR (B2) /
                   OFF-TRACK (B3) / BROKEN BASELINE (B4)>
