@@ -208,11 +208,56 @@ Run `/beastmode` to pick it up and work it to completion.
 
 ---
 
-## Decompose Mode (`--decompose`)
+## Decompose Mode (`--decompose`) — ADVERSARIAL
 
 Run **only** Phase 1e (the methodical-decomposition pre-work pass) and stop.
 The flag is for iterating on the decomposition before committing to a
 ticket board.
+
+### Disposition: adversarial (binding)
+
+In `--decompose` mode, the worker's primary disposition is **opposing the
+plan, not building it**. Every accepted leaf must have survived an active
+attack. Every accepted internal node must have survived an attack on its
+composition. Every accepted source citation must have survived an attack
+on whether the source actually says what the lemma claims. Every API
+design choice must have survived an attack on whether it's minimal and
+correct.
+
+The worker is the red team. The goal is to **find flaws**, not to confirm
+the plan looks reasonable. The pass succeeds not by completing
+checklists but by **failing to find further flaws after honest effort**.
+
+What this changes mechanically (these are binding for `--decompose`):
+
+- For every leaf, the worker generates **at least 3 distinct attack
+  vectors** before accepting it. Empty attack logs are defects.
+- For every internal node, the worker attacks the composition: could
+  the children be true and the parent false? Could the composition fail
+  in an edge case the source doesn't cover?
+- For every source citation, the worker attacks the citation: does the
+  cited passage exist at the named page? Does it say what the lemma
+  claims, or has the formalisation drifted?
+- For every "discharged by mathlib lemma X" claim, the worker attacks
+  the discharge: does X actually have that type? Does X's hypothesis set
+  match what we have? Verify by `lean_hover_info` / `lean_declaration_file`.
+- For every API design choice, the worker attacks the choice: is the
+  typeclass minimal? Are the hypotheses really necessary? Have we hidden
+  an assumption?
+- For every LOC estimate, the worker attacks the estimate: is it
+  grounded in actual source line counts the worker has read?
+
+If an attack succeeds (a counterexample is found, a citation doesn't say
+what was claimed, a discharge doesn't type-check, etc.), the leaf or
+node is **rejected** — fix the plan, not the leaf. The fix updates the
+prose proof (Step 1), the markdown decomposition (Step 2), the Lean
+skeleton (Step 2.5), and the artifact (Step 6). Re-run the affected
+sub-tree's adversarial pass with the corrected plan.
+
+The required artifact (`decomposition.md`) gains an **"Attacks attempted"**
+sub-block per leaf and per internal node showing every attack tried and
+its outcome. An empty or absent block is a defect; the leaf was not
+adversarially verified.
 
 ### When to use
 
@@ -746,56 +791,102 @@ For each L_i, identify what discharges it. Three categories only:
   categories, OR until further decomposition produces an irreducible new
   mathematical content (= an API gap; see Step 5).
 
-#### Step 4.5 — Disproof attempt for each leaf (binding)
+#### Step 4.5 — Adversarial pass per leaf (binding)
 
-The provability check above asks "can this be proved?" The disproof attempt
-asks the dual question: "could this be false?" A leaf that passes provability
-but is actually false will silently break execution weeks later as a B2
-SCOPE / DEFINITION ERROR.
+The provability check above asks "can this be proved?" The adversarial
+pass asks the dual question: "**how could this be wrong?**" Every leaf
+must survive an active attack across **five categories** before being
+accepted. Empty or shallow attack logs are defects — the leaf was not
+adversarially verified.
 
-For each leaf L_i:
+For each leaf L_i, generate at least 3 distinct attacks across these
+categories, attempt them honestly, and record the result. If any attack
+succeeds, the leaf is rejected — fix the plan and re-run.
 
-1. **Search for a counterexample in the project.** Run `lean_loogle` /
-   `lean_local_search` for the **negation** of L_i's conclusion under L_i's
-   hypotheses, and for statements that would directly contradict L_i. Be
-   specific — search for `¬ P` where `P` is the conclusion, and for
-   `P → False` shapes.
-2. **Edge-case instantiation.** Mentally instantiate L_i at the natural
-   edge cases — zero, empty set, identity element, `n = 0`, `n = 1`, `S = ∅`,
-   `S = {x}`, the trivial group, the prime case if relevant. Does the
-   statement still hold? If it fails at an edge case, the statement is
-   wrong as written — flag B2 candidate.
-3. **Hypothesis-strength test.** Could you weaken any hypothesis and still
-   have the statement hold? If so, the statement is fine but over-specified.
-   Could you remove any hypothesis without the statement collapsing? If
-   yes, the statement is overdetermined — consider strengthening.
-4. **Implausibility check.** Read the Lean signature out loud as a
-   mathematical claim. Does it match what the source actually claims, or
-   has it been transcribed in a way that's stronger / weaker / wrong?
-   (This is the Lean ↔ source match from Step 3, but inverted — looking
-   for ways the formalisation might have drifted from the cited claim.)
+**Attack 1: Counterexample search.** Run `lean_loogle` and
+`lean_local_search` for the **negation** of L_i's conclusion under L_i's
+hypotheses. Search for `¬ P` where P is the conclusion, and for `P → False`
+shapes. Search for statements in the project that would directly
+contradict L_i. If a contradiction exists, L_i is false as stated.
 
-If any disproof attempt succeeds (a counterexample exists, an edge case
-fails, the hypothesis-strength check exposes a degeneracy, the
-implausibility check surfaces drift), the leaf is **not** ready to ticket.
-Either:
-- Fix the statement (in both `decomposition.md` and the Lean skeleton)
-  and re-run Steps 3 and 4 with the corrected statement
+**Attack 2: Edge-case instantiation.** Mentally instantiate L_i at the
+natural edge cases — zero, empty set, identity element, `n = 0`, `n = 1`,
+`S = ∅`, `S = {x}`, the trivial group, the boundary of the hypothesis
+domain. Does the statement still hold? If it fails at any edge case,
+the statement is wrong as written.
+
+**Attack 3: Hypothesis-strength test.** Could any hypothesis be weakened
+and the statement still hold? (= over-specified) Could any be removed
+without the statement collapsing? (= over-determined) Is there a
+non-obvious hypothesis we've smuggled in via typeclass that the source
+doesn't require? (= hidden assumption) Each is a flaw to surface.
+
+**Attack 4: Source-drift attack.** Read the Lean signature out loud as a
+mathematical claim. Re-open the cited source. Does the source actually
+claim the Lean version, or has the formalisation drifted (stronger /
+weaker / subtly different)? Verify the verbatim quote from Step 3 is
+the right scope — does the quote claim L_i, or something else nearby?
+
+**Attack 5: Discharge attack.** For each "discharged by mathlib lemma X"
+or "discharged by project decl Y" claim:
+
+- Verify X exists by `lean_hover_info` on the cited name — confirm the
+  type matches.
+- Verify the composition is small (≤ 3 lemmas) actually works. If the
+  composition needs more than 3 lemmas, the leaf isn't really discharged
+  — it's an internal node masquerading as a leaf.
+- For project-decl discharges: confirm the project decl is sorry-free
+  (`grep "sorry" file:line` should miss) and the signature actually
+  matches.
+
+If any attack succeeds the leaf is **not** ready to ticket:
+
+- Fix the statement (in `decomposition.md` AND the Lean skeleton)
+  and re-run Steps 3–4.6 with the corrected statement
+- Or fix the discharge (cite a different lemma; or recursively
+  decompose if no single discharge exists)
 - Or flag the leaf as a B2 candidate — open a discussion with the user
   before any ticket is created from it
 
-Record disproof-attempt results in `decomposition.md` per leaf:
+**Required artifact: Attacks attempted block per leaf.** In
+`decomposition.md`, every leaf must include:
 
 ```
 - **L1** ...
-  - Disproof attempt:
-    - Negation search: `lean_loogle "¬ Holomorphic ..." → no contradicting lemma`
-    - Edge cases tried: `k = 4` (boundary), `k = 100` (large) — both hold
-    - Hypothesis test: removing `4 ≤ k` makes the statement false at `k = 2`
-      (Σ n^{-2} diverges at the corners) — hypothesis is necessary, not
-      over-specified
-    - Verdict: PASSES disproof attempt; no counterexample found
+  - Attacks attempted:
+    - [1] Counterexample search: `lean_loogle "¬ Holomorphic (eisensteinSeries _)"` →
+      no contradicting lemma found in mathlib or project
+    - [2] Edge cases tried: `k = 4` (boundary), `k = 100` (large), `k = 5` (odd) —
+      all three: statement holds (verified by hand and by analogy to the source
+      passage)
+    - [3] Hypothesis test: removing `4 ≤ k` makes the statement false at `k = 2`
+      (Σ n^{-2} diverges at the corners) — `4 ≤ k` is necessary, not over-specified.
+      No hidden typeclass assumption: the signature uses only standard normed-space
+      and modular-forms instances.
+    - [4] Source-drift attack: re-read p. 91; the source claims "for k ≥ 4 ...
+      converges absolutely and uniformly on every compact subset of ℍ ... hence
+      holomorphic." The Lean `Holomorphic (eisensteinSeries k)` matches exactly.
+      No drift.
+    - [5] Discharge attack: `lean_hover_info "ContinuousOn.differentiable"` →
+      type matches; `lean_hover_info "EisensteinSeries.summable"` → type matches;
+      composition uses 2 lemmas (≤ 3 threshold ✓). Project decls: n/a (mathlib
+      discharge).
+    - Verdict: SURVIVED adversarial pass; no flaw found across 5 attack
+      categories.
 ```
+
+An attack log with fewer than 3 distinct attack categories is a defect.
+Logs that just say "no counterexample" without showing the searches /
+edge cases tried are defects. The artifact is meant to be a record of
+honest attack effort.
+
+**Attacks on internal (non-leaf) nodes.** Internal nodes also get an
+attack pass, focused on the composition: "could the children all be
+true and the parent false?" Record any composition attacks and their
+outcomes in the internal node's entry. The five-attack framework
+applies in spirit; the specific attacks differ (composition-failure
+search, counterexamples where children's hypotheses don't cover the
+parent's case, etc.).
 
 #### Step 4.6 — Consult prior-B2 log (binding)
 
@@ -864,10 +955,11 @@ You may not proceed to step 1f until **all six** of the following hold:
    physical proof that the dependency shape type-checks.
 3. **Every leaf has a verbatim source quote** plus a Lean ↔ source match
    paragraph in `decomposition.md` per Step 3.
-4. **Every leaf has passed the disproof attempt** from Step 4.5 — no
-   counterexample found, edge cases hold, hypothesis-strength is
-   justified, no implausibility surfaced. The disproof-attempt results
-   are recorded in `decomposition.md`.
+4. **Every leaf AND every internal node has passed the adversarial pass**
+   from Step 4.5 — every node has an Attacks-attempted block with at
+   least 3 distinct attack categories shown, and every recorded attack
+   ended in "no flaw found". Empty or shallow attack logs block the
+   gate. The whole tree must have survived the red team.
 5. **Every leaf has been checked against the prior-B2 log** from Step 4.6.
    For each name- or shape-match, the prior B2 reason has been explicitly
    addressed in the current decomposition (statement strengthened,
