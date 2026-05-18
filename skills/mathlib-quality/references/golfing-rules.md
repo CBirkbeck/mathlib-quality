@@ -292,13 +292,21 @@ Try `rw` first; only use `erw` when `rw` genuinely fails.
 ### 3.2 `continuity` / `measurability` → `fun_prop`
 These legacy tactics are being replaced.
 
-### 3.3 `omega` → `lia` (preferred default)
+### 3.3 `omega` → `lia` (preferred default; `grind` subsumes both)
+
 mathlib is migrating to `lia`. Use `lia` in new code as the default for
 `Nat`/`Int` arithmetic; only fall back to `omega` if `lia` fails on the
 specific goal. If 2.7 already used `lia`, this rule is already satisfied
 (mark "already in 2.7"). If 2.7 produced `omega`, **try `lia` here** and
 keep it if it closes; only fail back to `omega` with a one-line note
 explaining what `lia` couldn't handle.
+
+**`grind` includes `lia` as a module** that subsumes `omega` for linear
+integer arithmetic. After `grind` landed, `omega` is the redundant tactic.
+On every PR, search-and-replace `omega` → `lia` (or, when the local goal
+warrants it, `grind`). Reviewers explicitly flag `omega` re-introduction.
+The priority order is therefore: try `grind` (rule 2.1), then `lia` (rule
+2.7 / 3.3), and only fall to `omega` if neither closes.
 
 ### 3.4 `rcases ... with rfl` auto-substitutes
 No need for subsequent `simp [h]` when `rfl` already substituted.

@@ -272,20 +272,53 @@ theorem bar : Q := by
 
 ### Docstring Guidelines
 
-**Docstrings should be SHORT** - one sentence describing what it proves, not how.
+**Docstrings describe the STATEMENT, not the proof.** This is the binding rule
+that subsumes the brevity preference: a docstring tells a user browsing the
+API *what is claimed*, not *how the proof works*. Drop phrases like:
+
+- "The proof iterates …"
+- "By induction on …"
+- "Uses Lemma X / Theorem Y / Z"
+- "We first establish … then apply …"
+- "The proof strategy is …"
+
+Those belong in the PR description or in a comment above the proof body
+(rarely), never in the docstring. Reviewers strip them; `/cleanup` strips
+them automatically.
 
 ```lean
--- Bad: too verbose, contains proof strategy
+-- Bad: contains proof strategy
+/-- **Sturm bound for level-1 modular forms.** If a modular form `f` has
+zero coefficient on `q^i` for every `i ≤ k / 12`, then `f` is identically
+zero. The proof iterates `CuspForm.discriminantEquiv` (division by `Δ`)
+until the weight goes negative, where everything is zero. -/
+theorem sturm_bound_levelOne ...
+
+-- Good: statement only
+/-- **Sturm bound for level-1 modular forms.** If a modular form `f` has
+zero coefficient on `q^i` for every `i ≤ k / 12`, then `f` is identically
+zero. -/
+theorem sturm_bound_levelOne ...
+```
+
+Also: **docstrings should be SHORT** — one sentence stating what is claimed.
+
+```lean
+-- Bad: too verbose
 /-- This theorem shows that f is continuous. The proof proceeds by first
 establishing boundedness on compact sets using the Heine-Borel theorem,
 then applying the sequential characterization of continuity. We use the
 fact that f is locally Lipschitz to conclude. -/
 theorem f_continuous : Continuous f := by ...
 
--- Good: brief description only
+-- Good: brief, statement only
 /-- `f` is continuous. -/
 theorem f_continuous : Continuous f := by ...
 ```
+
+**Module docstrings** (the top-of-file `/-! … -/` block) MAY describe
+overall proof strategy for the file — only per-lemma docstrings are
+subject to the statement-not-proof rule.
 
 **Only important public theorems need docstrings:**
 ```lean
@@ -463,14 +496,21 @@ fun x y => x * y
 λ x => x + 1
 ```
 
-### Use `↦` (mapsto) in source code
+### Use `↦` (mapsto) for lambdas — always
+
+In **lambda** abstractions, always use the Unicode `↦`, never `=>`:
+
 ```lean
 -- Good
 fun x ↦ x + 1
 
--- Also acceptable
+-- BAD — `=>` for a lambda
 fun x => x + 1
 ```
+
+Pattern-match arrows are NOT affected — `| zero => 0`, `| succ n ih => …`,
+`match … with | foo => …`, and `cases h with | inl ha => …` all keep `=>`.
+The rule applies only to **lambda** abstractions (`fun … ↦ …`).
 
 ### Use `<|` over `$`
 ```lean
@@ -1049,3 +1089,145 @@ lemma exists_one_half_le_im_and_norm_le ... :=
 ## Restate Over the Natural Subgroup
 
 Once conversion lemmas exist (like `Gamma_one_coe_eq_SL : ↑Γ(1) = 𝒮ℒ`), restate theorems over the more natural subgroup (`𝒮ℒ`) rather than forcing callers to bridge at every use site. The rule of thumb: the natural subgroup for mathematical content (like modular forms on GL(2, ℝ)) is usually `𝒮ℒ`; keep `Γ(1)` only where the SL(2, ℤ)-specific API (like `slash_action_eqn_SL''` or `mem_Gamma_one`) demands it, and bridge internally.
+
+## API Completeness for Definitions
+
+When you add a `def`, immediately add API lemmas about it (applied form,
+unapplied form, structural facts, congruence). A `def` without lemmas is
+half-finished.
+
+### The loogle-check
+
+Before submitting, search loogle for the definition's name. If nothing
+comes back beyond the `def` itself, the API is incomplete — go back and
+add the basic API lemmas. Reviewer feedback consistently flags this as
+"please add … lemma" on PRs that ship bare definitions.
+
+### Applied AND unapplied versions
+
+For every equational fact, provide **both** the applied (`X z = …`) and
+unapplied (`X = fun z ↦ …`) versions. Different proof contexts want
+different shapes — pointwise rewriting wants the applied form;
+function-level reasoning (functorial proofs, ext-based arguments) wants
+the unapplied form.
+
+```lean
+-- Provide both:
+lemma foo_apply (f : F) (z : Z) : (foo f) z = … := …
+lemma foo (f : F) : foo f = fun z ↦ … := …
+```
+
+### Nat/Int convenience versions when statement uses `.toNat`
+
+If your statement uses `Int.toNat` or otherwise treats an `Int`
+non-negatively, provide a `Nat` companion so users with `ℕ` don't have
+to do toNat gymnastics.
+
+```lean
+theorem foo_nat {k : ℕ} (f : F (k : ℤ)) (h : … k …) : … := …
+
+theorem foo {k : ℤ} (f : F k) (h : … k.toNat …) : … := by
+  rcases lt_or_ge k 0 with hk | hk
+  · …  -- trivial negative case
+  obtain ⟨n, rfl⟩ : ∃ n : ℕ, k = (n : ℤ) := ⟨k.toNat, (Int.toNat_of_nonneg hk).symm⟩
+  exact foo_nat f (by simpa using h)
+```
+
+The `ℕ` version can be primary (with `ℤ` as a corollary) or a convenience
+wrapper — either is fine; both versions must exist.
+
+### Don't duplicate definitions that are unwrapped bundled equivs
+
+If `def fooEquiv : T ≃ U where toFun := …` exists, do not also ship a
+bare `def foo : T → U := fun t ↦ (fooEquiv t)`. The bare `foo` is the
+function-projection of `fooEquiv`; users should call `fooEquiv`
+directly. If a transitional `foo` exists, deprecate it.
+
+```lean
+-- BAD: duplicated definition
+def divDiscriminant (f : CuspForm 𝒮ℒ k) : ModularForm 𝒮ℒ (k - 12) := …
+def discriminantEquiv : CuspForm 𝒮ℒ k ≃ₗ[ℂ] ModularForm 𝒮ℒ (k - 12) where
+  toFun := divDiscriminant
+  …
+
+-- GOOD: bundled is primary
+def discriminantEquiv : CuspForm 𝒮ℒ k ≃ₗ[ℂ] ModularForm 𝒮ℒ (k - 12) where
+  toFun f := { … inline body … }
+  …
+@[deprecated discriminantEquiv (since := "YYYY-MM-DD")]
+def divDiscriminant (f : CuspForm 𝒮ℒ k) := discriminantEquiv f
+```
+
+## Statement Style
+
+### No redundant explicit coercions
+
+Once one side of an equation has a known type via context, Lean
+auto-coerces the other side. Strip the unnecessary explicit coercions.
+
+```lean
+-- BAD: redundant (Δ : ℍ → ℂ) cast
+theorem foo : (Δ : ℍ → ℂ) * (discriminantEquiv f : ℍ → ℂ) = f := …
+
+-- GOOD
+theorem foo : Δ * (discriminantEquiv f : ℍ → ℂ) = f := …
+```
+
+### Don't `@[simp]` lemmas with bad normal forms
+
+A `@[simp]` lemma whose RHS introduces variables not on the LHS, or
+duplicates a variable, gives `simp` an unstable normal form. Don't tag
+such lemmas `@[simp]` — leave them as ordinary lemmas, or instead simp
+the **unapplied** function-level version which often has a clean LHS.
+
+```lean
+-- BAD: z appears once on LHS, twice on RHS → bad simp normal form
+@[simp]
+lemma discriminantEquiv_apply (f : CuspForm 𝒮ℒ k) (z : ℍ) :
+    (discriminantEquiv f) z = f z / Δ z := …
+
+-- BETTER: simp the function-level form
+@[simp]
+lemma discriminantEquiv_eq (f : CuspForm 𝒮ℒ k) :
+    discriminantEquiv f = fun z ↦ f z / Δ z := …
+```
+
+## Imports — test non-public before defaulting to public
+
+In the new module system, `public import` makes the import transitively
+visible to downstream users. Default to non-public (`import`) and
+upgrade to `public import` only when downstream files need it.
+
+```lean
+-- Try this first:
+import Mathlib.Data.Nat.ModEq
+import Mathlib.RingTheory.PowerSeries.Order
+
+-- Only escalate to `public import` if `lake build` of a dependent file fails.
+```
+
+Statements that mention notation or symbols from an imported module do
+**not** automatically force the import to be public — Lean's module
+loader handles transitive visibility through the dependent's own
+import graph. Demote first; if `lake build` still passes, leave demoted.
+
+## Reviewer-feedback intent
+
+Distinguish reviewer **action items** ("please change X", "should be Y",
+"must add Z") from **musings** ("I wonder if W would be cleaner",
+parenthetical asides, "TBH I'd prefer…", "perhaps…"). Action items
+must be addressed; musings can be acknowledged in a reply and deferred
+to a follow-up. Trying to address every musing blows scope and slows
+the PR.
+
+Tone signals for "defer":
+- "I wonder if …"
+- parentheticals
+- "TBH" / "personally" / "FWIW"
+- "perhaps" / "maybe" / "you might consider"
+
+Tone signals for "action":
+- "please change …"
+- "should be …" / "must …"
+- direct correction with the alternative
+- a code suggestion block

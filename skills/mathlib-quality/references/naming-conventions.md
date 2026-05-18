@@ -360,6 +360,32 @@ end Nat
 #check n.add m  -- if n : Nat
 ```
 
+### Namespace by SUBJECT, not by input type
+
+A lemma's namespace should reflect what the **statement is about** (the
+subject), not what's in its hypotheses. A lemma stating `Δ * X = Y`
+belongs in `ModularForm` even if `X` is a `CuspForm` — the statement is
+about a modular-form-level equality, not about cusp forms specifically.
+
+**Decision rule:** where would a user searching for this fact look? Users
+search by the **subject of the equation** (the conclusion's main term),
+not by the types of the hypotheses. Put the lemma where they'll look.
+
+```lean
+-- BAD: namespace picks up the hypothesis type
+namespace CuspForm
+theorem delta_mul_div_eq (f : CuspForm 𝒮ℒ k) :
+    Δ * divDiscriminant f = f := …
+end CuspForm
+
+-- GOOD: namespace picks up the subject (the equality is at the
+-- ModularForm level — `Δ * _` is a modular form)
+namespace ModularForm
+theorem delta_mul_div_eq (f : CuspForm 𝒮ℒ k) :
+    Δ * divDiscriminant f = f := …
+end ModularForm
+```
+
 ## Common Abbreviations
 
 | Full | Abbreviation |
