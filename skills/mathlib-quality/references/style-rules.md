@@ -1192,24 +1192,54 @@ lemma discriminantEquiv_eq (f : CuspForm 𝒮ℒ k) :
     discriminantEquiv f = fun z ↦ f z / Δ z := …
 ```
 
-## Imports — test non-public before defaulting to public
+## Imports — `public` follows use-site, not need
 
-In the new module system, `public import` makes the import transitively
-visible to downstream users. Default to non-public (`import`) and
-upgrade to `public import` only when downstream files need it.
+In the new module system, `public import` makes the imported module
+transitively visible to downstream users; non-public `import` keeps it
+visible only within the importing file.
+
+The rule for choosing between them is based on **where the import is
+used in this file**:
+
+- **If the import is only used in proofs** (tactic bodies, `by …` blocks,
+  any code inside `:= by …` or term-mode proofs) — non-public `import`.
+  In most cases this is the right default. Proof bodies are an
+  implementation detail; downstream users don't need to see the imported
+  module to *call* the lemmas you prove.
+- **If the import is used in theorem statements, definitions, or any
+  other declaration-surface position** (anything that appears in the
+  signature a downstream user sees) — `public import`. The module is
+  part of the surface of your file; the downstream user can't elaborate
+  your statements without it.
 
 ```lean
--- Try this first:
-import Mathlib.Data.Nat.ModEq
-import Mathlib.RingTheory.PowerSeries.Order
+-- Used only in proofs → non-public
+import Mathlib.Data.Nat.ModEq                    -- only `Nat.ModEq.symm` in proof bodies
+import Mathlib.RingTheory.PowerSeries.Order      -- only in tactic blocks
 
--- Only escalate to `public import` if `lake build` of a dependent file fails.
+-- Used in statements/definitions → public
+public import Mathlib.Topology.Basic             -- `Continuous` appears in theorem signatures
+public import Mathlib.Algebra.Group.Defs         -- `Group` appears in a def
 ```
 
-Statements that mention notation or symbols from an imported module do
-**not** automatically force the import to be public — Lean's module
-loader handles transitive visibility through the dependent's own
-import graph. Demote first; if `lake build` still passes, leave demoted.
+**Judgment call: re-exporting for convenience.** It can make sense to
+keep an import `public` even when it's not strictly needed by the
+declarations, if you want the imported material visible downstream so
+dependents don't have to re-import it. This is a *deliberate*
+re-export, not the default — make it explicitly, and only when the
+ergonomic gain is real (e.g., a small bridge file that exists precisely
+to bundle imports for a sub-area).
+
+**Rules of thumb when in doubt:**
+
+- Demote first. If `lake build` of every dependent file still passes
+  with the import non-public, leave it demoted.
+- Statements that mention *notation* defined in an imported module do
+  not automatically force the import to be public — Lean's module loader
+  handles transitive notation visibility through the dependent's own
+  import graph.
+- A `public import` that exists "just to be safe" is wrong by default;
+  if you can't name a downstream consumer that needs it, demote it.
 
 ## Reviewer-feedback intent
 
