@@ -209,6 +209,8 @@ activate the new tool.
 7. **Gates** on the diff (definition_protected, theorem_statement_protected, etc.).
 8. **Mark done** + report. If a hard-stop condition fires instead, the report names which step failed, what was tried, and a concrete replanning suggestion.
 
+**Staying alive across turns (the Stop hook).** A model ends its turn after a few minutes of work — that's harness mechanics, not a beastmode bug, and it's why earlier versions stalled. The plugin ships a guarded `Stop` hook (`hooks/beastmode_stop.sh`): while a marathon is active it refuses the turn-end and re-prompts the agent, so one `/beastmode` session sustains across many turns instead of stopping at 2–3 minutes — **even when launched bare, with no `/loop`.** It is gated by a sentinel file (`.mathlib-quality/beastmode_active`) that `/beastmode` writes on start and removes only at a genuine terminal state, and it is fail-safe (inert for every non-beastmode session). To pause or stop: press **Esc**, or `rm .mathlib-quality/beastmode_active`; a progress budget also auto-releases after `BEASTMODE_MAX_BLOCKS` turns (default 30) with no `.lean`/ticket change. The hook spans turns *within* a session; for boards too big for one context window, wrap it as `/loop /beastmode`, which spans *across* sessions.
+
 **When all tickets are done**, run `/pre-submit` for the final-review checklist (no `sorry` anywhere, no new axioms, full project build clean, etc.).
 
 ### Cleaning Up Code

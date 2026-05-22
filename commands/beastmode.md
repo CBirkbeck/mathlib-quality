@@ -52,6 +52,35 @@ Every turn either makes a code-advancing tool call or emits a final report
 shape. A turn that is prose only — explaining, announcing, acknowledging,
 checking in — is a defect, regardless of how the prose is phrased.
 
+### What actually keeps you alive across turns (read this)
+
+You cannot *will* yourself into one endless turn. A turn ends the moment you stop
+emitting tool calls — that is harness mechanics, not weakness, and no amount of
+"I must not stop" prose overrides it. Beastmode is kept alive by a **`Stop` hook the
+plugin ships**: while the sentinel file `.mathlib-quality/beastmode_active` exists, the
+hook **refuses your turn-end and re-prompts you with your current focus**. A turn-end
+becomes a re-prompt, not a session-end. That is the real "unstoppable" — not exhortation.
+
+Your side of the contract (these are tool calls, not narration):
+
+- **First turn of the session** — create the sentinel:
+  `Bash` `mkdir -p .mathlib-quality && printf 'FOCUS: <ticket> — <step>\n' > .mathlib-quality/beastmode_active`
+  (PHASE 0 gives the exact CURRENT FOCUS format.)
+- **Each meaningful step** — overwrite the sentinel with your CURRENT FOCUS (current
+  ticket + the exact step you are on) so a re-prompt resumes mid-thought instead of
+  re-deriving where you were. On short turns, re-orientation is the tax that eats the
+  work; the focus line is how you avoid paying it every turn.
+- **Only at a genuine *session* terminal** (BEASTMODE-DONE — board empty — or a B2 / B3 / B4
+  stop) do you `rm -f .mathlib-quality/beastmode_active`. A single ticket finishing is NOT a
+  session terminal: Gate G6 re-scans and continues to the next ticket, sentinel intact.
+  **Removing the sentinel is the only way the session is allowed to end.** Stopping while it
+  still exists just re-prompts you.
+
+Escapes belong to the *user*, not to you: they press Esc, or `rm` the sentinel. A runaway
+guard also auto-releases after `BEASTMODE_MAX_BLOCKS` consecutive turns with no `.lean`/
+ticket change (default 30). You never invoke an escape to get out of work — you remove the
+sentinel only when a real terminal condition is met.
+
 ## The anti-meta principle (binding)
 
 The forbidden-phrases lists in this document are illustrative, not
@@ -249,6 +278,16 @@ B4. **BROKEN BASELINE** — `lake build` was already broken when work started.
     The project isn't in a workable state. Hard stop on entry (Phase 2b).
 
 That is the complete list. Three real conditions plus DONE.
+
+**Only a session-ending state removes the sentinel** (`Bash` `rm -f .mathlib-quality/beastmode_active`):
+the `BEASTMODE-DONE` terminal (board empty, confirmed by the G6 re-scan), the "all
+dispatchable tickets done, blocked ones remain" PHASE-8 stop, and the B2 / B3 / B4 stops.
+**A single ticket finishing is NOT a session end** — Gate G6 re-scans and continues to the
+next ticket, and the sentinel STAYS so the Stop hook keeps you working. The Stop hook treats
+the session as live until the sentinel is gone, so a session-ending report *without* the `rm`
+is incomplete — you will simply be re-prompted to continue. Removing the sentinel is the
+mechanical difference between "I tried to stop" and "the session ended". (For B2, the `rm`
+comes *after* the `b2_log.jsonl` append.)
 
 ### Replan and continue (was B2 in previous versions; no longer a stop)
 
@@ -827,25 +866,36 @@ itself drifts onto unrelated mathematics, not when on-track work gets big.
 For new projects, run `/develop` first to create the original ticket board.
 Sub-tickets are added by `/beastmode` itself during execution.
 
-## Auto-respawn with `/loop`
+## Staying alive: the Stop hook (within a session) + `/loop` (across sessions)
 
-A single `/beastmode` invocation works to context limit, then exits. To keep
-the marathon going across many invocations — picking up the next ticket each
-time, until the board is fully discharged — wrap the call in Claude Code's
-built-in `/loop`:
+Two different boundaries can end a marathon, and they need two different mechanisms.
+Conflating them is why earlier versions stalled after a few minutes.
+
+**Boundary 1 — the turn-end (every few minutes).** The model stops emitting tool calls
+and the turn ends. This is the one that bit us. A single `/beastmode` invocation does
+**not** "run to context limit" on its own — it runs until the model ends its turn, which
+is minutes, not hours. The fix is the **`Stop` hook the plugin ships** (`hooks/hooks.json`
+→ `hooks/beastmode_stop.sh`): while `.mathlib-quality/beastmode_active` exists, the hook
+refuses the turn-end and re-prompts you with your current focus. **You do not need `/loop`
+for this — it works on a bare `/beastmode`.** Your only job is to keep the sentinel present
+until a real terminal state (see "What actually keeps you alive across turns" near the top,
+and the sentinel-`rm` rule under the Tier-B stops).
+
+**Boundary 2 — the session-end (context exhaustion, hours in).** Eventually one session
+fills its context window and genuinely ends. To carry the marathon into a fresh ~200k
+context, wrap the launch in Claude Code's built-in `/loop`:
 
 ```
 /loop /beastmode
 ```
 
-`/loop` (no interval) self-paces: when the current `/beastmode` invocation
-ends, `/loop` schedules the next one. Each invocation is a fresh ~200k
-context that:
+`/loop` (no interval) self-paces: when one `/beastmode` session ends, it starts the next,
+which:
 
 1. Reads `.mathlib-quality/tickets.md`
-2. Picks the next open ticket with met dependencies
-3. Works it to DONE (or a genuine B-stop)
-4. Exits
+2. Picks the next open ticket with met dependencies (or resumes via `--resume`)
+3. Works it — under the Stop hook — to DONE or a genuine B-stop
+4. Ends; `/loop` fires the next
 
 `/loop` re-fires until `/beastmode` prints the exact terminal line:
 
@@ -853,20 +903,25 @@ context that:
 BEASTMODE-DONE: no open tickets with met dependencies.
 ```
 
-— at which point the loop runtime recognises the natural terminal state and
-stops. This is the contract; do not paraphrase the line, do not embed it in
-prose, do not localise. The literal prefix `BEASTMODE-DONE:` followed by
-the rest of the message on a single line is what the loop checks.
+— at which point the loop runtime recognises the natural terminal state and stops. This is
+a contract: do not paraphrase the line, embed it in prose, or localise it. The literal
+prefix `BEASTMODE-DONE:` followed by the rest of the message on one line is what the loop
+checks. That same emission removes the sentinel, so both layers wind down together.
 
-**For interval-paced respawn** (e.g. once an hour, regardless of whether the
-previous run is still going): `/loop 1h /beastmode`. Rarely what you want
-for beastmode — the self-paced form is usually right.
+**The two layers compose.** The Stop hook keeps *one* session working through its turn-ends;
+`/loop` chains *sessions* together. With both, a board is discharged with no human
+re-prompting at either boundary. The Stop hook alone (bare `/beastmode`) already fixes the
+"stops after 2-3 minutes" problem — `/loop` is the upgrade for boards too big for a single
+context window.
 
-**Genuine B-stops** (B2 SCOPE / DEFINITION ERROR, B3 OFF-TRACK, B4 BROKEN
-BASELINE) print their own reports without the `BEASTMODE-DONE:` prefix.
-The loop will re-fire on those — pause `/loop` manually if the same B-stop
-keeps recurring (it means the user needs to intervene, not that the next
-invocation will magically fix it).
+**For interval-paced respawn** (e.g. hourly regardless of whether the previous run is still
+going): `/loop 1h /beastmode`. Rarely what you want — the self-paced form is usually right.
+
+**Genuine B-stops** (B2 SCOPE / DEFINITION ERROR, B3 OFF-TRACK, B4 BROKEN BASELINE) print
+their own reports without the `BEASTMODE-DONE:` prefix and remove the sentinel. Under
+`/loop` the next session re-fires on those — pause `/loop` manually if the same B-stop keeps
+recurring (it means the user needs to intervene, not that the next invocation will magically
+fix it).
 
 ---
 
@@ -1070,6 +1125,17 @@ this log to surface previously-flagged B2s on the same lemma names
 before re-ticketing them. Without G7, the next decompose run
 re-tickets the same defective statement and the defect recurs.
 
+### Gate G8 — Sentinel removed (for session-ending stops only)
+
+For any **session-ending** stop — `BEASTMODE-DONE`, the "all dispatchable tickets done,
+blocked ones remain" PHASE-8 stop, or a B2 / B3 / B4 stop — the worker MUST have removed
+the sentinel (`Bash` `rm -f .mathlib-quality/beastmode_active`) before emitting the report.
+While the sentinel exists, the plugin's `Stop` hook re-prompts on every turn-end — so a stop
+report emitted with the sentinel still present does **not** end the session; you are
+re-prompted and the "stop" never takes. `n/a` for a per-ticket DONE that continues via G6
+(the sentinel stays). This gate is the bridge between the stop protocol and the Stop-hook
+mechanism: G1–G7 decide *whether* you may stop; G8 is the action that *lets* you.
+
 ### Pre-stop checklist (required artifact for any stop report)
 
 Every stop report — whether DONE, BEASTMODE-DONE, or a B-stop —
@@ -1086,6 +1152,7 @@ trace:
 - G5 lake build clean: ✓ (Bash lake build @ turn N → success) / ✗ / n/a
 - G6 sequence-continuation: ✓ (re-scan @ turn N → 0 open) / ✗
 - G7 b2_log appended (B2 stops only): ✓ (Bash/Edit @ turn N → jsonl line) / ✗ / n/a
+- G8 sentinel removed (session-ending stops only): ✓ (Bash rm -f .mathlib-quality/beastmode_active @ turn N) / ✗ / n/a
 ```
 
 Each ✓ must cite the turn / tool-call where the gate was satisfied. A
@@ -1165,10 +1232,29 @@ Otherwise: scan `.mathlib-quality/tickets.md`. Find the first ticket where:
 Print the picked ticket's title, ID, and status. Set its status to `in_progress` with a
 timestamp. Save the ticket board.
 
-If no ticket is available: print the exit line **verbatim** on its own line:
+**Arm the Stop hook (first turn of the session).** Write the sentinel with your current
+focus so the hook keeps you alive across turn-ends and a re-prompt lands you back here:
+
+```
+Bash: mkdir -p .mathlib-quality && printf 'FOCUS: %s — PHASE 0 picked; reading ticket\n' "<Tnnn title>" > .mathlib-quality/beastmode_active
+```
+
+The sentinel's content is your **CURRENT FOCUS** breadcrumb — one or two terse lines,
+`FOCUS: <ticket id + short title> — <the exact step you are on>`. Overwrite it at each
+meaningful step (entering PHASE 4, after a sub-ticket spawn, after a tactic that moved the
+goal) so that when the Stop hook re-prompts you, your first `Read` of this file drops you
+back exactly where you were instead of re-deriving it. It is a *pointer*, not a log — the
+durable record is the ticket's Progress notes.
+
+If no ticket is available: print the exit line **verbatim** on its own line, then remove
+the sentinel so the Stop hook lets the session end:
 
 ```
 BEASTMODE-DONE: no open tickets with met dependencies.
+```
+
+```
+Bash: rm -f .mathlib-quality/beastmode_active
 ```
 
 Then a one-paragraph note for the user explaining whether the board is
@@ -1176,9 +1262,9 @@ genuinely complete (every ticket `done`) or whether some open tickets
 have unmet dependencies (in which case suggest `/develop --status` to
 see the dependency graph or `/develop` to add the missing planning).
 
-The exact prefix `BEASTMODE-DONE:` is a contract — see "Auto-respawn
-with `/loop`" below — so the loop runtime can recognise the natural
-terminal state and stop firing.
+The exact prefix `BEASTMODE-DONE:` is a contract — see "Staying alive: the Stop hook
++ `/loop`" below — so the loop runtime can recognise the natural terminal state and
+stop firing.
 
 ---
 
@@ -1500,6 +1586,7 @@ defect — the protocol requires it, and the user is meant to verify each
 - G5 lake build clean: ✓ (Bash lake build @ turn <N> → success)
 - G6 sequence-continuation: ✓ (re-scan @ turn <N> → next ticket = T### / 0 open)
 - G7 b2_log appended: n/a (not a B2 stop)
+- G8 sentinel removed: n/a (per-ticket DONE — G6 continues, sentinel stays) / ✓ (Bash rm @ turn <N> — board empty)
 
 Status: DONE
 Time on ticket: from <start ISO> to <end ISO>
@@ -1546,6 +1633,7 @@ Cycles: <approximate number of try-diagnose-adjust loops>
 - G5 lake build clean: ✗ / n/a (not a DONE)
 - G6 sequence-continuation: ✓ (re-scan @ turn <N>) / ✗
 - G7 b2_log appended (B2 only): ✓ (Bash/Edit @ turn <N> → jsonl line) / ✗ / n/a
+- G8 sentinel removed: ✓ (Bash rm -f .mathlib-quality/beastmode_active @ turn <N>) / ✗
 
 If any ✗ in an applicable row, this report is invalid. The next turn
 must be the missing gate's tool call, not this report.

@@ -1,0 +1,16 @@
+{
+  "description": "mathlib-quality: keep /beastmode running across turns while a marathon session is active. Sentinel-gated (.mathlib-quality/beastmode_active) and fail-safe — inert for every non-beastmode session.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/beastmode_stop.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
