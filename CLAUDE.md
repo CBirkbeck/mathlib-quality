@@ -4,7 +4,7 @@
 A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up to mathlib standards before PR submission.
 
 ## Current Status
-**Version:** 0.38.2
+**Version:** 0.38.3
 
 ### Completed
 - Plugin architecture with 5 commands defined in `commands/`

@@ -125,6 +125,88 @@ declared action covers it; otherwise a defect.
 
 ---
 
+### `structure_gate` — proof body within length bounds (or decomposition flagged)
+
+**What it checks.** After a Phase-4 worker completes, the declaration's proof body is ≤60 lines
+(≤15 for a main/headline theorem — a public result named in the module docstring's "## Main
+results"), no `∧` is left in the statement, and no `constructor`/`by_cases`/`rcases` branch
+exceeds 10 lines. A body over the bar passes ONLY if the worker raised a `/decompose-proof` flag
+in `Refactoring needed:`.
+
+**When it runs.** Phase 4 per-worker (audit item 12), after the worker's edits.
+
+**Why.** Items 5/6/12 were originally framed as report-or-defer audit items. After the
+batched-worker learning closed the "one giant worker" shortcut, workers honored the
+one-worker-per-declaration shape but bypassed the *content*: a 244-line body would come back as
+`STRUCTURE: 219 lines after golf; sub-helpers not extracted because the signature is locked and
+the downstream consumer needs this single closed form`, with `Gates: pass`. The "signature
+locked" claim is a misread — a `private` helper placed *above* the declaration does not change
+the declaration's signature. On small files this is invisible; on large files (1000+ lines) the
+deferrals accumulate across many workers, all reporting success while long proofs survive.
+Making it a hard gate forces the worker to extract or to explicitly flag `/decompose-proof` —
+never to silently defer.
+
+**Implementation.**
+
+```bash
+# body line count = lines from `:= by` (or `:=`) to the next-decl / blank-line boundary
+# main theorem? cross-check the decl name against the module docstring "## Main results" bullets
+```
+
+If body > bar AND no `/decompose-proof` flag in the worker report → FAIL → re-dispatch with the
+line count and the signature-locked disambiguation as feedback. The escape that terminates the
+re-dispatch loop is the explicit `/decompose-proof` flag for a genuinely irreducible body.
+
+---
+
+### `naming_gate` — declaration name carries mathematical content, not scheme numbers
+
+**What it checks.** The declaration name matches none of the forbidden patterns:
+`\d+_\d+_\d+_` (e.g. `miyake_4_6_5_`), `m\d+_` (e.g. `m6_2_`), `multipass_`, numeric `_aux\d+`
+(e.g. `_aux1`, `_aux2`) — and contains no forbidden abbreviation (`whomog`, `mvpoly`, `wt`,
+`soln`, `imp`, `eqn`, `thm`). Passes if the name is clean, OR the worker renamed it in place
+(private/local decls), OR flagged `Refactoring needed: rename <old> → <new>` (public decls, so
+cross-file call sites are updated together in Phase 5).
+
+**When it runs.** Phase 4 per-worker (audit item 5).
+
+**Why.** The NAMING audit was being answered `existing convention preserved` — workers reported
+the name as acceptable without ever proposing a rename, leaving names that encode an internal
+proof scheme (`miyake_4_6_5_iterated_helper`, `m6_2_extra_rep_levelRaise_bridge`,
+`multipass_V_p_slash_descendCoset`) rather than describing what is proved. A name is public API;
+a scheme/section number is not a mathematical description.
+
+**Implementation.**
+
+```bash
+NAME="<decl_name>"
+echo "$NAME" | grep -Eq '[0-9]+_[0-9]+_[0-9]+_|(^|_)m[0-9]+_|multipass_|_aux[0-9]+' && echo FAIL_PATTERN
+```
+
+A forbidden-pattern name with no rename applied or flagged → FAIL → re-dispatch (for a public
+decl, the flagged Phase-5 rename is the pass-with-flag escape). Note `_aux` *without* a trailing
+number is the encouraged suffix for private helpers; only the *numbered* `_aux\d+` is forbidden.
+
+---
+
+### `line_packing_gate` — signature hypotheses packed, not one-per-line
+
+**What it checks.** The first hypothesis-rich signature line is packed toward ~100 chars and
+breaks only where the next token would overflow. Passes if packed, OR the worker documented per
+offending line that its single hypothesis is itself too wide to share.
+
+**When it runs.** Phase 4 per-worker (audit item 6).
+
+**Why.** LINE PACKING was being answered `ok` without any packing — hypothesis blocks stayed
+one-per-line at ~40 chars when they could share lines up to ~100. Use `#check @decl_name` as the
+width reference: if Lean prints the type compactly, the declaration syntax should be too.
+
+**Implementation.** Inspect the signature's leading hypothesis lines. If a line breaks below ~70
+chars while the next token would have fit → FAIL → re-dispatch with explicit pack instructions.
+"ok" with no packing on a sparse signature is a failure, not a resolution.
+
+---
+
 ### `docstring_only_changes` — diff is comment-only (narrow-scope mode)
 
 **What it checks.** Every `+` and `-` line in the diff is either inside a `/-! ... -/` /
@@ -185,18 +267,32 @@ file-level gate block. Format:
 | lake_build_file                     | ✓ pass | <module> built in 4s             |
 | definition_protected                | ✓ pass | no def/abbrev lines changed      |
 | theorem_statement_protected         | ✗ FAIL | line 47 `theorem foo` removed    |
+| structure_gate                      | ✗ FAIL | body 219 lines, no decompose flag|
+| naming_gate                         | ✗ FAIL | `m6_2_extra_rep_…` — no rename    |
+| line_packing_gate                   | ✓ pass | hypotheses packed to ~95 chars   |
 | cumulative_no_unintended_breakage   | ✓ pass | 4 call-site files clean          |
 | (optional) docstring_only_changes   | n/a    | not in docstrings-only mode      |
 
-Overall: FAIL — `theorem_statement_protected`
+Overall: FAIL — `theorem_statement_protected`, `structure_gate`, `naming_gate`
 ```
 
-A gate failure with `Overall: FAIL` triggers the recovery procedure:
+A gate failure with `Overall: FAIL` triggers the recovery procedure. Recovery differs by gate
+type: the *protection* gates (`definition_protected`, `theorem_statement_protected`) catch
+unwanted changes → revert; the *content* gates (`structure_gate`, `naming_gate`,
+`line_packing_gate`) catch missing work → do the work, don't revert.
 
-1. **Phase 4 per-worker.** Revert the worker's edits (`git checkout -- <file>` against
-   the pre-worker SHA). Re-dispatch the worker with the gate failure included in the
-   prompt: "previous attempt failed `theorem_statement_protected` — line 47 changed
-   when no rename or split was declared. Try again, leaving the statement intact."
+1. **Phase 4 per-worker.**
+   - Protection-gate fail: revert the worker's edits (`git checkout -- <file>` against the
+     pre-worker SHA). Re-dispatch with the failure in the prompt: "previous attempt failed
+     `theorem_statement_protected` — line 47 changed when no rename or split was declared. Try
+     again, leaving the statement intact."
+   - Content-gate fail (`structure_gate` / `naming_gate` / `line_packing_gate`): do NOT revert.
+     Re-dispatch the worker with the missing work as the instruction: "previous run failed
+     `structure_gate` — 219-line body, no helpers extracted, no `/decompose-proof` flag;
+     'signature locked' is invalid (a `private` helper above the decl is not a signature change).
+     Extract to ≤60 lines or flag `/decompose-proof`." Loop terminates when the worker returns
+     `Overall: pass`, including the pass-with-flag escape (`/decompose-proof` for an irreducible
+     body, or a Phase-5 rename flag for a public decl).
 2. **Phase 6 final.** Stop. Print the gate failure. Don't claim cleanup succeeded.
    Report to the user; let them decide (manual fix, re-run with adjusted scope, etc.).
 
