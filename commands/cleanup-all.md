@@ -174,16 +174,30 @@ in the list. Do not stop after one file; finish the batch.
 
 For each file:
 
-  PHASE 1  PREPARE                  collect context, read references
-  PHASE 2  STYLE AUDIT              full punch-list, no fixes yet
-  PHASE 3  FILE-LEVEL FIXES         file-level items from the punch-list
-  PHASE 4  PER-DECLARATION GOLF     **one Agent dispatch per declaration**
+  PHASE 1   PREPARE                 collect context, read references
+  PHASE 2   STYLE AUDIT             full punch-list, no fixes yet
+  PHASE 3   FILE-LEVEL FIXES        file-level items from the punch-list
+  PHASE 4   PER-DECLARATION GOLF    **one Agent dispatch per declaration**
                                     (you are allowed and expected to spawn
                                     sub-workers here — Phase 4 of /cleanup
                                     documents the per-declaration prompt)
-  PHASE 5  REFACTORING              cross-declaration changes
-  PHASE 6  FINAL VERIFICATION       lake build + diff gates
-  PHASE 7  REPORT                   per-file summary
+  PHASE 5a  NON-RENAME REFACTORING  cross-declaration changes from worker reports
+                                    (mathlib replacements, junk-def inlining,
+                                    big-change generalisation escalations,
+                                    /decompose-proof flag list)
+  PHASE 6   FINAL VERIFICATION      lake build + diff gates
+  PHASE 6.5 SIMPLIFY                **REQUIRED.** Invoke `Skill(skill="simplify")`
+                                    on the file. Re-run Phase 6 gates if it
+                                    made changes. See cleanup.md Phase 6.5.
+  PHASE 7   REPORT                  per-file summary
+
+**Renames are NOT a per-file phase here.** Phase-4 sub-workers append rename
+requests to the project-wide queue at `.mathlib-quality/renames.jsonl`
+(schema in cleanup.md Phase 4 Step 6a). Do NOT apply those renames during
+your per-file pass — they cascade across files and would race other batches.
+The orchestrator runs a single project-wide Phase 5b rename pass once all
+per-file batches finish (see Step 5 of /cleanup-all). Your job per file
+stops at Phase 5a.
 
 Before starting file 1, read `commands/cleanup.md` in full so you know what each
 phase requires — especially the Phase 4 sub-worker prompt and the diff-gate
@@ -195,14 +209,26 @@ Return a single compact summary at the end of the batch, in this exact shape:
 
   ## Batch summary
 
-  | File | Before | After | Δ | Rules applied | Notes |
-  |------|--------|-------|---|---------------|-------|
-  | File1.lean | 450 | 416 | -34 | 1.4, 1.10, 2.7, 3.3 | 1 STRUCTURE flagged |
-  | File2.lean | 312 | 285 | -27 | 1.1, 1.9, 2.1 | clean |
+  | File | Before | After | Δ | Rules applied | Renames-queued | Notes |
+  |------|--------|-------|---|---------------|----------------|-------|
+  | File1.lean | 450 | 416 | -34 | 1.4, 1.10, 2.7, 3.3 | 2 | 1 STRUCTURE flagged |
+  | File2.lean | 312 | 285 | -27 | 1.1, 1.9, 2.1       | 0 | clean |
   ...
 
-  Cross-file refactoring spotted (for the orchestrator to schedule):
-  - rename wt_* → weight_* (caller sites: ...)
+  Phase checklist per file (required — orchestrator re-dispatches on any ✗):
+
+  | File | P1 | P2 | P3 | P4 | P5a | P6 | P6.5 | P7 |
+  |------|----|----|----|----|-----|----|------|----|
+  | File1.lean | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | File2.lean | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+  ...
+
+  Renames queued to .mathlib-quality/renames.jsonl during this batch:
+  - File1.lean: wt_eq_zero → weight_eq_zero (public)
+  - File1.lean: _aux1 → bar_helper (private)
+  - File3.lean: bridge_lemma → Foo.bar (public — call sites cross 4 files)
+
+  Cross-file refactoring spotted (non-rename — for the orchestrator to schedule):
   - bridge lemma Foo.bar_aux removable (mathlib has Foo.bar directly)
 
   Files needing /decompose-proof (proofs >50 lines after golfing):
@@ -213,9 +239,9 @@ Return a single compact summary at the end of the batch, in this exact shape:
 
   Build state after batch: ✓ clean / ✗ broken at <file>:<line>
 
-Do **not** include intermediate per-phase status in the summary; the summary
-is what the orchestrator sees. Per-phase status blocks live in your own
-context for your own reference.
+Do **not** include intermediate per-phase status in the summary beyond the
+Phase-checklist table; the summary is what the orchestrator sees. Per-phase
+status blocks live in your own context for your own reference.
 
 If a file in the batch genuinely cannot be cleaned without user input (e.g.
 the file's main theorem statement is wrong), include it in the summary
@@ -226,21 +252,33 @@ file in the batch. Do not stop the batch.
 That is the entire orchestrator → worker prompt. About 1200 characters
 substantive, plus the file list. Do not embellish.
 
-### Step 4 — Between dispatches: scoreboard, not analysis
+### Step 4 — Between dispatches: scoreboard + phase-checklist sweep
 
-After each batch returns, the orchestrator emits exactly one line:
+After each batch returns, the orchestrator does TWO things — both compact, neither
+"analysis":
+
+**1. Sweep the batch's phase checklist for ✗.** Each file row should have
+`✓` in all eight columns (P1, P2, P3, P4, P5a, P6, P6.5, P7). For every `✗`,
+re-dispatch a single-file follow-up Agent call for that file with the
+missing phase named — e.g. *"Re-run File1.lean from the start; the previous
+worker reported ✗ for P6.5 (simplify hand-off) and ✗ for P4 (declaration
+`foo_bar` is missing a per-decl worker report)."* Do this BEFORE counting
+the file as done in the scoreboard.
+
+**2. Emit exactly one scoreboard line:**
 
 ```
 **T lines remaining. K/N files done (P%).** Continuing.
 ```
 
 — where T is the cumulative line count across remaining files, K is the
-count of files marked ✓, N is the total, P is K/N as a percentage. Then
-the orchestrator dispatches the next batch.
+count of files marked ✓ AND with all-✓ phase checklists, N is the total,
+P is K/N as a percentage. Then the orchestrator dispatches the next batch.
 
-That is the **entire** output between dispatches. No table updates. No
-"the worker reported X". No "I noticed Y in their summary". No
-verification. The scoreboard is the only narration.
+That is the **entire** output between dispatches besides the re-dispatches
+in step 1. No table updates. No "the worker reported X". No "I noticed Y
+in their summary". No verification beyond the phase-checklist sweep above.
+The scoreboard is the only narration.
 
 Examples of acceptable orchestrator turns:
 
@@ -258,31 +296,59 @@ If a worker's summary names cross-file refactoring or `/decompose-proof`
 candidates, store them in your internal dispatch log — do **not** narrate
 them mid-loop. They appear once in the final report.
 
-### Step 5 — Cross-file refactoring pass (one dispatch, optional)
+### Step 5 — Cross-file refactoring pass (one dispatch)
 
-After all per-file batches return, if multiple batches flagged the same
-cross-file refactor (a rename that touches N files, a removable bridge
-lemma, etc.), dispatch **one final** `Agent` call to handle the
-cross-file pass:
+After all per-file batches return, run the project-wide refactoring pass.
+This has two parts — the rename pass (always runs if the sidecar queue is
+non-empty) and the optional non-rename cross-file work.
+
+#### 5.1. Drain the rename queue
+
+```bash
+test -s .mathlib-quality/renames.jsonl && wc -l .mathlib-quality/renames.jsonl
+```
+
+If the queue is non-empty, dispatch **one** `Agent` call to run the
+project-wide rename pass — exactly the procedure from `commands/cleanup.md`
+Phase 5b (read queue → dedupe → conflict-check → apply each sequentially
+with `Grep` across the whole repo → `lean_diagnostic_messages` on every
+touched file → truncate the queue).
 
 ```
 Working dir: [project root]
 Current branch: [branch]
 Build is clean.
 
-Cross-file refactoring queue (collected from per-file workers):
+Run Phase 5b (rename pass) from commands/cleanup.md against the project-wide
+queue at .mathlib-quality/renames.jsonl. The queue was populated by per-file
+worker batches during cleanup. Apply every rename across the whole repo (not
+just per-file scope), one at a time, with a build check after each. Truncate
+the queue when done. Return the Phase 5b report block.
+```
 
-1. Rename `wt_*` → `weight_*`. Call sites identified:
-   - File1.lean:45, File1.lean:88
-   - File3.lean:120
-2. Remove bridge lemma `Foo.bar_aux` (mathlib has `Foo.bar` directly).
+If the queue is empty, skip 5.1.
+
+#### 5.2. Non-rename cross-file work (optional)
+
+If batches flagged removable bridge lemmas, mathlib-replaces-X opportunities,
+etc., dispatch a second `Agent` call:
+
+```
+Working dir: [project root]
+Current branch: [branch]
+Build is clean.
+
+Non-rename cross-file refactoring queue (collected from per-file workers):
+
+1. Remove bridge lemma `Foo.bar_aux` (mathlib has `Foo.bar` directly).
    Call sites in 4 files: ...
+2. ...
 
 Apply each refactor end-to-end: every call site, every dependent file,
 `lake build` clean at the end. Return a summary.
 ```
 
-If no cross-file work was flagged, skip Step 5.
+If no non-rename cross-file work was flagged, skip 5.2.
 
 ### Step 6 — Final verification (one dispatch)
 
@@ -316,16 +382,22 @@ consolidated report:
 - Total lines before: T_before
 - Total lines after:  T_after
 - Net reduction:      ΔT (P%)
-- Cross-file refactors: K applied
+- Renames applied (Phase 5b): K (from queue depth Q)
+- Cross-file non-rename refactors: K applied
 - Files flagged for /decompose-proof: K (listed below)
 - Files flagged for /split-file: K (listed below)
 
 ### Per-file results (aggregated from worker summaries)
-| File | Δ | Rules applied | Notes |
-|------|---|---------------|-------|
-| ...  | ...| ...           | ...   |
+| File | Δ | Rules applied | Renames-queued | Notes |
+|------|---|---------------|----------------|-------|
+| ...  | ...| ...          | ...            | ...   |
 
-### Cross-file refactoring applied
+### Renames applied (Phase 5b)
+| # | Old name | New name | Scope | Files touched | Sites updated |
+|---|----------|----------|-------|---------------|---------------|
+| ... |        |          |       |               |               |
+
+### Cross-file non-rename refactoring applied
 - ...
 
 ### Files needing /decompose-proof

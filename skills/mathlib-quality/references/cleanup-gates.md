@@ -164,17 +164,21 @@ re-dispatch loop is the explicit `/decompose-proof` flag for a genuinely irreduc
 **What it checks.** The declaration name matches none of the forbidden patterns:
 `\d+_\d+_\d+_` (e.g. `miyake_4_6_5_`), `m\d+_` (e.g. `m6_2_`), `multipass_`, numeric `_aux\d+`
 (e.g. `_aux1`, `_aux2`) — and contains no forbidden abbreviation (`whomog`, `mvpoly`, `wt`,
-`soln`, `imp`, `eqn`, `thm`). Passes if the name is clean, OR the worker renamed it in place
-(private/local decls), OR flagged `Refactoring needed: rename <old> → <new>` (public decls, so
-cross-file call sites are updated together in Phase 5).
+`soln`, `imp`, `eqn`, `thm`). Passes if the name is clean, OR the worker queued a rename to
+`.mathlib-quality/renames.jsonl` AND flagged `Refactoring needed: rename <old> → <new>` for
+Phase 5b. **Phase-4 workers never apply renames in place, even for private/local decls** —
+all renames defer to the single sequential Phase 5b pass.
 
 **When it runs.** Phase 4 per-worker (audit item 5).
 
-**Why.** The NAMING audit was being answered `existing convention preserved` — workers reported
-the name as acceptable without ever proposing a rename, leaving names that encode an internal
-proof scheme (`miyake_4_6_5_iterated_helper`, `m6_2_extra_rep_levelRaise_bridge`,
-`multipass_V_p_slash_descendCoset`) rather than describing what is proved. A name is public API;
-a scheme/section number is not a mathematical description.
+**Why.** Two reasons. (1) The NAMING audit was being answered `existing convention preserved`
+— workers reported the name as acceptable without ever proposing a rename, leaving names that
+encode an internal proof scheme (`miyake_4_6_5_iterated_helper`,
+`m6_2_extra_rep_levelRaise_bridge`, `multipass_V_p_slash_descendCoset`) rather than describing
+what is proved. (2) When workers DID rename, two parallel Phase-4 workers each greping for an
+overlapping pattern (`weight_*`, `_aux*`) collided on shared call-site files. The rename queue
++ dedicated Phase 5b pass eliminates both failure modes: workers must queue, the orchestrator
+applies once sequentially.
 
 **Implementation.**
 
@@ -183,9 +187,11 @@ NAME="<decl_name>"
 echo "$NAME" | grep -Eq '[0-9]+_[0-9]+_[0-9]+_|(^|_)m[0-9]+_|multipass_|_aux[0-9]+' && echo FAIL_PATTERN
 ```
 
-A forbidden-pattern name with no rename applied or flagged → FAIL → re-dispatch (for a public
-decl, the flagged Phase-5 rename is the pass-with-flag escape). Note `_aux` *without* a trailing
-number is the encouraged suffix for private helpers; only the *numbered* `_aux\d+` is forbidden.
+A forbidden-pattern name with no rename queued → FAIL → re-dispatch (the queued Phase-5b
+rename is the pass-with-flag escape). A worker that renamed in place — even a private decl —
+also FAILS this gate (correct shape, wrong mechanism: the rename must go through the queue
+for the Phase 5b sequential pass). Note `_aux` *without* a trailing number is the encouraged
+suffix for private helpers; only the *numbered* `_aux\d+` is forbidden.
 
 ---
 

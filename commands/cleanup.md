@@ -37,18 +37,19 @@ Skip the file-wide phases. Run Phase 4 (per-declaration deep cleanup) on just `d
 
 ## Mode B: Whole File (the standard mode)
 
-Nine phases. **Do them in order. Do not skip phases.**
+Ten phases. **Do them in order. Do not skip phases.**
 
 ```
-PHASE 0  DOCTOR                   pre-flight: baseline must be green
-PHASE 1  PREPARE                  collect context
-PHASE 2  STYLE AUDIT              full punch-list, no fixes yet
-PHASE 3  FILE-LEVEL FIXES         work the file-level items from the punch-list
-PHASE 4  PER-DECLARATION GOLF     one worker per declaration, full audit + full golf + diff gates
-PHASE 5  REFACTORING              cross-declaration changes from worker reports
-PHASE 6  FINAL VERIFICATION       file-level gates + cumulative checks
+PHASE 0   DOCTOR                  pre-flight: baseline must be green
+PHASE 1   PREPARE                 collect context
+PHASE 2   STYLE AUDIT             full punch-list, no fixes yet
+PHASE 3   FILE-LEVEL FIXES        work the file-level items from the punch-list
+PHASE 4   PER-DECLARATION GOLF    one worker per declaration, full audit + full golf + diff gates
+PHASE 5a  NON-RENAME REFACTORING  mathlib replacements, junk-def inlining, big-change escalations
+PHASE 5b  RENAME PASS             consume .mathlib-quality/renames.jsonl queue, apply sequentially
+PHASE 6   FINAL VERIFICATION      file-level gates + cumulative checks
 PHASE 6.5 SIMPLIFY                hand off to the built-in /simplify skill for a holistic review pass
-PHASE 7  REPORT                   one consolidated report
+PHASE 7   REPORT                  one consolidated report
 ```
 
 ---
@@ -394,7 +395,7 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
  3. SET_OPTION    [any per-declaration `set_option`? must remove]
  4. SIMP SQUEEZE  [each simp call: bare? non-terminal? badly-formatted simp only?]
  5. NAMING        [HARD GATE (naming_gate, Step 5b) — "existing convention preserved" is
-                   NOT an acceptable answer; you MUST rename, or flag a rename for Phase 5.
+                   NOT an acceptable answer; you MUST queue a rename for Phase 5b (see naming_gate).
                    snake_case/camelCase/UpperCamelCase as appropriate.
                    Forbidden abbreviations: whomog, mvpoly, wt, soln, imp, eqn, thm.
                    Forbidden name patterns (auto-fail the gate): `\d+_\d+_\d+_` (e.g.
@@ -427,7 +428,8 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
                    candidates are flagged for Phase 5, not done here.]
 
 Issues to fix: [numbered list — every item has a concrete action]
-Refactoring needed: [cross-declaration changes; fed back to main agent for Phase 5.
+Refactoring needed: [cross-declaration changes; fed back to main agent for Phase 5a
+                     (non-rename) or 5b (renames queue to .mathlib-quality/renames.jsonl).
                      Includes: big-change generalisation candidates flagged at item 18.]
 ```
 
@@ -440,7 +442,7 @@ there is little to defer so this is invisible; on large files (1000+ lines, many
 declarations) the deferrals accumulate across workers, every one reporting `Gates: pass` while
 bad names, long proofs, and one-hypothesis-per-line signatures survive. The only legitimate way to
 pass a gate with a long body or a still-imperfect name is to raise an explicit
-`Refactoring needed:` action (a `/decompose-proof` flag, or a `rename to <new>` for Phase 5) — see
+`Refactoring needed:` action (a `/decompose-proof` flag for Phase 5a, or a `rename to <new>` queued for Phase 5b) — see
 Step 5b for the exact pass/fail criteria.
 
 ### HAVE SCAN procedure
@@ -589,7 +591,7 @@ is cheaper than the round-trip.
 
 If the conclusion is one of the "found" cases, the corresponding `delete / specialize /
 build on mathlib` action goes in the "Refactoring needed" section of your report so the
-main agent picks it up in Phase 5.
+main agent picks it up in Phase 5a (mathlib replacements are non-rename refactoring).
 
 The six strict rules from `mathlib-search.md` apply to whatever action you choose:
 - **No wrapper lemmas** — if you would replace a wrapper that just chains 1–3 mathlib
@@ -644,10 +646,10 @@ For each candidate that's marked "yes" in **Verified?**, the procedure was:
 Multiple weakenings on the same hypothesis are tried in catalogue order: weakest first.
 The result kept is the *weakest* one that compiles.
 
-### 2.6c. Big-change candidates (flag for Phase 5)
+### 2.6c. Big-change candidates (flag for Phase 5a)
 
 After mechanical pass, list any big-change candidates the worker noticed but should NOT
-apply inline. These get flagged in `Refactoring needed:` for Phase 5 to escalate to a
+apply inline. These get flagged in `Refactoring needed:` for Phase 5a to escalate to a
 full `/generalise` invocation (which has the literature search + user approval gate).
 
 A change is "big" — and therefore goes into the flagged list, not into the inline result —
@@ -666,7 +668,7 @@ if ANY of the following hold:
 Output format:
 
 ```
-Big-change candidates (flag for /generalise full mode in Phase 5):
+Big-change candidates (flag for /generalise full mode in Phase 5a):
 - Generalise `(x : ℝ)` → `{K : Type*} [LinearOrderedField K] (x : K)` —
   literature suggests max generality is ordered fields; 4 call sites in this project,
   all currently compile-clean under the generalised form (verified diagnostics in 2.6b).
@@ -718,7 +720,7 @@ required: "should not rely on the agent noticing anything since they'll just ski
 otherwise." So: every Phase 4 worker runs 2.6a–2.6e on its declaration, every time. The
 status table is the artifact that makes skipping detectable. Big-change candidates that
 need the full `/generalise` literature-search-plus-user-approval flow are flagged for
-Phase 5 — but the **mechanical pass and (for public decls) the literature search are
+Phase 5a — but the **mechanical pass and (for public decls) the literature search are
 inline-required, not optional.**
 
 ## Step 3 — Apply EVERY golfing rule (with status reporting)
@@ -862,12 +864,20 @@ declaration is not a signature change; extract first, flag only as a last resort
 **naming_gate** (audit item 5) PASSES iff one of:
 - the declaration name matches none of the forbidden patterns — `\d+_\d+_\d+_`, `m\d+_`,
   `multipass_`, numeric `_aux\d+` — and uses no forbidden abbreviation, OR
-- you renamed it in place (private/local decls), OR
-- you flagged `Refactoring needed: rename <old> → <new>` for Phase 5 (public decls, so call sites
-  across files are updated together).
+- you appended a rename to the project's rename queue at `.mathlib-quality/renames.jsonl`
+  (one line per rename — schema in Step 6 below) AND added `Refactoring needed: rename
+  <old> → <new>` to your report so the main agent picks it up in Phase 5b.
 
-FAILS if a forbidden pattern survives and no rename was applied or flagged. "Existing convention
-preserved" on a forbidden-pattern name is a failure, not a resolution.
+**Phase-4 workers never apply renames in place — not even for private/local decls.** All
+renames queue and apply together in the dedicated Phase 5b rename pass. The reason is
+that Phase-4 workers can run in parallel: two workers each greping for `weight_*` to
+update call sites collide on shared files. Queueing centralises that work into one
+sequential pass at the end. A worker that renames in place — even a private decl —
+fails this gate.
+
+FAILS if a forbidden pattern survives and no rename was queued. "Existing convention
+preserved" on a forbidden-pattern name is a failure, not a resolution. Renaming in place
+is also a failure (correct shape, wrong mechanism).
 
 **line_packing_gate** (audit item 6) PASSES iff one of:
 - the first hypothesis-rich signature line is packed toward ~100 chars (breaks only where the next
@@ -892,6 +902,23 @@ possible for tightly-coupled mathlib files): record `lake_build_file: deferred t
 
 ## Step 6 — Report
 
+### 6a. Queue any renames into the project sidecar
+
+If your naming-gate resolution was "queue a rename", append one JSON object per rename
+to `.mathlib-quality/renames.jsonl` (create the directory + file if missing). Schema:
+
+```json
+{"old": "<old.qualified.name>", "new": "<new.qualified.name>", "scope": "private|public", "file": "<path/relative/to/project/root>", "decl_line": <int>, "reason": "<one-line rationale>", "worker": "<phase-4-decl-name>"}
+```
+
+One line per rename. Use the `Bash` tool with a single `echo '<json>' >> .mathlib-quality/renames.jsonl`
+call (do not use `Write`; `Write` overwrites and would clobber sibling workers' entries).
+
+The Phase-5b rename pass dedupes by `old`+`new`+`file` so two workers naming the same target
+rename is harmless. Workers must NOT grep or update call sites themselves.
+
+### 6b. Worker report
+
 Output:
 
 ```
@@ -904,14 +931,28 @@ Gates: [pass / pass with deferred lake_build_file or /decompose-proof flag / FAI
        (structure_gate, naming_gate, line_packing_gate are included. A silent "deferred for
         Phase 5" on item 5, 6, or 12 — with no rename/decompose flag — is reported as FAIL on
         that gate, never as a pass.)
+Renames-queued: [list of "<old> → <new>" pairs you appended to .mathlib-quality/renames.jsonl,
+                 OR "none"]
 Refactoring needed: [or "none"]
+
+Phase checklist (required — main agent re-dispatches on any ✗):
+- [✓/✗] Step 1   — reference docs read
+- [✓/✗] Step 2   — full audit report printed (items 1–18)
+- [✓/✗] Step 2.5 — mathlib search-status block printed
+- [✓/✗] Step 2.6 — generalisation status block printed
+- [✓/✗] Step 3   — golfing-rule pass (every rule has a status line)
+- [✓/✗] Step 4   — step-back-and-think reflection done
+- [✓/✗] Step 5a  — lean_diagnostic_messages clean
+- [✓/✗] Step 5b  — diff-gate status block printed
+- [✓/✗] Step 6a  — renames (if any) appended to sidecar
 ```
 
-If `Gates: FAIL`, the main agent should treat this declaration as not-yet-cleaned and
-re-dispatch with the gate failure as feedback. Don't claim the decl is done.
+If `Gates: FAIL` OR any phase-checklist line is `✗`, the main agent treats this declaration
+as not-yet-cleaned and re-dispatches with the failure as feedback. Don't claim the decl is
+done.
 
 If `Refactoring needed` is non-empty, list each item explicitly so the main agent can
-collect it for Phase 5.
+collect it for Phase 5a.
 ````
 
 ### Dispatching workers
@@ -924,12 +965,13 @@ For each declaration in the list from 1d:
    `[file_path]`, `decl_name`, line range, lint warnings for the range, and the C.x
    punch-list items.
 3. Wait for completion, capture the report.
-4. **Re-dispatch on gate failure.** Read the worker's Step-5b gate-status block and Step-6
-   `Gates:` line. If any gate is `✗ FAIL` — or any of items 5 (NAMING), 6 (LINE PACKING),
-   12 (STRUCTURE) came back `deferred for Phase 5` / `existing convention preserved` / `ok` /
-   `signature locked` with no rename or `/decompose-proof` flag — the declaration is NOT done.
-   Re-dispatch the SAME worker prompt for that declaration with the gate failure quoted as
-   feedback, e.g.:
+4. **Re-dispatch on gate OR phase-checklist failure.** Read the worker's Step-5b gate-status
+   block, Step-6 `Gates:` line, AND the Step-6 phase checklist. If any gate is `✗ FAIL` — or
+   any of items 5 (NAMING), 6 (LINE PACKING), 12 (STRUCTURE) came back `deferred for Phase 5` /
+   `existing convention preserved` / `ok` / `signature locked` with no rename or
+   `/decompose-proof` flag — OR any line in the phase checklist is `✗` — the declaration is
+   NOT done. Re-dispatch the SAME worker prompt for that declaration with the failure quoted
+   as feedback, e.g.:
 
    > Previous run failed `structure_gate`: body still 219 lines, no `/decompose-proof` flag and
    > no helpers extracted; the "signature locked" reason is invalid — a `private` helper ABOVE
@@ -975,29 +1017,37 @@ batched and the work is invalid — re-dispatch correctly (one Agent call per de
 
 ### Post-Phase-4 verification (REQUIRED, catches the shortcut)
 
-Before moving to Phase 5, the main agent verifies:
+Before moving to Phase 5a, the main agent verifies:
 
 ```
 For each declaration D in the list from 1d:
   - Did D get its own worker report? (One Phase-4 status block in the conversation
     with D's name, audit table, golfing-rule status, mathlib-search status,
-    generalisation status, gate status.)
+    generalisation status, gate status, AND phase checklist.)
   - Was the worker an `Agent` call dispatched specifically for D, or was D rolled up
     into a batched call covering multiple decls?
   - Did D's gate-status table show `structure_gate`, `naming_gate`, and `line_packing_gate`
     all `✓ pass` (or pass-with-flag)? Or did items 5/6/12 quietly come back as `deferred` /
     `existing convention preserved` / `ok` / `signature locked` with no rename or
     `/decompose-proof` flag?
+  - Is every line in D's Step-6 phase checklist `[✓]`? Any `[✗]` means a phase was skipped
+    inside the worker — re-dispatch with the skipped phase named.
 
 If any D is missing a per-decl worker report → re-dispatch a worker for D.
 If multiple Ds share one report → the entire batched run is invalid; re-dispatch
 each D separately.
+If any D has a `✗` in its phase checklist → re-dispatch that worker with the missing
+phase named in the feedback.
 If any D failed `structure_gate` / `naming_gate` / `line_packing_gate` (or deferred items
 5/6/12 with no flag) → re-dispatch that D's worker with the gate failure as feedback (see
 "Dispatching workers" step 4). A file-wide tell: many workers each reporting `Gates: pass`
 while bad names (`m6_2_…`, `multipass_…`), 100+-line bodies, and one-hypothesis-per-line
 signatures survive across the file means the gates were honored in shape only — re-dispatch
 every offending declaration.
+
+Finally, count `.mathlib-quality/renames.jsonl` entries vs. the sum of `Renames-queued:`
+lines across all workers. A mismatch (worker reported a rename but no sidecar line, or
+vice versa) is itself a defect — re-dispatch the worker.
 ```
 
 This is not optional. The "one Agent per decl" rule was added because earlier batched
@@ -1009,28 +1059,104 @@ one-worker-per-decl shape while deferring every rename/pack/extract — see the
 
 ---
 
-## PHASE 5 — Refactoring (Main agent)
+## PHASE 5a — Non-rename refactoring (Main agent)
 
-Collect every `Refactoring needed` line from the worker reports. Work them one at a time.
-
-### Order
+Collect every `Refactoring needed` line from the worker reports. Work the non-rename items
+one at a time, in this order:
 
 1. **Mathlib replacements** (delete custom defs/lemmas that mathlib provides; update call sites).
 2. **Junk-def inlining** (defs flagged in C.x as junk; inline at every use site).
 3. **Junk single-use ∃-lemma inlining**.
-4. **Renames** (forbidden abbreviations, snake_case/camelCase fixes, `_aux` suffix). Update
-   ALL usages with `Grep`. Update both the file and any other files that reference the
-   renamed declaration.
-5. **Big-change generalisations** flagged at item 18 by Phase-4 workers — escalate each to a
+4. **Big-change generalisations** flagged at item 18 by Phase-4 workers — escalate each to a
    full `/generalise <file> <decl_name>` invocation. That mode runs the full Phases 1–9
    (including the user-approval gate), so the user gets the trade-off menu. Don't try to
    apply big-change generalisations inline — they need the literature search confirmed and
    the user's call.
-6. **`/decompose-proof` flags**: don't run decomposition here, but record the list in the final report.
+5. **`/decompose-proof` flags**: don't run decomposition here, but record the list for Phase 7.
+
+**Renames are NOT in Phase 5a.** They run in Phase 5b after this phase completes — see the
+next section for why.
 
 ### After each refactor
 
 `lean_diagnostic_messages` on the file. Fix any breakage before moving to the next item.
+
+---
+
+## PHASE 5b — Rename pass (Main agent — runs after 5a is complete and clean)
+
+Renames are deferred to a dedicated pass because (a) they cascade across files and (b) two
+parallel Phase-4 workers each greping for an overlapping name pattern (`weight_*`, `_aux*`)
+can collide on shared call-site files. Centralising into one sequential pass eliminates
+the race.
+
+### 5b.1. Read the rename queue
+
+```bash
+test -f .mathlib-quality/renames.jsonl && cat .mathlib-quality/renames.jsonl || echo "(empty)"
+```
+
+Each line is one JSON object (schema documented in Phase 4 Step 6a). If the file is empty
+or missing, skip directly to Phase 6.
+
+### 5b.2. Dedupe
+
+Group entries by `(old, new, file)`. Drop exact duplicates (two workers naming the same
+target rename). Print a deduped summary table:
+
+```
+### Rename queue (deduped)
+| # | Old name                  | New name              | Scope   | File              | Worker(s)         |
+|---|---------------------------|-----------------------|---------|-------------------|-------------------|
+| 1 | wt_eq_zero                | weight_eq_zero        | public  | Foo/Bar.lean      | bar_thing         |
+| 2 | _aux1                     | bar_helper            | private | Foo/Bar.lean      | main_result       |
+| ...                                                                                                  |
+```
+
+### 5b.3. Conflict check
+
+If two queue entries have the **same `old` but different `new`** — workers disagreed on the
+new name — STOP and ask the user. Don't pick one arbitrarily.
+
+If two queue entries have the **same `new` but different `old`** in the same file — the
+proposed new name collides with another rename target — STOP and ask the user.
+
+### 5b.4. Apply each rename (one at a time, sequential)
+
+For each row in the deduped table:
+
+1. `Grep` for the `old` name across the entire repository — not just the declaring file.
+   The qualified name is the precise match; the unqualified short form is a broader sweep
+   that catches dot-notation call sites.
+2. Update every call site, the declaration line, and any references in docstrings or
+   comments. Use `Edit` with `replace_all: true` on each file.
+3. `lean_diagnostic_messages` on the declaring file AND every file with call sites updated.
+4. If breakage: fix or revert THIS rename, then continue with the next. Don't accumulate
+   broken renames.
+5. Record the result in a running log.
+
+### 5b.5. Clear the queue
+
+After every rename in the deduped table has been applied (or recorded as skipped with
+reason), truncate `.mathlib-quality/renames.jsonl`:
+
+```bash
+: > .mathlib-quality/renames.jsonl
+```
+
+(Truncate, don't delete — keeps the file in place for the next worker batch.)
+
+### 5b.6. Phase 5b report block
+
+```
+### Phase 5b — Rename pass
+- Queue depth (raw):              <N>
+- Queue depth (deduped):          <M>
+- Renames applied:                <K>
+- Renames skipped (conflicts):    <list with reasons, or "(none)">
+- Call sites updated:             <total across all renames>
+- Files touched:                  <count>
+```
 
 ---
 
@@ -1085,8 +1211,9 @@ A `FAIL` in 6b means /cleanup is *not* done. Three responses:
 
 1. **Single-decl regression** — a Phase-4 worker's edits were the cause. Re-run that
    declaration's worker with the gate failure as feedback (Phase 4 retry).
-2. **Phase-5 refactoring regression** — a rename or replacement missed a call site, or
-   broke a downstream API. Identify and fix in Phase 5; re-run 6b.
+2. **Phase-5 refactoring regression** — a Phase-5a replacement or a Phase-5b rename missed
+   a call site, or broke a downstream API. Identify and fix in the corresponding sub-phase;
+   re-run 6b.
 3. **Cannot fix in-place** — the change introduces unavoidable breakage (e.g., a planned
    rename that genuinely needs deeper redesign). Stop. Report to user; revert the
    problematic change pending decision.
@@ -1192,8 +1319,9 @@ phase wasn't completed; treat as a defect and re-run that phase):
   A row count smaller than the 1d declaration count means workers were batched (the
   forbidden shortcut described in Phase 4 "Dispatching workers"). If the table has 5
   rows but 1d listed 12 declarations, 7 declarations didn't get their own worker —
-  re-dispatch.
-- **Phase 5 refactoring** — even "(none)" is acceptable; missing section = phase skipped
+  re-dispatch. Each row's `Phase checklist` from Step 6 must be all `[✓]`.
+- **Phase 5a non-rename refactoring** — even "(none)" is acceptable; missing section = phase skipped
+- **Phase 5b rename pass** — the deduped queue table AND the report block. "(empty queue)" is acceptable, missing section = phase skipped
 - **Verification (Phase 6)** — diagnostics-clean confirmation
 - **Gates (Phase 6 cumulative)** — proves gates were run
 - **Simplify pass (Phase 6.5)** — proves the simplify hand-off happened
@@ -1212,7 +1340,7 @@ Single consolidated report:
 ### Audit (Phase 2)
 - File-level items:        7 (3 fixed in Phase 3, 0 deferred)
 - Linter findings:        12 (all resolved)
-- Per-decl items:         18 (16 fixed in Phase 4, 2 deferred to Phase 5 refactoring)
+- Per-decl items:         18 (16 fixed in Phase 4, 2 deferred to Phase 5a/5b)
 
 ### Phase 3 file-level fixes
 - Created module docstring (was missing)
@@ -1229,10 +1357,23 @@ Single consolidated report:
 | `main_result`       | 65     | 22    | -43 | 1.4, 1.10, 1.13, 2.1, 2.5, 2.7       |
 | ...                 |        |       |     |                                      |
 
-### Phase 5 refactoring
-- Renamed `wt_eq_zero` → `weight_eq_zero` (3 call sites updated)
+### Phase 5a non-rename refactoring
 - Inlined junk def `E₄E₆Weight` (13 use sites)
 - Removed bridge lemma `splits_id_iff_*` (mathlib equivalent used instead)
+
+### Phase 5b rename pass
+- Queue depth (raw):              4
+- Queue depth (deduped):          3
+- Renames applied:                3
+- Renames skipped (conflicts):    (none)
+- Call sites updated:             7
+- Files touched:                  3
+
+| # | Old name      | New name           | Scope   | File         | Sites |
+|---|---------------|--------------------|---------|--------------|-------|
+| 1 | wt_eq_zero    | weight_eq_zero     | public  | Foo/Bar.lean | 3     |
+| 2 | _aux1         | bar_helper         | private | Foo/Bar.lean | 1     |
+| 3 | wt_le_zero    | weight_le_zero     | public  | Foo/Bar.lean | 3     |
 
 ### Verification (Phase 6)
 ✓ lean_diagnostic_messages clean
@@ -1272,7 +1413,7 @@ Fixes applied: 2 (verified diagnostics-clean and gates-clean afterwards)
 - **Cross-file PR-feedback fixes** are out of scope. Use `/fix-pr-feedback`.
 - **Big-change generalisations** (restating over different abstract structures, public-API
   renames, conclusion restatements driven by literature findings) are flagged for the user
-  in Phase 5, not auto-applied. The mechanical generalisation pass and the literature
+  in Phase 5a, not auto-applied. The mechanical generalisation pass and the literature
   search for public decls *do* run inline as part of Phase 4 item 18 — so soft skipping
   is detectable. Only the final approve/apply step is deferred to `/generalise <file>
   <decl_name>` so the user sees the trade-offs before committing to a big change.
@@ -1290,6 +1431,6 @@ Fixes applied: 2 (verified diagnostics-clean and gates-clean afterwards)
 
 After completing, record significant learnings to `.mathlib-quality/learnings.jsonl`. Only
 non-trivial patterns (1–5 entries). See `skills/mathlib-quality/learning/schema.md`. For
-mathlib API discoveries during Phase 5 refactoring, prefer `type: mathlib_discovery`. For
+mathlib API discoveries during Phase 5a refactoring, prefer `type: mathlib_discovery`. For
 recurring style issues caught in Phase 2 that the user might not have known about, use
 `type: style_correction`.
