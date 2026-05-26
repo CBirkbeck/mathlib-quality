@@ -19,6 +19,10 @@ trigger:
     - bottleneck
     - stuck
     - frontier
+    - blueprint
+    - unformalise
+    - unformalize
+    - leanblueprint
 ---
 
 # Mathlib Quality Skill
@@ -58,6 +62,7 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | `/split-file` | Split large files (>1500 lines) into focused modules |
 | `/pre-submit` | Pre-PR submission checklist |
 | `/bump-mathlib` | Bump mathlib version and fix resulting breakage |
+| `/blueprint` | **Author or update the project's blueprint** — wraps the standard `leanblueprint` Python tool (init/build/checkdecls left to the user) and focuses on high-quality unformalisations: paragraph-level mathematical-prose proof sketches with `\lean{}` / `\uses{}` / `\leanok` cross-links. Seven-phase workflow (doctor → enumerate → plan → prose context → author → cross-link → hand-off). One worker per declaration; reads project references + module docstrings + `/develop`'s `decomposition.md` if present. Modes: whole-project default, single-file, single-decl-closure, `--update`, `--check`. Conventions in `references/blueprint-conventions.md`. |
 | `/fix-pr-feedback` | Fetch PR comments, implement fixes locally, **wait for user approval before pushing**, then watch CI to completion. 8-phase workflow with explicit comment-coverage check. |
 | `/setup-rag` | Set up RAG MCP server for PR feedback search |
 | `/setup-chatgpt` | Set up ChatGPT MCP server for mathematical second opinions |

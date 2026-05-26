@@ -4,7 +4,7 @@
 A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up to mathlib standards before PR submission.
 
 ## Current Status
-**Version:** 0.40.0
+**Version:** 0.41.0
 
 ### Completed
 - Plugin architecture with 5 commands defined in `commands/`
@@ -73,6 +73,7 @@ A Claude Code skill plugin for cleaning up, golfing, and bringing Lean 4 code up
 - `/pre-submit` - Pre-PR submission checklist
 - `/fix-pr-feedback` - Address reviewer comments. Fetches all comments, implements fixes locally, **stops for explicit user approval before pushing**, then watches CI to completion (using `gh pr checks --watch` in background as the wake mechanism).
 - `/bump-mathlib` - Bump mathlib version and fix resulting breakage
+- `/blueprint` - **Author or update the project's blueprint** — a LaTeX document pairing each Lean declaration with its mathematical statement and a paragraph-level proof sketch, the artifact behind sphere-packing, flt-regular, PFR, and carleson. Wraps the standard `leanblueprint` Python tool (which provides `leanblueprint pdf` / `leanblueprint web` / `leanblueprint checkdecls`) and focuses on the hard part: high-quality unformalisations. Seven phases: doctor → enumerate (diff against existing blueprint to compute New/Drift/Stale sets) → plan (user confirms scope) → prose context (read project references + module docstrings + any `/develop` `decomposition.md` once into `.mathlib-quality/blueprint/prose_context.md`) → author (one worker per declaration; statement unformalised to math notation; paragraph-level proof sketch with `\uses{}` cross-links; `\leanok` iff Lean proof is sorry-free) → cross-link pass (orphan `\uses{}` refs resolved by add/rename/remove; stale `\lean{}` refs repaired) → hand-off (`leanblueprint checkdecls`; print build instructions). Modes: whole project (default), single file, single-decl-with-closure, `--update` (drift-only), `--check` (inventory + diff, no authoring). Conventions in `references/blueprint-conventions.md`.
 - `/setup-chatgpt` - Set up ChatGPT MCP server for mathematical second opinions (requires ChatGPT desktop app + Plus/Pro)
 
 ## Next Steps
