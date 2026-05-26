@@ -296,6 +296,87 @@ exact foo
 
 ---
 
+## Extract API Before Bulling Through Ugly Proofs
+
+**Source:** reviewer feedback from MichaelStollBayreuth and loefflerd on
+[mathlib4#38993](https://github.com/leanprover-community/mathlib4/pull/38993).
+
+When a target proof is more than ~3 ugly lines, or requires structural massaging,
+**that is itself a signal that API is missing**. Stop, name the missing API in one
+sentence, add it as a public lemma (with `@[simp]` if applicable), then retry the
+target proof.
+
+### Signals of missing API
+
+| Signal | What it usually means |
+|--------|----------------------|
+| `rw [show A = B from rfl]` | A definitional equality should be a named `_eq_` lemma |
+| `have hfun := by rw …; rfl` | The `rfl` exit is hiding a missing congruence/coercion lemma |
+| `cases ha : foo.order with \| top => simp \| coe a => …` | Missing case-eliminator over the wrapper type |
+| `refine X ?_ ?_ <;> exact typeclass_machinery _` | The typeclass step belongs in a single API lemma |
+| Three-step round-trips through `IsCuspForm`-style wrappers | Missing coe lemma that lets the surrounding context use the underlying object directly |
+| Repeated cast juggling (`push_cast`, `norm_cast`, manual `Int.coe_…`) at multiple call sites | Missing `_coe` API at the wrapper level |
+
+### Concrete before/after (PR #38993)
+
+Reviewer-rejected — bulls through with `rfl` exits and manual typeclass machinery:
+
+```lean
+lemma qExpansion_eq_qExpansion_discriminant_mul (f : ModularForm 𝒮ℒ k)
+    (hcusp : (qExpansion 1 f).coeff 0 = 0) :
+    qExpansion 1 f = qExpansion 1 discriminant *
+      qExpansion 1 (CuspForm.discriminantEquiv (toCuspForm f hcusp)) := by
+  have hfun : (f : ℍ → ℂ) = discriminant *
+      (CuspForm.discriminantEquiv (toCuspForm f hcusp) : ℍ → ℂ) := by
+    rw [discriminant_mul_discriminantEquiv]
+    rfl
+  rw [hfun, ← CuspForm.coe_discriminant]
+  refine UpperHalfPlane.qExpansion_mul ?_ ?_ <;>
+    exact ModularFormClass.analyticAt_cuspFunction_zero _ one_pos one_mem_strictPeriods_SL
+```
+
+Reviewer-accepted — extract one API lemma at the right generality first:
+
+```lean
+-- New public API lemma — works for ANY ModularFormClass, not just this target.
+protected lemma qExpansion_mul_coe {G : Type*} [FunLike G ℍ ℂ] (hh : 0 < h)
+    (hΓ : h ∈ Γ.strictPeriods) {a b : ℤ} (f : F) [ModularFormClass F Γ a] (g : G)
+    [ModularFormClass G Γ b] :
+    qExpansion h ((⇑f * ⇑g : ℍ → ℂ)) = qExpansion h f * qExpansion h g :=
+  qExpansion_mul (ModularFormClass.analyticAt_cuspFunction_zero f hh hΓ)
+    (ModularFormClass.analyticAt_cuspFunction_zero g hh hΓ)
+
+-- Target proof now reads as the mathematics, not the plumbing.
+lemma qExpansion_eq_qExpansion_discriminant_mul (f : ModularForm 𝒮ℒ k)
+    (hcusp : (qExpansion 1 f).coeff 0 = 0) :
+    qExpansion 1 f = qExpansion 1 discriminant *
+      qExpansion 1 (CuspForm.discriminantEquiv (toCuspForm f hcusp)) := by
+  rw [show (⇑f : ℍ → ℂ) = discriminant * (CuspForm.discriminantEquiv (toCuspForm f hcusp) : ℍ → ℂ)
+      from (discriminant_mul_discriminantEquiv _).symm, ← CuspForm.coe_discriminant]
+  exact ModularForm.qExpansion_mul_coe one_pos one_mem_strictPeriods_SL _ _
+```
+
+### Anti-pattern
+
+> "The proof works, it's only one PR, let me just fix the cosmetic complaint and move on."
+
+This is exactly what reviewers keep flagging. They don't want compiled ugly code;
+they want code that future authors will read and build on. When you can name the
+missing API in one sentence, **the cosmetic fix is not the fix** — the API extraction
+is the fix.
+
+### Where this rule fires
+
+- **`/cleanup` Phase 4, audit item 13 (MATHLIB):** if no mathlib lemma exists AND the
+  proof exhibits any signal above, flag `Refactoring needed: extract API` rather than
+  finalising the ugly proof.
+- **`/fix-pr-feedback`:** treat reviewer comments saying *"this should be an API lemma"*
+  or *"looks like more API lemmas for X"* with higher priority than ordinary golf
+  comments — and grep ALL call sites of the underlying object first so the new API
+  is named for the broader use case, not just the one-shot context.
+
+---
+
 ## Style Notes from Reviewers
 
 - **Dot notation is preferred**: `h.mono_left` over `mono_left h` (frequent reviewer comment)

@@ -326,6 +326,51 @@ theorem foo : ∀ n, P n := existing_induction_lemma
 
 **Feedback pattern:** "This follows from `existing_lemma`"
 
+#### Extract API Instead of Bulling Through
+
+**Issue:** Target proof is short but built from `rfl` exits, manual typeclass
+plumbing, or cast juggling. Reviewers want the missing API named at the right
+generality first.
+
+```lean
+-- Before (rejected — 7 lines of plumbing for a 1-line mathematical fact)
+lemma qExpansion_eq_qExpansion_discriminant_mul (f : ModularForm 𝒮ℒ k)
+    (hcusp : (qExpansion 1 f).coeff 0 = 0) :
+    qExpansion 1 f = qExpansion 1 discriminant *
+      qExpansion 1 (CuspForm.discriminantEquiv (toCuspForm f hcusp)) := by
+  have hfun : (f : ℍ → ℂ) = discriminant *
+      (CuspForm.discriminantEquiv (toCuspForm f hcusp) : ℍ → ℂ) := by
+    rw [discriminant_mul_discriminantEquiv]
+    rfl
+  rw [hfun, ← CuspForm.coe_discriminant]
+  refine UpperHalfPlane.qExpansion_mul ?_ ?_ <;>
+    exact ModularFormClass.analyticAt_cuspFunction_zero _ one_pos one_mem_strictPeriods_SL
+
+-- After (accepted — extract one API lemma at full generality, target shrinks to 3 lines)
+protected lemma qExpansion_mul_coe {G : Type*} [FunLike G ℍ ℂ] (hh : 0 < h)
+    (hΓ : h ∈ Γ.strictPeriods) {a b : ℤ} (f : F) [ModularFormClass F Γ a] (g : G)
+    [ModularFormClass G Γ b] :
+    qExpansion h ((⇑f * ⇑g : ℍ → ℂ)) = qExpansion h f * qExpansion h g :=
+  qExpansion_mul (ModularFormClass.analyticAt_cuspFunction_zero f hh hΓ)
+    (ModularFormClass.analyticAt_cuspFunction_zero g hh hΓ)
+
+lemma qExpansion_eq_qExpansion_discriminant_mul (f : ModularForm 𝒮ℒ k)
+    (hcusp : (qExpansion 1 f).coeff 0 = 0) :
+    qExpansion 1 f = qExpansion 1 discriminant *
+      qExpansion 1 (CuspForm.discriminantEquiv (toCuspForm f hcusp)) := by
+  rw [show (⇑f : ℍ → ℂ) = discriminant * (CuspForm.discriminantEquiv (toCuspForm f hcusp) : ℍ → ℂ)
+      from (discriminant_mul_discriminantEquiv _).symm, ← CuspForm.coe_discriminant]
+  exact ModularForm.qExpansion_mul_coe one_pos one_mem_strictPeriods_SL _ _
+```
+
+**Feedback pattern:** "Looks like more API lemmas for X", "this should be a lemma
+about the underlying object", "can you state this for any ModularFormClass?".
+
+**Source:** [mathlib4#38993](https://github.com/leanprover-community/mathlib4/pull/38993)
+(reviewers: MichaelStollBayreuth, loefflerd). See
+`proof-patterns.md § Extract API Before Bulling Through Ugly Proofs` for the full
+list of signals.
+
 ### 6. Library Integration
 
 #### Missing Attributes

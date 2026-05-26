@@ -245,6 +245,31 @@ Order the implementation pass:
 
 Print the prioritised order before Phase 3 starts.
 
+#### API-extraction comments belong in bucket 2, not bucket 4
+
+Comments of the form *"this should be an API lemma"*, *"looks like more API lemmas
+for X"*, *"can you extract a lemma for the underlying object?"* — these are
+**API/structural** items, not golf. Promote them to bucket 2 even if the reviewer
+phrased them as "consider …" or attached them to a single one-line proof.
+
+Two reasons:
+
+1. **They cascade.** A new API lemma named for the underlying object (not the
+   one-shot target) usually shortens 2–6 other proofs in the same file once
+   extracted. Doing it after the golf pass means re-touching the same proofs twice.
+2. **The reviewer is making a teaching point, not a cosmetic one.** Reviewer
+   feedback from MichaelStollBayreuth and loefflerd on
+   [mathlib4#38993](https://github.com/leanprover-community/mathlib4/pull/38993)
+   explicitly framed this: *"it will be more efficient if you learn how to write
+   good Mathlib-ready code"* — meaning the request is about the *shape* of the
+   contribution, not the specific characters in the affected proof.
+
+Before applying the fix, **grep all call sites of the underlying object** in the
+file (and adjacent files in the same area) so the new API is named for the broader
+use case, not just the one-shot context the reviewer happened to point at. See
+`references/proof-patterns.md § Extract API Before Bulling Through Ugly Proofs`
+for the full set of signals and a worked before/after.
+
 ---
 
 ## PHASE 3 — Implement (Main agent + workers)

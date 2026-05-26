@@ -568,9 +568,24 @@ Concluded: <one of:>
   - "found in mathlib as <name> but more general; ACTION: delete local, specialize mathlib
      where called"
   - "found a partial match (<name>); ACTION: keep local but build on mathlib via …"
+  - "not in mathlib AND proof exhibits API-extraction signals (>3 ugly lines, or any of:
+     `rw [show A = B from rfl]`, `have … := by …; rfl`, manual typeclass plumbing via
+     `refine X ?_ ?_ <;> exact <classmachinery>`, repeated cast juggling, three-step
+     round-trips through wrapper types); ACTION: name the missing API in one sentence,
+     add as a public lemma above this declaration with `@[simp]` if applicable, then
+     retry — see `proof-patterns.md § Extract API Before Bulling Through Ugly Proofs`.
+     Bulling through with the current ugly proof is a gate failure."
   - "not in mathlib (all 5 methods exhausted, plus auxiliary-variant search); ACTION:
      keep, consider future mathlib PR"
 ```
+
+The API-extraction conclusion exists because reviewer feedback on real mathlib PRs
+(MichaelStollBayreuth and loefflerd on
+[mathlib4#38993](https://github.com/leanprover-community/mathlib4/pull/38993))
+flagged exactly this failure mode: a worker finishes the audit, finds no mathlib
+match, ships the ugly proof, and the reviewer asks "why isn't this a one-line
+consequence of an API lemma I can reuse elsewhere?" Naming the missing API up front
+is cheaper than the round-trip.
 
 If the conclusion is one of the "found" cases, the corresponding `delete / specialize /
 build on mathlib` action goes in the "Refactoring needed" section of your report so the
