@@ -1198,6 +1198,10 @@ PHASE 4   PROVE            iterate to completion using the proof sketch
                            (mathlib gap → spawn sub-ticket per Tier A1 / A2)
 PHASE 5   VERIFY           no sorry, no axiom, lake build clean
 PHASE 6   GATES            cleanup-gates on the diff
+PHASE 6.5 CLEANUP          invoke /cleanup on the new declaration (full 10-phase
+                           workflow, no phase-skipping — enforced via
+                           /cleanup's own phase checklist). Mandatory before
+                           Mark done.
 PHASE 7   MARK DONE        update ticket status; checkpoint final progress
                            (if a parent was paused for sub-tickets, return to it)
 PHASE 8   REPORT
@@ -1213,7 +1217,9 @@ For cleanup tickets:
 ```
 PHASE 0   PICK             same
 PHASE 1   READ             ticket points at a file
-PHASE 2   DELEGATE TO /cleanup  invoke /cleanup <file> (full 8-phase workflow)
+PHASE 2   DELEGATE TO /cleanup  invoke /cleanup <file> (full 10-phase workflow,
+                           no phase-skipping — same skill invocation as Phase 6.5
+                           uses, but with file scope instead of single-decl)
 PHASE 7   MARK DONE
 PHASE 8   REPORT
 ```
@@ -1331,10 +1337,14 @@ For cleanup tickets: jump straight to delegation in 2c.
 
 If this ticket's type is `cleanup`:
 
-1. Invoke `/cleanup <file>` (the file the cleanup ticket targets).
-2. Wait for `/cleanup` to complete its full 8-phase workflow.
-3. If `/cleanup` reports success (Phase 6 gates pass), mark this ticket `done`. Skip to
-   Phase 8.
+1. Invoke `Skill(skill="mathlib-quality:cleanup", args="<file>")` on the file the
+   cleanup ticket targets.
+2. Wait for `/cleanup` to complete its full 10-phase workflow (PHASE 0 → 7, including
+   5a non-rename refactoring, 5b rename pass, and 6.5 simplify hand-off). The per-decl
+   phase checklist enforcement inside `/cleanup` is the same one Phase 6.5 of this
+   command relies on.
+3. If `/cleanup` reports success (Phase 6 gates pass, simplify ran, no `✗` in any
+   worker's phase checklist), mark this ticket `done`. Skip to Phase 8.
 4. If `/cleanup` reports failure, this is a stop condition for the cleanup ticket — the
    underlying file has issues. Mark the cleanup ticket `blocked` and report what failed.
    Don't try to fix `/cleanup`'s output yourself.
@@ -1516,6 +1526,113 @@ out what (the gate's `Details` will name the line) and revert the unauthorised p
 
 ---
 
+## PHASE 6.5 — Post-proof cleanup (binding)
+
+After Phase 6's gates pass and **before** Phase 7 marks the ticket done, run
+`/cleanup` on the declaration this ticket just proved. The proof is not "done"
+until the file is also clean. A ticket whose proof passes gates but whose code
+is verbose, badly named, or has long-proof anti-patterns has only finished the
+*mathematical* half of the work; the mathlib-quality bar requires the
+engineering half too.
+
+### What to invoke
+
+For each NEW declaration this ticket added (the main `decl_name` from Phase 3,
+plus any private helpers introduced during Phase 4), invoke `/cleanup` in
+single-declaration mode via the Skill tool:
+
+```
+Skill(skill="mathlib-quality:cleanup", args="<file_path> <decl_name>")
+```
+
+The Skill invocation runs `/cleanup`'s **full 10-phase workflow**:
+
+```
+PHASE 0  DOCTOR
+PHASE 1  PREPARE
+PHASE 2  STYLE AUDIT
+PHASE 3  FILE-LEVEL FIXES
+PHASE 4  PER-DECLARATION GOLF   (phase-checklist enforced — re-dispatches on ✗)
+PHASE 5a NON-RENAME REFACTORING
+PHASE 5b RENAME PASS            (drains .mathlib-quality/renames.jsonl)
+PHASE 6  FINAL VERIFICATION
+PHASE 6.5 SIMPLIFY              (mandatory hand-off to the built-in /simplify skill)
+PHASE 7  REPORT
+```
+
+**Beastmode never short-circuits this.** The phase-checklist enforcement is
+`/cleanup`'s own responsibility (see `commands/cleanup.md` Step 6 "Phase
+checklist"); beastmode's job is to *invoke* it and *react* to its output.
+
+If the ticket touched multiple files (rare — typically only for big-API
+sub-tickets), run one `/cleanup` invocation per affected file's new declaration,
+sequentially.
+
+### Reading `/cleanup`'s report
+
+`/cleanup` returns a consolidated Phase-7 report. Three possible outcomes:
+
+**(A) Clean — gates pass, no flags.** Proceed to PHASE 7 (Mark done).
+
+**(B) Clean with deferrals.** `/cleanup` ran end-to-end but flagged follow-ups:
+  - `Refactoring needed: /decompose-proof on <decl>` — spawn a
+    `/decompose-proof` sub-ticket in `/develop`'s template format; record in
+    the current ticket's progress notes; proceed to PHASE 7. The decompose
+    ticket joins the board and gets picked up by the G6 sequence-continuation.
+  - `Files needing /split-file` — record as a Phase-8 follow-up note; proceed.
+  - `Simplify suggestions for follow-up` — record as a Phase-8 follow-up note;
+    proceed.
+  - `Renames-queued: <list>` — `/cleanup`'s Phase 5b already applied these
+    sequentially; record the resulting rename(s) in the ticket's progress
+    notes; proceed.
+
+**(C) Gate FAIL.** `/cleanup` reports a failure that beastmode's Phase 6 did
+not catch. Examples:
+  - `lake_build_file` ✗ — `/cleanup`'s build broke (e.g., a rename cascading
+    through call sites). Try to revert `/cleanup`'s changes; if the
+    underlying proof itself is the issue, hard-stop **SCOPE/DEFINITION-ERROR**
+    (Tier B condition 4).
+  - `structure_gate` ✗ with no `/decompose-proof` flag — the proof body is
+    too long and `/cleanup` couldn't extract helpers itself. Spawn a
+    `/decompose-proof` sub-ticket and do **NOT** mark this ticket done —
+    let the sub-ticket address the decomposition first. G6 sequence-
+    continuation will pick the decompose ticket next.
+  - `naming_gate` ✗ — extremely unlikely (the ticket statement was authored
+    by `/develop` with naming gate-checked). If it happens, surface to user
+    via `/develop --continue`.
+
+### Phase-checklist enforcement at the boundary
+
+Beastmode reads `/cleanup`'s Phase-7 report and verifies all three artifacts:
+
+  - **Phase 4 per-declaration results** row for THIS decl is present
+  - The row's Phase checklist (P1, P2, P3, P4, P5a, P6, P6.5, P7) is all `[✓]`
+    — any `[✗]` means a phase inside the cleanup worker was skipped
+  - **Phase 6.5 Simplify pass** section is present in the report — proves the
+    hand-off to `/simplify` ran
+
+A missing artifact means `/cleanup` itself was skipped or partial — beastmode
+**re-invokes** the Skill call (the second invocation is the recovery; the
+report from the first is included in the re-invocation's feedback). This is
+the "properly, not skipping any phases" enforcement at the beastmode→cleanup
+boundary.
+
+### Required artifact for Phase 8
+
+In the Phase-8 report (or progress notes for non-terminal tickets), beastmode
+records one line:
+
+```
+- Post-proof cleanup: ✓ ran  (gates pass, simplify ran, no flags)
+                  OR ✓ ran  (decompose flag spawned T0XX)
+                  OR ✓ ran  (renames-queued + applied: <old> → <new>)
+                  OR ✗ FAILED on <gate>  (ticket NOT marked done; reason: …)
+```
+
+This makes a skipped cleanup detectable in the audit trail.
+
+---
+
 ## PHASE 7 — Mark done
 
 Update `.mathlib-quality/tickets.md`:
@@ -1615,6 +1732,14 @@ Cycles: <approximate number of try-diagnose-adjust loops>
 ✓ theorem_statement_protected
 ✓ lake_build_file
 ✓ cumulative_no_unintended_breakage
+
+### Post-proof cleanup (Phase 6.5)
+- Skill invocation: mathlib-quality:cleanup on <file> <decl_name>
+- /cleanup Phase-7 status: <DONE | DONE-with-flags | FAILED-on-gate>
+- Phase-4 worker phase checklist: all ✓ (or re-dispatched until clean)
+- Phase-6.5 simplify pass: ran (outcome: PASS-THROUGH | ISSUES-FOUND-AND-FIXED)
+- Renames-queued + applied: <list, or "none">
+- Decompose flags raised: <ticket id(s), or "none">
 
 ### Next ticket
 <auto-suggest the next available ticket per dependency analysis, or "none ready">
