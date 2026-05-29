@@ -23,6 +23,11 @@ trigger:
     - unformalise
     - unformalize
     - leanblueprint
+    - latex
+    - dep-graph
+    - prose
+    - sketch
+    - render
 ---
 
 # Mathlib Quality Skill
@@ -62,7 +67,8 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | `/split-file` | Split large files (>1500 lines) into focused modules |
 | `/pre-submit` | Pre-PR submission checklist |
 | `/bump-mathlib` | Bump mathlib version and fix resulting breakage |
-| `/blueprint` | **Author or update the project's blueprint** — wraps the standard `leanblueprint` Python tool (init/build/checkdecls left to the user) and focuses on high-quality unformalisations: paragraph-level mathematical-prose proof sketches with `\lean{}` / `\uses{}` / `\leanok` cross-links. Seven-phase workflow (doctor → enumerate → plan → prose context → author → cross-link → hand-off). One worker per declaration; reads project references + module docstrings + `/develop`'s `decomposition.md` if present. Modes: whole-project default, single-file, single-decl-closure, `--update`, `--check`. Conventions in `references/blueprint-conventions.md`. |
+| `/blueprint` | **Author or update the project's blueprint** — wraps the standard `leanblueprint` Python tool and focuses on high-quality unformalisations: paragraph-level mathematical-prose proof sketches with `\lean{}` / `\uses{}` / `\leanok` cross-links. Seven-phase workflow (doctor → enumerate → plan → prose context → author → cross-link → hand-off). One worker per declaration; reads project references + module docstrings + `/develop`'s `decomposition.md` if present. Modes: whole-project default, single-file, `--decl <Foo.bar>` (single-decl + closure, non-interactive), `--update`, `--check`. Phase 6 hand-off rebuilds `blueprint/lean_decls` before `checkdecls`, runs a pre-push checklist (PDF builds + undefined-ref count = 0), checks the CI workflow for `api-docs: true`. Conventions + deployment gotchas in `references/blueprint-conventions.md`. |
+| `/unformalise` | **Turn one Lean declaration into mathematics.** Unicode terminal render by default (Γ, ℂ, ℍ, →, ≤ — readable in chat); after rendering, asks `[b]` add to blueprint as LaTeX / `[l]` LaTeX to stdout / `[m]` Markdown / `[n]` terminal-only. Non-interactive: `--latex`, `--md`, `--blueprint`. Single-decl default; `--closure` walks deps; whole-file mode also allowed. Shares the unformalisation worker logic with `/blueprint` Phase 4 (same `references/blueprint-conventions.md`). Conversational sibling to `/blueprint --decl`. |
 | `/fix-pr-feedback` | Fetch PR comments, implement fixes locally, **wait for user approval before pushing**, then watch CI to completion. 8-phase workflow with explicit comment-coverage check. |
 | `/setup-rag` | Set up RAG MCP server for PR feedback search |
 | `/setup-chatgpt` | Set up ChatGPT MCP server for mathematical second opinions |

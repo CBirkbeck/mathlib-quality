@@ -31,10 +31,24 @@ part: producing high-quality, mathematically faithful unformalisations.
 ```
 /blueprint                          # whole project (default)
 /blueprint <file.lean>              # only this file's declarations
-/blueprint --decl <Foo.bar>         # only this declaration + its dependency closure
+/blueprint --decl <Foo.bar>         # ★ only this declaration + its dependency closure
 /blueprint --update                 # re-sync: add stubs for new decls, flag stale \lean{} refs
 /blueprint --check                  # author nothing; just enumerate inventory and report drift
 ```
+
+### Sibling command: `/unformalise`
+
+For ad-hoc interactive use — "show me what this Lean theorem says, in maths" — use
+`/unformalise <Foo.bar>` instead. `/unformalise` renders the result as Unicode in the
+terminal first and offers to append it to the blueprint after you've eyeballed the
+prose. `/blueprint --decl` skips the terminal-preview step and writes directly to
+`blueprint/src/`. Use whichever fits the flow:
+
+| Goal | Use |
+|---|---|
+| "Show me what this theorem says, then maybe blueprint it" | `/unformalise Foo.bar` |
+| "Add this result and everything it uses to the blueprint, no preview" | `/blueprint --decl Foo.bar` |
+| "Bootstrap or sync the whole project's blueprint" | `/blueprint` |
 
 ## Prerequisites
 
@@ -526,35 +540,88 @@ For every Stale entry from Phase 1d (`\lean{X}` where Lean decl `X` no longer ex
 The blueprint LaTeX is now self-consistent. Hand off to the standard tool for build +
 verification.
 
-### 6a. Run `leanblueprint checkdecls`
+### 6a. Rebuild `blueprint/lean_decls` before `checkdecls`
+
+`leanblueprint checkdecls` reads from `blueprint/lean_decls`, which is **regenerated
+by `leanblueprint web`** — not re-derived on the fly. After Phase 4 / 5 renames or
+new entries, the stale file gives misleading "X is missing" reports.
 
 ```bash
+rm -rf blueprint/web blueprint/lean_decls
+leanblueprint web 2>&1 | tail -20         # populates blueprint/lean_decls
 leanblueprint checkdecls 2>&1 | tail -40
 ```
 
-This walks every `\lean{X}` in `blueprint/src/` and verifies `X` exists in the Lean
-project's compiled state. Any failure here is a defect in Phase 4 or Phase 5c — re-run
-those for the offending entries.
+Any `checkdecls` failure after the rebuild is a defect in Phase 4 or Phase 5c —
+re-run those for the offending entries.
 
-### 6b. Tell the user how to build
+### 6b. Pre-push checklist (REQUIRED ARTIFACT before declaring blueprint ready)
 
-Don't run the build yourself unless asked (HTML build can take minutes; PDF requires
-LaTeX). Print:
+These four checks catch the failure modes that CI will otherwise catch days later.
+Skipping them is a defect; print the block whether they pass or fail.
 
 ```
-Blueprint authored. To view:
+### Pre-push checklist (Phase 6)
+- leanblueprint web rebuild:        ✓ / ✗
+- leanblueprint checkdecls exit 0:  ✓ / ✗
+- leanblueprint pdf builds:         ✓ / ✗
+- print.log undefined-ref count:    K (must be 0)
+```
+
+The PDF build + undefined-ref count is what CI scores you on. Run:
+
+```bash
+leanblueprint pdf 2>&1 | tail -20
+grep -c "undefined" blueprint/print/print.log   # must print 0
+```
+
+If the count is non-zero, the typical cause is one of:
+
+- **A LaTeX macro error mid-file aborted pdflatex** so the `.aux` never populated.
+  Scan `blueprint/print/print.log` for the FIRST `! Undefined control sequence` or
+  `Missing { inserted` — not the downstream `undefined reference` warnings, which are
+  symptoms. Define the missing macro in `blueprint/src/macros/common.tex` (e.g. add
+  `\newcommand{\re}{\operatorname{Re}}`); brace subscripts that include `\mathop`s
+  (e.g. `\delta_{\inf}` not `\delta_\inf`).
+- **latexmk default 2-pass build didn't converge.** Set in `blueprint/src/latexmkrc`:
+  ```perl
+  $max_repeat = 5;
+  $force_mode = 1;
+  ```
+  Re-run `leanblueprint pdf`.
+
+See `references/blueprint-conventions.md § Deployment & CI gotchas` for the catalogue.
+
+### 6c. CI configuration check (one-shot, on first deploy)
+
+If the project's GitHub Pages workflow exists, verify the docgen-action step includes
+`api-docs: true`. Without it, the dep-graph viewer's "Lean" links produce 404s in
+production.
+
+```bash
+grep -nE "api-docs:" .github/workflows/*.yml 2>/dev/null
+```
+
+If the grep returns nothing AND `.github/workflows/blueprint.yml` (or similar) exists,
+add `api-docs: true` to the docgen-action step (don't auto-edit without confirming —
+it touches CI config). Flag this in the Phase 7 report.
+
+### 6d. Tell the user how to view / iterate
+
+```
+Blueprint authored and verified. To view locally:
 
   leanblueprint pdf            # → blueprint/print/print.pdf
-  leanblueprint web            # → blueprint/web/  (HTML + dep-graph; serve with `python3 -m http.server -d blueprint/web/`)
-  leanblueprint checkdecls     # → re-verify Lean refs (already passed above)
+  leanblueprint web            # → blueprint/web/  (HTML + dep-graph)
+  python3 -m http.server -d blueprint/web/        # serve the web view
 
-To track ongoing changes, re-run /blueprint --update after Lean code changes.
+To re-sync after Lean code changes: /blueprint --update
+To unformalise + add one specific result: /blueprint --decl <Foo.bar>  (or /unformalise)
 ```
 
-### 6c. Optional: open the dep-graph
+### 6e. Optional: open the dep-graph
 
-If `--open` was passed (and the project has a sensible default browser), build the web
-view and open the dep-graph index. Otherwise skip.
+If `--open` was passed, build the web view and open the dep-graph index. Otherwise skip.
 
 ---
 
