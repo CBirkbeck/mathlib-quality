@@ -48,6 +48,8 @@ Methodical 8-phase workflow for any Lean file. Replaces what used to be three co
 - **`/generalise`** — weaken assumptions on a single lemma/def: typeclass-hierarchy walk, drop-test, point-localise, strict→weak, plus mandatory literature search; auto-applies small safe changes, presents big changes as a numbered approval menu (also runs inline as part of `/cleanup` Phase 4)
 - **`/decompose-proof`** — break proofs >30 lines into focused helper lemmas (with mandatory user approval gate before dispatch)
 - **`/expert-review`** — produce a self-contained mathematical brief (`REVIEW_BRIEF.md`) for an external reviewer with no repo access; pure math, no Lean, no file paths; then in Mode 2 (`--reply`) integrate the reviewer's response into ticket-board updates
+- **`/blueprint`** — author or update the project's [leanblueprint](https://github.com/PatrickMassot/leanblueprint) — the LaTeX + dep-graph artifact behind sphere-packing, flt-regular, PFR, and carleson. Seven-phase workflow: doctor → enumerate (diff against existing blueprint) → plan → prose context → author (one worker per declaration, paragraph-level math sketch with `\lean{}` / `\uses{}` / `\leanok`) → cross-link pass → hand-off (`leanblueprint web` + `checkdecls` + pre-push checklist). Whole-project default; modes for single-file, `--decl <Foo.bar>` (single decl + closure), `--update` (drift-only), `--check` (inventory + diff)
+- **`/unformalise`** — turn one Lean declaration into mathematics. Unicode terminal render by default (Γ, ℂ, ℍ, →, ≤ — readable in chat); then `[b]` blueprint as LaTeX / `[l]` LaTeX to stdout / `[m]` Markdown / `[n]` terminal-only. Non-interactive: `--latex`, `--md`, `--blueprint`. The conversational front door for `/blueprint --decl`
 - **`/fix-pr-feedback`** — fetch every PR comment, fix locally, **stop for explicit user approval before pushing**, then watch CI to completion (`gh pr checks --watch` runs in background as the wake-timer). Every commit and any PR-description update follows binding conventions: short imperative subject, concrete bullet body, dependencies surfaced via a `Depends on #1234` line, Claude co-author footer.
 - **`/bump-mathlib`** — bump mathlib version and fix the resulting breakage; documents recurring patterns from upstream evolution (Splits binary→unary refactor, IsX field-name normalisation, etc.)
 - **`/pre-submit`** — final pre-PR checklist
@@ -147,7 +149,7 @@ activate the new tool.
 |---------|-------------|
 | `/develop` | **Planning only, with binding methodical-decomposition pre-work.** Mathlib search, API design, then a per-result decomposition pass: prose proof + ordered lemma list + **`:= by sorry` skeleton stated in the project's Lean files (must `lake build` clean)** + **verbatim source quotes per leaf** + Lean ↔ source match paragraphs + per-leaf provability check. Saved as `decomposition.md`; tickets only after every leaf verified. **`--decompose` flag** runs just this pre-work pass and stops, for iterating on the decomposition before committing to a ticket board. |
 | `/beastmode` | **Marathon execution. Stops at nothing — but stays on-target.** Pick a ticket and finish the goal — spawn sub-tickets in `/develop`'s format for missing lemmas, replan via `/develop --continue` for wrong strategies, no recursion cap, no time budget. **Super Saiyan ethos**: scope growth that stays on-target is great news, not a stop signal. **Multi-session work is the target, not an exit.** Only stops: DONE / SCOPE-DEFINITION ERROR / OFF-TRACK (genuine, with concrete evidence) / BROKEN BASELINE. |
-| `/cleanup` | Style audit + cleanup + golf (whole file or single declaration). **9-phase** methodical workflow; absorbed `/check-style` (Phase 2 audit) and `/check-mathlib` (Phase 4 item 13: five-method search-status block + six strict mathlib-replacement rules). |
+| `/cleanup` | Style audit + cleanup + golf (whole file or single declaration). **10-phase** methodical workflow with per-worker phase checklist; Phase 5 split into 5a (non-rename refactoring) and 5b (dedicated rename pass — workers append to `.mathlib-quality/renames.jsonl`, Phase 5b applies them repo-wide in one sequential pass). Absorbed `/check-style` (Phase 2 audit) and `/check-mathlib` (Phase 4 item 13: five-method search-status block + six strict mathlib-replacement rules). |
 | `/cleanup-all` | **Orchestrator-worker marathon.** Main session dispatches batched `Agent` calls with tight prompts (working dir + branch + build + file list + target); workers do all file reading, LSP, edits, and build verification in fresh contexts. Between dispatches the orchestrator emits a one-line scoreboard, nothing else. The pattern that sustained a real 28-day, 9000-message, 395-dispatch cleanup session. |
 | `/project-status` | Chat-only mathematical status: what's the worker on, what's blocked + missing, how it connects to the goal, how far along. **Three-tier progress** (code-level / main-goal chain / parametric-hypotheses discharged). Unicode math, no LaTeX. |
 | `/overview` | Project-wide declaration inventory: every `def`/`lemma`/`theorem` with descriptions, dependencies, consolidation analysis |
@@ -158,6 +160,8 @@ activate the new tool.
 | `/pre-submit` | Pre-PR submission checklist |
 | `/fix-pr-feedback` | Fetch PR comments → fix → STOP for approval → push → watch CI. Every commit and PR-description update follows binding conventions (short imperative subject, concrete bullet body, `Depends on` line, Claude co-author footer). |
 | `/bump-mathlib` | Bump mathlib version and fix breakage |
+| `/blueprint` | **Author or update the project's leanblueprint** — LaTeX + dep-graph artifact (sphere-packing/flt-regular/PFR/carleson-style). Wraps the standard `leanblueprint` Python tool; focuses on high-quality unformalisations. Seven phases (doctor → enumerate → plan → prose context → author → cross-link → hand-off). Modes: whole project, single file, `--decl <Foo.bar>`, `--update`, `--check`. Conventions + deployment gotchas in `references/blueprint-conventions.md`. |
+| `/unformalise` | **Turn one Lean declaration into mathematics.** Unicode terminal render by default (Γ, ℂ, ℍ, →, ≤); then `[b]` blueprint / `[l]` LaTeX / `[m]` Markdown / `[n]` terminal-only. Non-interactive flags `--latex`, `--md`, `--blueprint`. Modes: single decl, `--closure`, whole file. The conversational front door for `/blueprint --decl`. |
 | `/teach` | Record a project-specific pattern or convention |
 | `/contribute` | Push local learnings back as a PR to this repo |
 | `/setup-rag` | Configure the RAG MCP server |
@@ -221,14 +225,16 @@ activate the new tool.
 /cleanup-all                        # Clean every file in project
 ```
 
-**How `/cleanup` works (9 phases, methodical, no skipping):**
+**How `/cleanup` works (10 phases, methodical, no skipping):**
 
 0. **Doctor** — pre-flight: `lake exe cache get`, `lake build` (must pass — without a clean baseline we can't tell what breakage we introduced), LSP responsive on the target file. Aborts if the baseline is broken.
 1. **Prepare** — read the file, run `lean_diagnostic_messages`, read the five reference docs (golfing-rules, proof-patterns, mathlib-search, generalisation-patterns, cleanup-gates), build the declaration list.
 2. **Style audit** — complete numbered punch-list (file-level + linter findings + per-declaration light scan). No fixes yet. Replaces what used to be `/check-style`.
 3. **File-level fixes** — copyright, **module docstring (CREATED if missing)**, imports, subsection dividers, file-level `set_option`, batch mechanical replacements (`λ`→`fun`, `$`→`<|`, `push_neg`→`push Not`).
 4. **Per-declaration deep cleanup** — one dedicated agent per declaration. The worker reads the reference docs, runs the **18-item audit** with required status blocks for: every golfing rule (1.1 → 3.7), the **five-method mathlib search** (with the six strict mathlib-replacement rules — replaces `/check-mathlib`), the **inline mechanical generalisation pass** (catalogue-driven typeclass-hierarchy walk, drop-test, pointwise / strict→weak), and (for public decls) a literature search. Then runs the **per-worker diff gates** on the worker's edits before completing — including the hard `structure_gate` / `naming_gate` / `line_packing_gate`: audit items 12/5/6 are pass/fail, not deferrable, so a worker that leaves a long body ("signature locked" is not a valid excuse — a `private` helper above the decl is not a signature change), a scheme-number name (`m6_2_…`, `multipass_…`), or one-hypothesis-per-line signatures is re-dispatched, not accepted.
-5. **Refactoring** — cross-declaration items from Phase 4 worker reports: renames, junk-def inlining, mathlib replacements, big-change generalisations escalated to standalone `/generalise` (which has the user-approval gate on big changes).
+5. **Refactoring (split into 5a + 5b).**
+   - **5a — Non-rename refactoring:** cross-declaration items from Phase 4 worker reports — mathlib replacements, junk-def inlining, big-change generalisations escalated to standalone `/generalise` (which has the user-approval gate on big changes).
+   - **5b — Rename pass:** Phase 4 workers never rename in place (parallel workers would race on shared call sites). They append `{old, new, scope, file, …}` JSON to `.mathlib-quality/renames.jsonl`. Phase 5b reads the queue, dedupes, conflict-checks, then applies each rename sequentially across the whole repo with `Grep` + `Edit replace_all` + `lean_diagnostic_messages` between each. The queue is truncated when done.
 6. **Final verification** — file-level diff gates (`lake_build_file`, `lake_build`, `definition_protected`, `theorem_statement_protected`, `cumulative_no_unintended_breakage`). Untraceable signature changes are gate failures; only continues if Phase 6 is `pass`.
 6½. **Simplify pass** — hand off to the **built-in `/simplify` skill** (provided by Claude Code) for a holistic review. Where `/cleanup` is checklist-driven, `/simplify` is holistic — it spots duplicated proof skeletons across the file, cross-cutting issues the per-declaration workers missed, and quality issues that don't match any specific rule. If `/simplify` makes changes, the gates from Phase 6 are re-run on the new state. Required artifact: simplify-pass status block.
 7. **Report** — one consolidated report including the Phase-0 baseline, the audit punch-list, per-declaration before/after, refactoring done, gate-status table, and the simplify-pass outcome.
@@ -241,6 +247,43 @@ activate the new tool.
 /cleanup MyFile.lean            # Audit + fix + golf (one command)
 /pre-submit MyFile.lean         # Final checklist
 ```
+
+### Authoring a Blueprint
+
+```
+/blueprint                          # Whole project: enumerate every public decl → write blueprint/src/*.tex
+/blueprint <file.lean>              # Only this file's declarations
+/blueprint --decl <Foo.bar>         # One declaration + its dependency closure (non-interactive)
+/blueprint --update                 # Re-sync after Lean changes (drift / stale refs only)
+/blueprint --check                  # Inventory + drift report; author nothing
+
+/unformalise <Foo.bar>              # Render as Unicode in terminal; then [b/l/m/n]
+/unformalise <Foo.bar> --closure    # …also recursively render its dependencies
+/unformalise <file.lean> --md       # Whole file, Markdown to stdout (good for PR descriptions)
+```
+
+**`/blueprint` and `/unformalise` cover the same core job — unformalising Lean
+declarations into mathematical prose with `\lean{}` / `\uses{}` / `\leanok`
+annotations.** The split is by ergonomics, not capability:
+
+| Goal | Use |
+|---|---|
+| "Show me what this theorem says, then maybe blueprint it" | `/unformalise Foo.bar` |
+| "Add this result and everything it uses to the blueprint" | `/blueprint --decl Foo.bar` |
+| "Bootstrap or sync the whole project's blueprint" | `/blueprint` |
+
+**How `/blueprint` works (7 phases):**
+
+0. **Doctor** — `blueprint/` initialised (via `leanblueprint init`); `lake build` clean; `leanblueprint` Python package importable.
+1. **Enumerate** — walk public decls; diff against existing blueprint to compute four sets: **New** / **Existing-OK** / **Stale** (Lean decl no longer exists) / **Drift** (signature changed).
+2. **Plan** — print inventory; user confirms scope (hard pause). Blueprint authoring is heavyweight — one worker per declaration — and a wrong scope is expensive.
+3. **Prose context** — read `.mathlib-quality/references/`, module docstrings, any prior `/develop` `decomposition.md` ONCE into `.mathlib-quality/blueprint/prose_context.md`. Workers consume from there in Phase 4 — references aren't re-read per worker.
+4. **Author** — one `Agent` per declaration. Worker reads Lean + prose context + adjacent chapter chunks; produces LaTeX statement (math notation, no Lean plumbing) + paragraph-level proof sketch (math English, not tactic transcript) + `\lean{X}` + `\uses{…}` + `\leanok` iff sorry-free; writes to the chapter file.
+5. **Cross-link pass** — main agent collects every `\label{}` and `\uses{X}` across `blueprint/src/`; orphan `\uses{X}` references resolved by add / rename / remove; stale `\lean{X}` from Phase 1 repaired against the current Lean tree.
+6. **Hand-off** — `rm -rf blueprint/web blueprint/lean_decls` → `leanblueprint web` (regenerates `lean_decls`) → `leanblueprint checkdecls`. Required pre-push artifact: PDF builds clean and `grep -c undefined blueprint/print/print.log == 0`. CI workflow checked for `api-docs: true` on the docgen-action step (without it, dep-graph "Lean" links 404 in production).
+7. **Report** — single consolidated report with per-phase required artifacts.
+
+The conventions, anti-patterns, four worked examples, and the **deployment & CI gotcha catalogue** live in `skills/mathlib-quality/references/blueprint-conventions.md` — workers read this in full before authoring.
 
 ### Handling PR Feedback
 
