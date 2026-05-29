@@ -402,9 +402,11 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
                    `miyake_4_6_5_`), `m\d+_` (e.g. `m6_2_`), `multipass_`, numeric
                    `_aux\d+` (e.g. `_aux1`). Rename to describe what is PROVED, not an
                    internal scheme/section number.]
- 6. LINE PACKING  [HARD GATE (line_packing_gate, Step 5b) — "ok" without packing is NOT
-                   acceptable. Pack hypothesis-rich lines toward ~100 chars; use #check as
-                   the width reference. Multiple hypotheses per line is the norm here.]
+ 6. LINE PACKING  [HARD GATE (line_packing_gate, Step 5b) — REQUIRED ARTIFACT: per-line
+                   width table covering EVERY signature line (see LINE PACKING procedure
+                   below). "LINE PACKING: ok" without the table is an automatic gate
+                   failure. The check is per-line, not first-line-only — every line where
+                   `current + 1 + next-token ≤ 100` must be repacked.]
  7. BY PLACEMENT  [`by` at end of line, never alone]
  8. FORMAT        [2-space indent; no empty lines inside; one tactic per line;
                    merge sequential `rw [a]; rw [b]` → `rw [a, b]`]
@@ -481,10 +483,9 @@ For every `simp` / `simp only [...]`:
 
 ### LINE PACKING procedure
 
-Fill lines to ~100 chars. Do NOT break at 50–60 chars when there's room.
-
-Use `#check @decl_name` to see how Lean formats the type — your declaration syntax should be
-equally compact.
+Fill every signature line to ~100 chars (mathlib's column limit). Do NOT break at 50–80 chars
+when there's room. Lean's pretty-printer at `format.width := 100` produces maximally-packed
+output — your declaration syntax should match what the pretty-printer would emit.
 
 ```lean
 -- BAD (~40 chars/line)
@@ -498,11 +499,48 @@ theorem foo (S : Finset α) (hS : ∀ p ∈ S, P p) :
     Q := by
 ```
 
-The `line_packing_gate` (Step 5b) fails this declaration if the first hypothesis-rich line breaks
-below ~70 chars when the next token would have fit on it. Reporting `LINE PACKING: ok` without
-actually packing such a line is a gate failure, not a resolution. The only line that may legitimately
-stand alone under ~70 chars is one whose single hypothesis is itself too wide to share — document
-that case explicitly rather than leaving it unexplained.
+#### REQUIRED ARTIFACT — per-line width table
+
+Before reporting any LINE PACKING status, produce this table for the declaration's
+**signature** (every line from the declaration keyword up to the `:= by` / `:= term`
+boundary — exclude proof-body lines):
+
+```
+### Line packing — `decl_name`
+
+Reference (#check @decl_name rendered at width 100):
+<paste the #check output, or note "n/a — definition / instance / inductive">
+
+| Sig line | Chars | Next token (first token of next sig line) | current + 1 + next ≤ 100 ? | Action     |
+|----------|-------|--------------------------------------------|----------------------------|------------|
+| 42       | 47    | `(hS_complete : ...)`           (28 chars) | 47 + 1 + 28 = 76  → YES    | repack     |
+| 43       | 86    | `: ∃ H₀ : ℝ, ...`              (15 chars) | 86 + 1 + 15 = 102 → NO     | ok         |
+| 44       | 91    | (no next sig line — proof body next)       | n/a                        | ok         |
+| 45       | 67    | `:= by`                          (5 chars) | 67 + 1 + 5  = 73  → YES    | repack     |
+```
+
+Every signature line gets a row. Compute "current + 1 + next-token-width". If ≤ 100, the
+line is underpacked → action `repack`. If > 100, the break is justified → action `ok`. The
+arithmetic is the gate; eyeballing is a defect.
+
+#### Single-hypothesis-too-wide escape (NARROW)
+
+A signature line may legitimately stand below 100 chars iff its **single hypothesis is itself
+≥95 chars** — so no neighbour could share the line without overflow. In that case action is
+`wide-hyp` and the row's third column must read explicitly, e.g.:
+`95-char hyp alone; current + 1 + next would push to 110+ → NO`.
+
+The escape requires this concrete arithmetic per line — generic "this hypothesis is wide"
+without the 95-char justification is a defect. If the single hypothesis is < 95 chars, it
+shares with a neighbour; there is no escape.
+
+#### Apply the repacks, then re-emit the table
+
+After the first table, apply every `repack` row by editing the signature (move the next-line's
+first token onto the current line; let Lean's wrapping cascade). Re-emit the table after the
+edits — every row must read `ok` or `wide-hyp`. If any `repack` row remains, repeat.
+
+The re-emitted table is what the `line_packing_gate` (Step 5b) reads.
 
 ### SET_OPTION procedure
 
@@ -879,13 +917,23 @@ FAILS if a forbidden pattern survives and no rename was queued. "Existing conven
 preserved" on a forbidden-pattern name is a failure, not a resolution. Renaming in place
 is also a failure (correct shape, wrong mechanism).
 
-**line_packing_gate** (audit item 6) PASSES iff one of:
-- the first hypothesis-rich signature line is packed toward ~100 chars (breaks only where the next
-  token would overflow), OR
-- you documented, per offending line, that its single hypothesis is itself too wide to share.
+**line_packing_gate** (audit item 6) PASSES iff:
+- the **required per-line width table** (see Step 2 LINE PACKING procedure) was emitted and
+  contains one row per signature line, AND
+- every row's `Action` column is `ok` or `wide-hyp` — no remaining `repack` rows.
 
-FAILS if a line breaks below ~70 chars when the next token would have fit. "ok" without packing is
-a failure.
+FAILS in any of these cases (every one is a frequent worker-skip mode):
+- The table is missing or partial (e.g., only the first hypothesis-rich line measured).
+  `LINE PACKING: ok` without the table is an automatic fail.
+- The table has any row with `Action: repack`.
+- The arithmetic in the third column (`current + 1 + next-token`) is missing, wrong, or
+  copy-pasted without re-measuring after an edit.
+- A `wide-hyp` row claims the escape without the concrete ≥95-char justification (single
+  hypothesis is itself ≥95 chars on its own line, and `current + 1 + next-token > 100` is
+  shown explicitly).
+
+The gate is now per-line, not first-line-only. Workers who pack line 1 and leave lines 2-N
+underpacked fail this gate.
 
 **Recovery differs by gate type.** For `definition_protected` / `theorem_statement_protected`
 (unwanted changes): revert the offending edit (`git checkout -- <file>` if you have git access;

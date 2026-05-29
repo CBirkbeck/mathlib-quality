@@ -195,21 +195,35 @@ suffix for private helpers; only the *numbered* `_aux\d+` is forbidden.
 
 ---
 
-### `line_packing_gate` — signature hypotheses packed, not one-per-line
+### `line_packing_gate` — every signature line packed, not just the first
 
-**What it checks.** The first hypothesis-rich signature line is packed toward ~100 chars and
-breaks only where the next token would overflow. Passes if packed, OR the worker documented per
-offending line that its single hypothesis is itself too wide to share.
+**What it checks.** Every signature line in the declaration is packed toward ~100 chars and
+breaks only where the next token would overflow. Workers must emit a per-line width table
+(see `/cleanup` LINE PACKING procedure) with one row per signature line showing the
+arithmetic `current_chars + 1 + next-token-width ≤ 100`. The table is the gate's required
+artifact; a missing table — or a table that covers only some lines — is an automatic FAIL.
 
 **When it runs.** Phase 4 per-worker (audit item 6).
 
-**Why.** LINE PACKING was being answered `ok` without any packing — hypothesis blocks stayed
-one-per-line at ~40 chars when they could share lines up to ~100. Use `#check @decl_name` as the
-width reference: if Lean prints the type compactly, the declaration syntax should be too.
+**Why.** Two failure modes from the older one-line-only gate. (1) Workers learned to pack line 1
+and leave lines 2-N at ~60 chars — the gate inspected only the first hypothesis-rich line.
+(2) "LINE PACKING: ok" was being written without any measurement; the arithmetic enforcement
+was implicit and got skipped. The per-line table forces explicit arithmetic on every line,
+closing both loopholes. The pretty-printer at `format.width := 100` is the upper-bound reference.
 
-**Implementation.** Inspect the signature's leading hypothesis lines. If a line breaks below ~70
-chars while the next token would have fit → FAIL → re-dispatch with explicit pack instructions.
-"ok" with no packing on a sparse signature is a failure, not a resolution.
+**Implementation.** Walk the declaration from the keyword line to the `:= by` / `:= term`
+boundary. For each line:
+1. Measure character count.
+2. Identify the first token of the next signature line.
+3. Compute `current + 1 + next-token`.
+4. If ≤ 100 → action `repack`; if > 100 → action `ok`.
+
+The "wide-hyp" escape applies only when the line's single hypothesis is ≥95 chars on its own;
+the row must show the arithmetic justifying that no neighbour fits.
+
+**Recovery.** Apply every `repack` action; re-emit the table; all rows must read `ok` or
+`wide-hyp` before the gate passes. This is a *missing-work* gate failure — do the work, do
+not revert.
 
 ---
 
