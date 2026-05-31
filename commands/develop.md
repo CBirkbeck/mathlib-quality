@@ -22,6 +22,45 @@ call planned lemmas, iterate to compilation) in `/beastmode`. It prevents the
 starts a ticket, the plan is fixed; the worker either implements it or hard-stops with
 a concrete reason it can't.
 
+## Source-faithfulness (BINDING — read before planning anything)
+
+The single most expensive failure this command exists to prevent is a **decomposition that
+drifts from the source's actual proof**. When the plan's leaves are *invented* — chosen because
+they "look provable in Lean" or "connect to code we already have" rather than *transcribed* from
+the reference's own argument — the tree reliably bottoms out at a lemma the source never proves.
+That lemma is then either **substantial mathlib-lacking infrastructure** or **outright false**,
+and a worker burns a long session discovering it the hard way. Every recurrence has the same
+root cause: leaving the source.
+
+The discipline that prevents it (enforced in Phase 1e and `--decompose`):
+
+1. **Transcribe, don't invent.** Read the reference's *full proof* (1e Step 1) and mirror its
+   proposition chain. The source already did the decomposition; your leaves are *its* sub-results,
+   named by their mathematical content — not a fresh route you happen to find convenient.
+2. **Every leaf carries a precise source locator** — statement number + page + a line/locator into
+   the reference text (e.g. `wedhorn.txt:2682`). A leaf with no locator is suspect by default.
+3. **Acceptance test — quote-or-delete.** For every leaf you must be able to quote, verbatim, the
+   source passage that justifies it. If you cannot, it is an **artifact**: do not ticket it — go
+   back to the source and find its *real* route.
+4. **Two red flags that you have left the source — STOP and re-read the proof:**
+   - the step needs you to *build substantial infrastructure absent from mathlib*, or
+   - a leaf turns out *false* (or only true under an extra hypothesis the source never uses).
+   Both almost always mean the source proves the result a *different, easier* way.
+5. **Never use memory or a prior summary as the source of a statement or a route.** They drift
+   from both the reference and the code. Re-open the reference and the `.lean` every time.
+
+**Case study (why this rule exists).** Goal: `O_X(U) = Â⟨T/s⟩` is strongly noetherian (Wedhorn
+Thm 8.28(b), via Example 6.38). A planning pass invented the route "`O_X(U) ≅ A⟨X⟩/I`; get `A⟨X⟩`
+strongly noetherian via a restricted-power-series **Fubini**; transport the topology via a **Banach
+open-mapping** argument." None of that is in Wedhorn — the Fubini isn't in mathlib, and the
+quotient/OMT detour was pure scaffolding; a worker sank a multi-hour session into it. Wedhorn's
+actual proof is **one line**: `A → Â⟨T/s⟩` is *topologically of finite type*, and t.f.t. over a
+strongly-noetherian Tate ring is strongly noetherian (Remark 6.37(1), p. 54). Reading Example
+6.38's proof shows this immediately. The leaves "Fubini" and "OMT-openness" had **no source quote** —
+rule 3 (quote-or-delete) kills them on sight. (Separately, two false leaves had already slipped in:
+"noetherian ⇒ strongly noetherian" and "strongly noetherian ⇒ noetherian ring of definition" — both
+collapse distinctions the source maintains; rule 4 flags them.)
+
 ## Usage
 
 ```
