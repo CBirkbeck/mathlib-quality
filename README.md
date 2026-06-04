@@ -48,8 +48,8 @@ Methodical 8-phase workflow for any Lean file. Replaces what used to be three co
 - **`/generalise`** — weaken assumptions on a single lemma/def: typeclass-hierarchy walk, drop-test, point-localise, strict→weak, plus mandatory literature search; auto-applies small safe changes, presents big changes as a numbered approval menu (also runs inline as part of `/cleanup` Phase 4)
 - **`/decompose-proof`** — break proofs >30 lines into focused helper lemmas (with mandatory user approval gate before dispatch)
 - **`/expert-review`** — produce a self-contained mathematical brief (`REVIEW_BRIEF.md`) for an external reviewer with no repo access; pure math, no Lean, no file paths; then in Mode 2 (`--reply`) integrate the reviewer's response into ticket-board updates
-- **`/blueprint`** — author or update the project's [leanblueprint](https://github.com/PatrickMassot/leanblueprint) — the LaTeX + dep-graph artifact behind sphere-packing, flt-regular, PFR, and carleson. Seven-phase workflow: doctor → enumerate (diff against existing blueprint) → plan → prose context → author (one worker per declaration, paragraph-level math sketch with `\lean{}` / `\uses{}` / `\leanok`) → cross-link pass → hand-off (`leanblueprint web` + `checkdecls` + pre-push checklist). Whole-project default; modes for single-file, `--decl <Foo.bar>` (single decl + closure), `--update` (drift-only), `--check` (inventory + diff)
-- **`/unformalise`** — turn one Lean declaration into mathematics. Unicode terminal render by default (Γ, ℂ, ℍ, →, ≤ — readable in chat); then `[b]` blueprint as LaTeX / `[l]` LaTeX to stdout / `[m]` Markdown / `[n]` terminal-only. Non-interactive: `--latex`, `--md`, `--blueprint`. The conversational front door for `/blueprint --decl`
+- **`/blueprint`** — author or update the project's [verso-blueprint](https://github.com/leanprover/verso-blueprint) — the Verso-based Lean-native artifact behind verso-sphere-packing, verso-flt, verso-carleson, verso-noperthedron, verso-algebraic-combinatorics. Chapter files are `.lean` modules; statements use `:::theorem "label" (lean := "Foo.bar")` directives; dep-graph edges use `{uses "label"}[]`; math is KaTeX (``$`...` `` inline, ``$$`...` `` display). Verso auto-computes completion status from `(lean := …)` — no manual `\leanok` to maintain. Seven-phase workflow: doctor → enumerate (diff against existing chapters) → plan → prose context → author (one worker per declaration; Verso directives only) → cross-link pass → hand-off (`./scripts/ci-pages.sh`; verify `_out/site/html-multi/`). Whole-project default; modes for single-file, `--decl <Foo.bar>` (single decl + closure), `--update` (drift-only), `--check` (inventory + diff), `--migrate-from-latex [<dir>]` (one-shot mechanical 1:1 conversion of a legacy `leanblueprint` LaTeX tree)
+- **`/unformalise`** — turn one Lean declaration into mathematics. Unicode terminal render by default (Γ, ℂ, ℍ, →, ≤ — readable in chat); then `[b]` blueprint as Verso / `[v]` Verso markup to stdout / `[m]` Markdown / `[n]` terminal-only. Non-interactive: `--verso`, `--md`, `--blueprint`. The conversational front door for `/blueprint --decl`
 - **`/fix-pr-feedback`** — fetch every PR comment, fix locally, **stop for explicit user approval before pushing**, then watch CI to completion (`gh pr checks --watch` runs in background as the wake-timer). Every commit and any PR-description update follows binding conventions: short imperative subject, concrete bullet body, dependencies surfaced via a `Depends on #1234` line, Claude co-author footer.
 - **`/bump-mathlib`** — bump mathlib version and fix the resulting breakage; documents recurring patterns from upstream evolution (Splits binary→unary refactor, IsX field-name normalisation, etc.)
 - **`/pre-submit`** — final pre-PR checklist
@@ -160,8 +160,8 @@ activate the new tool.
 | `/pre-submit` | Pre-PR submission checklist |
 | `/fix-pr-feedback` | Fetch PR comments → fix → STOP for approval → push → watch CI. Every commit and PR-description update follows binding conventions (short imperative subject, concrete bullet body, `Depends on` line, Claude co-author footer). |
 | `/bump-mathlib` | Bump mathlib version and fix breakage |
-| `/blueprint` | **Author or update the project's leanblueprint** — LaTeX + dep-graph artifact (sphere-packing/flt-regular/PFR/carleson-style). Wraps the standard `leanblueprint` Python tool; focuses on high-quality unformalisations. Seven phases (doctor → enumerate → plan → prose context → author → cross-link → hand-off). Modes: whole project, single file, `--decl <Foo.bar>`, `--update`, `--check`. Conventions + deployment gotchas in `references/blueprint-conventions.md`. |
-| `/unformalise` | **Turn one Lean declaration into mathematics.** Unicode terminal render by default (Γ, ℂ, ℍ, →, ≤); then `[b]` blueprint / `[l]` LaTeX / `[m]` Markdown / `[n]` terminal-only. Non-interactive flags `--latex`, `--md`, `--blueprint`. Modes: single decl, `--closure`, whole file. The conversational front door for `/blueprint --decl`. |
+| `/blueprint` | **Author or update the project's verso-blueprint** — Verso-based Lean-native dep-graph artifact (verso-sphere-packing/verso-flt/verso-carleson-style). Wraps [`leanprover/verso-blueprint`](https://github.com/leanprover/verso-blueprint); focuses on high-quality unformalisations. Seven phases (doctor → enumerate → plan → prose context → author → cross-link → hand-off). Modes: whole project, single file, `--decl <Foo.bar>`, `--update`, `--check`, `--migrate-from-latex [<dir>]` (one-shot mechanical conversion from legacy `leanblueprint` LaTeX). Conventions + Verso-specific deployment gotchas in `references/blueprint-conventions.md`. |
+| `/unformalise` | **Turn one Lean declaration into mathematics.** Unicode terminal render by default (Γ, ℂ, ℍ, →, ≤); then `[b]` blueprint as Verso / `[v]` Verso to stdout / `[m]` Markdown / `[n]` terminal-only. Non-interactive flags `--verso`, `--md`, `--blueprint`. Modes: single decl, `--closure`, whole file. The conversational front door for `/blueprint --decl`. |
 | `/teach` | Record a project-specific pattern or convention |
 | `/contribute` | Push local learnings back as a PR to this repo |
 | `/setup-rag` | Configure the RAG MCP server |
@@ -251,40 +251,58 @@ activate the new tool.
 
 ### Authoring a Blueprint
 
-```
-/blueprint                          # Whole project: enumerate every public decl → write blueprint/src/*.tex
-/blueprint <file.lean>              # Only this file's declarations
-/blueprint --decl <Foo.bar>         # One declaration + its dependency closure (non-interactive)
-/blueprint --update                 # Re-sync after Lean changes (drift / stale refs only)
-/blueprint --check                  # Inventory + drift report; author nothing
+The skill targets [`leanprover/verso-blueprint`](https://github.com/leanprover/verso-blueprint) —
+the Verso-based Lean-native blueprint tool. Chapter files are `.lean` modules under
+`<Project>/Chapters/`; statements use `:::theorem "label" (lean := "Foo.bar")` directives;
+dep-graph edges use `{uses "label"}[]`; math is KaTeX. **Verso auto-computes completion
+status** from the `(lean := …)` reference — no manual `\leanok` to keep in sync.
 
-/unformalise <Foo.bar>              # Render as Unicode in terminal; then [b/l/m/n]
-/unformalise <Foo.bar> --closure    # …also recursively render its dependencies
-/unformalise <file.lean> --md       # Whole file, Markdown to stdout (good for PR descriptions)
+```
+/blueprint                              # Whole project: enumerate every public decl → write <Project>/Chapters/*.lean
+/blueprint <file.lean>                  # Only this file's declarations
+/blueprint --decl <Foo.bar>             # One declaration + its dependency closure (non-interactive)
+/blueprint --update                     # Re-sync after Lean changes (drift / stale refs only)
+/blueprint --check                      # Inventory + drift report; author nothing
+/blueprint --migrate-from-latex [<dir>] # Mechanical 1:1 conversion of a legacy leanblueprint LaTeX tree
+                                        # (default <dir>: blueprint/src/) → <Project>/Chapters/*.lean
+
+/unformalise <Foo.bar>                  # Render as Unicode in terminal; then [b/v/m/n]
+/unformalise <Foo.bar> --closure        # …also recursively render its dependencies
+/unformalise <file.lean> --md           # Whole file, Markdown to stdout (good for PR descriptions)
 ```
 
 **`/blueprint` and `/unformalise` cover the same core job — unformalising Lean
-declarations into mathematical prose with `\lean{}` / `\uses{}` / `\leanok`
-annotations.** The split is by ergonomics, not capability:
+declarations into mathematical prose with `(lean := …)` / `{uses}` annotations.**
+The split is by ergonomics, not capability:
 
 | Goal | Use |
 |---|---|
 | "Show me what this theorem says, then maybe blueprint it" | `/unformalise Foo.bar` |
 | "Add this result and everything it uses to the blueprint" | `/blueprint --decl Foo.bar` |
 | "Bootstrap or sync the whole project's blueprint" | `/blueprint` |
+| "Convert our old LaTeX leanblueprint to Verso" | `/blueprint --migrate-from-latex` |
 
 **How `/blueprint` works (7 phases):**
 
-0. **Doctor** — `blueprint/` initialised (via `leanblueprint init`); `lake build` clean; `leanblueprint` Python package importable.
-1. **Enumerate** — walk public decls; diff against existing blueprint to compute four sets: **New** / **Existing-OK** / **Stale** (Lean decl no longer exists) / **Drift** (signature changed).
+0. **Doctor** — verso-blueprint scaffold present (`<Project>/Chapters/`, `<Project>/Blueprint.lean`, `<Project>Main.lean`, `scripts/ci-pages.sh`); `lake build` clean; `lake env lean --run` probe healthy. If the scaffold is missing, Phase 0 stops with copy-template instructions pointing at [`leanprover/verso-blueprint/project_template/`](https://github.com/leanprover/verso-blueprint/tree/main/project_template).
+1. **Enumerate** — walk public decls; diff against existing chapter files to compute four sets: **New** / **Existing-OK** / **Stale** (Lean decl no longer exists) / **Drift** (signature changed).
 2. **Plan** — print inventory; user confirms scope (hard pause). Blueprint authoring is heavyweight — one worker per declaration — and a wrong scope is expensive.
 3. **Prose context** — read `.mathlib-quality/references/`, module docstrings, any prior `/develop` `decomposition.md` ONCE into `.mathlib-quality/blueprint/prose_context.md`. Workers consume from there in Phase 4 — references aren't re-read per worker.
-4. **Author** — one `Agent` per declaration. Worker reads Lean + prose context + adjacent chapter chunks; produces LaTeX statement (math notation, no Lean plumbing) + paragraph-level proof sketch (math English, not tactic transcript) + `\lean{X}` + `\uses{…}` + `\leanok` iff sorry-free; writes to the chapter file.
-5. **Cross-link pass** — main agent collects every `\label{}` and `\uses{X}` across `blueprint/src/`; orphan `\uses{X}` references resolved by add / rename / remove; stale `\lean{X}` from Phase 1 repaired against the current Lean tree.
-6. **Hand-off** — `rm -rf blueprint/web blueprint/lean_decls` → `leanblueprint web` (regenerates `lean_decls`) → `leanblueprint checkdecls`. Required pre-push artifact: PDF builds clean and `grep -c undefined blueprint/print/print.log == 0`. CI workflow checked for `api-docs: true` on the docgen-action step (without it, dep-graph "Lean" links 404 in production).
+4. **Author** — one `Agent` per declaration. Worker reads Lean + prose context + adjacent chapter chunks; produces a Verso directive `:::theorem "label" (lean := "Foo.bar")` with the statement in math notation (no Lean plumbing); optionally a `:::proof "label"` block with a paragraph-level sketch in math English (not a tactic transcript); `{uses "..."}[]` for dep-graph edges; writes to the chapter file.
+5. **Cross-link pass** — main agent collects every label and `{uses "X"}[]` across `<Project>/Chapters/`; orphan `{uses}` references resolved by add / rename / remove; stale `(lean := "X")` references from Phase 1 repaired against the current Lean tree; new chapter files wired into `<Project>/Blueprint.lean` (`import` + `{include 0 ...}`).
+6. **Hand-off** — `./scripts/ci-pages.sh` runs the full Verso build + render to `_out/site/html-multi/`. Any failure surfaces as an exact Lean error (stale `(lean := …)`, KaTeX macro error, unclosed `:::`). No multi-pass `latexmk`, no `\leanok` to maintain, no `api-docs: true` flag to remember.
 7. **Report** — single consolidated report with per-phase required artifacts.
 
-The conventions, anti-patterns, four worked examples, and the **deployment & CI gotcha catalogue** live in `skills/mathlib-quality/references/blueprint-conventions.md` — workers read this in full before authoring.
+The conventions, anti-patterns, four worked examples, and the Verso-specific **deployment & CI gotcha catalogue** live in `skills/mathlib-quality/references/blueprint-conventions.md` — workers read this in full before authoring.
+
+#### Migrating from a legacy LaTeX `leanblueprint`
+
+```
+/blueprint --migrate-from-latex                       # default reads blueprint/src/
+/blueprint --migrate-from-latex <path/to/latex/dir>   # custom location
+```
+
+Mechanical 1:1 translation: each `.tex` file becomes one chapter file; `\begin{theorem}\label{thm:foo}\lean{Foo.bar}\uses{a,b}\leanok ...\end{theorem}` becomes `:::theorem "foo" (lean := "Foo.bar") ... ::: ` with `{uses "a"}[]`, `{uses "b"}[]` at end of body; `\leanok` is dropped (Verso auto-computes); math `$...$` becomes ``$`...```` and `\[...\]` becomes ``$$`...````; `\newcommand`s migrate to `tex_prelude`. The migration is syntax-level — for any chunk whose prose reads awkwardly post-translation, re-author with `/unformalise --blueprint <decl>` for polish. Custom LaTeX macros (tikz, xy-pic, etc.), `\cite{...}`/`\bibliography`, and project-specific environments are flagged for manual review.
 
 ### Handling PR Feedback
 

@@ -1,6 +1,6 @@
 ---
 name: unformalise
-description: Turn a Lean declaration into mathematics. Renders the statement and a paragraph-level proof sketch as Unicode in the terminal by default (Γ, ℂ, →, ≤ — readable in chat without a LaTeX renderer). Optionally outputs raw LaTeX (`--latex`), Markdown (`--md`), or appends the result to the project's blueprint as a LaTeX chunk with `\lean{}`/`\uses{}`/`\leanok` annotations (`--blueprint`). Single-declaration default; `--closure` walks the dependency closure; a whole `.lean` file is also allowed. Shares the unformalisation logic with `/blueprint` Phase 4 (same prose-quality rules from `references/blueprint-conventions.md`).
+description: Turn a Lean declaration into mathematics. Renders the statement and a paragraph-level proof sketch as Unicode in the terminal by default (Γ, ℂ, →, ≤ — readable in chat without any math renderer). Optionally outputs Verso markup (`--verso`), Markdown (`--md`), or appends the result to the project's verso-blueprint as a Verso `:::theorem "label" (lean := "Foo.bar") ... :::` chunk (`--blueprint`). Single-declaration default; `--closure` walks the dependency closure; a whole `.lean` file is also allowed. Shares the unformalisation logic with `/blueprint` Phase 4 (same prose-quality rules from `references/blueprint-conventions.md`).
 ---
 
 # /unformalise — Turn Lean into mathematics
@@ -18,16 +18,16 @@ to the project artifact.
 
 ```
 /unformalise <Foo.bar>                  # single declaration, Unicode in terminal (default)
-/unformalise <Foo.bar> --closure        # decl + dependency closure (every \uses{} target)
+/unformalise <Foo.bar> --closure        # decl + dependency closure (every {uses} target)
 /unformalise <file.lean>                # every public declaration in the file
-/unformalise <Foo.bar> --latex          # print LaTeX to stdout (no blueprint write)
+/unformalise <Foo.bar> --verso          # print Verso directives to stdout (no blueprint write)
 /unformalise <Foo.bar> --md             # print GitHub-flavoured Markdown to stdout
-/unformalise <Foo.bar> --blueprint      # append to blueprint/src/ as LaTeX (same as /blueprint --decl)
+/unformalise <Foo.bar> --blueprint      # append to <Project>/Chapters/ as Verso (same as /blueprint --decl)
 /unformalise <Foo.bar> --statement-only # skip the proof sketch
 ```
 
 After the terminal Unicode render, the command asks what you want next (blueprint /
-LaTeX / Markdown / nothing). The `--latex` / `--md` / `--blueprint` flags skip that
+Verso / Markdown / nothing). The `--verso` / `--md` / `--blueprint` flags skip that
 prompt — useful when wiring this into a pipeline or another command.
 
 ## Prerequisites
@@ -35,8 +35,10 @@ prompt — useful when wiring this into a pipeline or another command.
 - Project is a Lean 4 project that builds clean (`lake build` exits 0). The skill
   uses `lean_local_search` / `Grep` to locate declarations; a broken build leaves the
   LSP unable to resolve names.
-- For `--blueprint` output: `blueprint/` exists at the project root
-  (`leanblueprint init` has been run). See `/blueprint` Phase 0 for bootstrap.
+- For `--blueprint` output: the verso-blueprint scaffold exists at the project root
+  (the `project_template/` layout from `leanprover/verso-blueprint` has been copied
+  in — `<Project>/Chapters/`, `<Project>/Blueprint.lean`, `<Project>Main.lean`,
+  `scripts/ci-pages.sh`). See `/blueprint` Phase 0 for bootstrap instructions.
 - For best quality: `.mathlib-quality/references/` directory of source-paper notes
   and/or a `.mathlib-quality/blueprint/prose_context.md` from a prior `/blueprint`
   run. The skill works without them but leans more heavily on Lean docstrings.
@@ -50,7 +52,7 @@ Five phases. Lightweight — most invocations finish in one or two worker calls.
 ```
 PHASE 0  RESOLVE        find <Foo.bar> in the project; capture source location + docstring
 PHASE 1  CONTEXT        read prose context (cached) or build a minimal one on demand
-PHASE 2  UNFORMALISE    convert type → math prose; sketch proof; produce both Unicode and LaTeX
+PHASE 2  UNFORMALISE    convert type → math prose; sketch proof; produce both Unicode and Verso markup
 PHASE 3  RENDER         display the Unicode block in the terminal
 PHASE 4  EMIT           act on the requested output flag (or ask interactively)
 ```
@@ -106,7 +108,7 @@ For each resolved declaration, capture:
 - docstring (if any)
 - proof body (needed to sketch from, not transcribe)
 - sorry-free status (grep proof body for `sorry`)
-- dependencies (names invoked in the proof body — for `\uses{}` if `--blueprint`)
+- dependencies (names invoked in the proof body — for `{uses "..."}[]` if `--blueprint`)
 
 ---
 
@@ -156,7 +158,7 @@ You are unformalising ONE Lean declaration into mathematics.
 Source declaration: `<qualified.name>` in `<file_path>:<line>`
 Kind: <theorem|definition|lemma|proposition|corollary|definition>
 Lean proof complete (sorry-free): yes | no
-Output modes requested: <terminal | latex | md | blueprint> (one or more — produce all)
+Output modes requested: <terminal | verso | md | blueprint> (one or more — produce all)
 
 ## Step 1 — Read inputs
 
@@ -164,9 +166,9 @@ Output modes requested: <terminal | latex | md | blueprint> (one or more — pro
    docstring and proof body.
 2. Read the prose context block (passed inline by the main agent in this prompt) —
    notation conventions and source mappings apply.
-3. If output mode includes `blueprint`, read any existing `blueprint/src/` chunks for
-   adjacent declarations so the new chunk matches their notation, label style, and
-   prose register.
+3. If output mode includes `blueprint`, read any existing `<Project>/Chapters/`
+   chunks for adjacent declarations so the new chunk matches their notation, label
+   style, and prose register.
 
 ## Step 2 — Unformalise the statement
 
@@ -222,13 +224,21 @@ Use Unicode characters directly — no LaTeX commands. Examples:
 
 For symbols WITHOUT a clean Unicode equivalent (e.g. `\widetilde`, `\overline`,
 matrix environments, multi-line displays), keep the LaTeX-like form `\widetilde{X}`
-but mark the terminal display block as "raw LaTeX excerpt — render in your head" so
+but mark the terminal display block as "raw KaTeX excerpt — render in your head" so
 the reader knows what they're looking at. Do NOT fall back to ASCII art.
 
-### LaTeX version (always produce — used if any output mode requests latex/md/blueprint)
+### Verso version (always produce — used if any output mode requests verso/md/blueprint)
 
-Same statement, in LaTeX. Use display math (`\[ ... \]`) for the main equality /
-conclusion; inline math (`$...$`) for variables in the prose.
+Same statement, in Verso markup. Math is KaTeX:
+- inline: ``$`...` ``
+- display: ``$$`...` ``
+
+Wrap the whole statement in the appropriate Verso directive:
+- `:::definition "label" (lean := "Foo.bar")` … `:::`
+- `:::theorem "label" (lean := "Foo.bar")` … `:::`
+- `:::lemma`, `:::proposition`, `:::corollary` analogously
+
+Pick the kind by the *mathematical role*, not the Lean keyword.
 
 ## Step 3 — Sketch the proof
 
@@ -237,13 +247,16 @@ produce a one-to-two-paragraph proof sketch.
 
 Same rules as `/blueprint` Phase 4:
 - Mathematical prose, NOT a Lean tactic transcript.
-- Cite dependencies by name ("by \cref{lem:foo}" in LaTeX; "by the q-expansion-mul
-  lemma" in Unicode).
+- Cite dependencies by name. In Unicode: "by the q-expansion-mul lemma". In Verso:
+  `{uses "q-expansion-mul"}[]` for dependency-graph edges, `{bpref "q-expansion-mul"}[]`
+  for prose-only links.
 - For definitions: skip the proof block entirely.
 - For trivial corollaries: a one-sentence sketch is fine ("Direct specialisation of
-  \cref{thm:main}.").
+  {bpref "main-result"}[].").
+- **Do NOT emit `\leanok` in Verso output.** Verso auto-computes status from the
+  `(lean := "X")` reference — there is no `\leanok` directive.
 
-Produce the sketch in BOTH Unicode and LaTeX form, just like the statement.
+Produce the sketch in BOTH Unicode and Verso form, just like the statement.
 
 ## Step 4 — Output
 
@@ -265,26 +278,21 @@ Let <variables>...
 --- Unicode proof sketch ---
 <paragraph or two; or "(none — definition)" / "(none — trivial corollary)">
 
---- LaTeX statement ---
-\begin{<theorem|def|lem|...>}
-  \label{<thm|def|lem>:<descriptive-label>}
-  \lean{<qualified.name>}
-  \uses{<comma,separated,labels>}
-  \leanok                              % if sorry-free
-  <statement>
-\end{<theorem|def|lem|...>}
+--- Verso statement ---
+:::<theorem|definition|lemma|proposition|corollary> "<kebab-case-label>" (lean := "<qualified.name>")
+<statement in KaTeX math + prose>
+:::
 
---- LaTeX proof sketch ---
-\begin{proof}
-  \uses{<labels invoked in sketch>}
-  \leanok                              % if sorry-free
-  <sketch>
-\end{proof}
+--- Verso proof sketch ---
+:::proof "<kebab-case-label>"
+<sketch in KaTeX math + prose, with {uses "..."}[] for graph edges>
+:::
 
 --- Notes ---
 - Unicode rendering caveats: <if any symbols had no clean Unicode equiv, list them>
-- Label proposed: <thm:foo-bar> (if --blueprint requested; main agent checks for clash)
+- Label proposed: <kebab-case-label> (if --blueprint requested; main agent checks for clash)
 - Dependencies marked as external (mathlib, not project-local): <list>
+- Verso status: auto-computed from `(lean := "...")` — no \leanok emitted
 ```
 ````
 
@@ -335,13 +343,13 @@ Style notes:
 
 ### 4a. Non-interactive flags
 
-If the invocation had any of `--latex`, `--md`, `--blueprint`, emit accordingly and
+If the invocation had any of `--verso`, `--md`, `--blueprint`, emit accordingly and
 return — do NOT prompt.
 
-#### `--latex`
+#### `--verso`
 
-Print the raw LaTeX block (statement + proof) to stdout. Don't write to any file.
-Useful for piping into another command or pasting into an external doc.
+Print the raw Verso directive block (statement + proof) to stdout. Don't write to
+any file. Useful for piping into another command or pasting into a draft chapter.
 
 #### `--md`
 
@@ -354,32 +362,35 @@ Wrap the unformalised math in a GitHub-flavoured Markdown block:
 
 Let $f, g \colon \mathbb{H} \to \mathbb{C}$ be functions ...
 
-\[
+$$
   q_h(fg) = q_h(f) \cdot q_h(g).
-\]
+$$
 
 ### Proof sketch
 
 By the definition of the $q$-expansion ...
 ```
 
-GitHub's math renderer (`$...$` and `$$...$$` / `\[...\]`) handles the result. Useful
-for PR descriptions, issue comments, and design docs.
+GitHub's math renderer (`$...$` and `$$...$$`) handles the result. Useful for PR
+descriptions, issue comments, and design docs — note this is **GitHub-flavoured
+math**, not the project's Verso/KaTeX syntax (different delimiters).
 
 #### `--blueprint`
 
-Append the LaTeX chunk to `blueprint/src/<chapter>.tex`, computing the chapter from
-the source-file path the same way `/blueprint` Phase 1b does. Then run the cross-link
-pass on the affected chapter file only (orphan `\uses{}` check). Print the
-`/blueprint`-style result block:
+Append the Verso chunk to `<Project>/Chapters/<chapter>.lean`, computing the chapter
+from the source-file path the same way `/blueprint` Phase 1b does. Then run the
+cross-link pass on the affected chapter file only (orphan `{uses}` check). If the
+chapter file didn't exist, also append the `import` + `{include}` to
+`<Project>/Blueprint.lean`. Print the `/blueprint`-style result block:
 
 ```
-Written to: blueprint/src/Foo/QExpansion.tex
-Action:     appended (or replaced if an entry with the same \lean{} existed)
-Label:      thm:qexpansion-mul
-Cross-link: ✓ all \uses{} resolved (or ✗ <orphan list>)
+Written to:        <Project>/Chapters/Foo/QExpansion.lean
+Action:            appended (or replaced if an entry with the same (lean := "X") existed)
+Label:             qexpansion-mul
+Cross-link:        ✓ all {uses} resolved (or ✗ <orphan list>)
+Blueprint.lean:    ✓ import + {include} present  (or "added" if new chapter)
 
-To rebuild and verify the dep-graph: leanblueprint web && leanblueprint checkdecls
+To rebuild and verify the dep-graph: ./scripts/ci-pages.sh
 ```
 
 ### 4b. Interactive prompt (default)
@@ -388,8 +399,8 @@ If no output flag was given, after Phase 3's terminal render, ask:
 
 ```
 What next?
-  [b] add to blueprint as LaTeX
-  [l] print as LaTeX
+  [b] add to blueprint as Verso
+  [v] print as Verso markup
   [m] print as Markdown
   [n] nothing — terminal-only
 ```
@@ -448,11 +459,12 @@ to selectively blueprint a subset).
   worker-judgement call; for high-stakes results, eyeball the terminal output before
   appending to the blueprint.
 - **Replace existing blueprint chunks silently.** If `--blueprint` is invoked and a
-  chunk with the same `\lean{X}` already exists, the skill REPLACES it but prints
+  chunk with the same `(lean := "X")` already exists, the skill REPLACES it but prints
   "Action: replaced" in the result block — never appends a duplicate.
-- **Author results that have no Lean counterpart.** Every chunk has `\lean{X}` and
-  `X` must exist. If you want to blueprint a result that's only in a source paper,
-  state it as `:= sorry` in Lean first (and `/develop` can scaffold this for you).
+- **Author results that have no Lean counterpart.** Every chunk has `(lean := "X")`
+  and `X` must elaborate in the current project. If you want to blueprint a result
+  that's only in a source paper, state it as `:= sorry` in Lean first (and `/develop`
+  can scaffold this for you).
 
 ---
 
