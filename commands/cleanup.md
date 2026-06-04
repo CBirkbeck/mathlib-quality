@@ -428,6 +428,13 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
 18. GENERALISE    [required: print the generalisation-status block — see Step 2.6 below.
                    Run the mechanical-weakening pass on EVERY hypothesis. Big-change
                    candidates are flagged for Phase 5, not done here.]
+19. INEQUALITY    [HARD GATE (inequality_orientation_gate, Step 5b) — REQUIRED ARTIFACT:
+                   per-occurrence inequality scan table (see INEQUALITY procedure below).
+                   In Lean code (statement + every hypothesis), every `≥` must be rewritten
+                   as `≤` with sides swapped; every `>` as `<` with sides swapped. Lemma
+                   names containing `_ge_` or `_gt_` queue a rename for Phase 5b
+                   (`a_ge_b` → `b_le_a`). Math prose in docstrings may keep `≥`/`>` if
+                   that reads more naturally; the rule is about Lean code.]
 
 Issues to fix: [numbered list — every item has a concrete action]
 Refactoring needed: [cross-declaration changes; fed back to main agent for Phase 5a
@@ -435,10 +442,10 @@ Refactoring needed: [cross-declaration changes; fed back to main agent for Phase
                      Includes: big-change generalisation candidates flagged at item 18.]
 ```
 
-**Items 5, 6, 12 are HARD GATES, not deferrable audit items.** Every other item may legitimately
-resolve to `n/a: <reason>` or `deferred for Phase 5`. Items 5 (NAMING), 6 (LINE PACKING), and 12
-(STRUCTURE) may **not**. They are checked as pass/fail gates in Step 5b and a failure REJECTS the
-worker run. The escape hatches workers reach for — `existing convention preserved`, `ok`,
+**Items 5, 6, 12, and 19 are HARD GATES, not deferrable audit items.** Every other item may
+legitimately resolve to `n/a: <reason>` or `deferred for Phase 5`. Items 5 (NAMING), 6 (LINE
+PACKING), 12 (STRUCTURE), and 19 (INEQUALITY) may **not**. They are checked as pass/fail gates
+in Step 5b and a failure REJECTS the worker run. The escape hatches workers reach for — `existing convention preserved`, `ok`,
 `signature locked`, `deferred for Phase 5` — are all gate failures, not resolutions. On small files
 there is little to defer so this is invisible; on large files (1000+ lines, many specialised
 declarations) the deferrals accumulate across workers, every one reporting `Gates: pass` while
@@ -482,6 +489,12 @@ For every `simp` / `simp only [...]`:
 - **Existing `simp only [...]`, non-terminal but badly formatted:** redo via `simp?` to get correct formatting.
 
 ### LINE PACKING procedure
+
+> **MOST-SKIPPED ITEM IN HISTORICAL CLEANUP REPORTS.** Workers reliably write
+> `LINE PACKING: ok` without doing the measurement. The per-line table below is
+> the gate's required artifact — emit it for every declaration, no exceptions.
+> "Hypothesis-rich signature line" includes ALL signature lines, not just the
+> first one. A 5-line signature gets 5 table rows.
 
 Fill every signature line to ~100 chars (mathlib's column limit). Do NOT break at 50–80 chars
 when there's room. Lean's pretty-printer at `format.width := 100` produces maximally-packed
@@ -580,6 +593,57 @@ This is enforced by the `structure_gate` (Step 5b): after your run, the body mus
 body with no decompose flag — whatever the stated reason — is a gate failure that re-dispatches this
 worker. Extracting helpers to get under the bar is always preferred to flagging; flag only when the
 remaining body is genuinely irreducible case-work.
+
+### INEQUALITY procedure (audit item 19)
+
+Mathlib convention: in Lean code, **every inequality is stated with the smaller side on the
+left** — `a ≤ b` and `a < b`, never `b ≥ a` or `b > a`. Lemma names follow the same
+orientation: `a_le_b`, not `b_ge_a`. Source: chebotarev-density learning
+(2026-06-02) — the previous audit didn't flag a `≥` and the bad orientation shipped.
+
+#### Scope
+
+- **In scope:** the theorem/lemma statement and EVERY hypothesis. Lean code only.
+- **Out of scope:** docstrings, comments, and prose where reversed orientation reads
+  more naturally (e.g., a `--` comment explaining "this is the case when c ≥ 1").
+
+#### REQUIRED ARTIFACT — per-occurrence inequality scan table
+
+Walk the declaration's signature (keyword line through `:= by` / `:= term`). For every
+`≥` or `>` occurrence in Lean code, emit one row:
+
+```
+### Inequality scan — `decl_name`
+
+| # | Location               | Original                            | Rewrite                           | Lemma rename? |
+|---|------------------------|-------------------------------------|-----------------------------------|----------------|
+| 1 | statement              | `primeIdealZetaSum K univ s ≥ X`    | `X ≤ primeIdealZetaSum K univ s`  | `_ge_` → `_le_`, queue: `primeIdealZetaSum_ge_log_minus_bounded` → `log_minus_bounded_le_primeIdealZetaSum` |
+| 2 | hypothesis (h2)        | `(h2 : f a > 0)`                    | `(h2 : 0 < f a)`                  | n/a (no `_gt_` in name) |
+| 3 | -                      | -                                   | -                                 | n/a — no `≥`/`>` in signature |
+```
+
+If the signature has zero `≥`/`>`, the table has one row showing `n/a — no ≥/> in signature`.
+
+#### Renaming
+
+If the lemma name contains `_ge_` or `_gt_`, queue a rename via the standard Phase-5b
+mechanism (append to `.mathlib-quality/renames.jsonl` per Step 6a's schema). The new
+name follows the same orientation as the rewritten statement — sides swap, predicate
+inverts (`_ge_` → `_le_`, `_gt_` → `_lt_`), and the order of the operand identifiers
+in the name reflects the new left-to-right order.
+
+#### Apply the rewrites
+
+After the table, apply every row's "Rewrite" to the signature. The rewrite is purely
+syntactic — `a ≥ b` becomes `b ≤ a`, `a > b` becomes `b < a`. The mathematical content
+is identical (these are notational equivalences).
+
+If a `≥`/`>` appears INSIDE a more complex hypothesis (e.g., `(h : ∀ x, f x ≥ g x)`),
+swap inside the binder: `(h : ∀ x, g x ≤ f x)`.
+
+If the proof body relied on the old name (e.g. `exact h.le_of_lt`-style chains that
+assumed a specific orientation), update those call sites too — but only within this
+declaration. Cross-file usages of the renamed lemma are handled in Phase 5b.
 
 ## Step 2.5 — Mathlib search-status block (REQUIRED for item 13)
 
@@ -871,13 +935,14 @@ Run the gates on the captured diff. Print this block (the artifact):
 | structure_gate                | ✓ pass | body 24 lines (≤60); no `∧` in statement         |
 | naming_gate                   | ✓ pass | name matches no forbidden pattern                |
 | line_packing_gate             | ✓ pass | hypothesis lines packed to ~95 chars             |
+| inequality_orientation_gate   | ✓ pass | 0 `≥`/`>` in Lean code (signature + hypotheses)  |
 
 Overall: pass
 ```
 
-The first three gates catch **unwanted** changes (golf drifted the signature). The last three —
-added because workers were honoring the *shape* of items 5/6/12 while bypassing the *content* —
-catch **missing** work (you didn't rename, pack, or extract).
+The first three gates catch **unwanted** changes (golf drifted the signature). The last four —
+added because workers were honoring the *shape* of items 5/6/12/19 while bypassing the *content* —
+catch **missing** work (you didn't rename, pack, extract, or flip orientation).
 
 **definition_protected** allows a fail only if your audit declared one of:
 - audit item 14 (JUNK DEF: inline at use sites), OR
@@ -935,6 +1000,25 @@ FAILS in any of these cases (every one is a frequent worker-skip mode):
 The gate is now per-line, not first-line-only. Workers who pack line 1 and leave lines 2-N
 underpacked fail this gate.
 
+**inequality_orientation_gate** (audit item 19) PASSES iff:
+- the **required per-occurrence inequality scan table** (see Step 2 INEQUALITY procedure)
+  was emitted, AND
+- after applying the table's rewrites, the declaration's signature and hypotheses contain
+  zero `≥` and zero `>` in Lean code (docstrings and `--` comments are excluded), AND
+- if the lemma name contained `_ge_` or `_gt_`, a rename was queued to
+  `.mathlib-quality/renames.jsonl` (per Step 6a's schema) AND a `Refactoring needed: rename
+  <old> → <new>` line is in your report.
+
+FAILS in any of these cases:
+- The inequality scan table is missing.
+- The table claims rewrites but the post-edit signature still contains a `≥` or `>` in
+  Lean code (verify by re-grepping the declaration block after edits).
+- The lemma name contains `_ge_` or `_gt_` and no rename was queued.
+
+The rewrite is purely syntactic and never changes mathematical content (`a ≥ b` and
+`b ≤ a` are notational equivalents); the gate is about *uniformity of orientation* across
+mathlib so that downstream consumers can rely on the convention.
+
 **Recovery differs by gate type.** For `definition_protected` / `theorem_statement_protected`
 (unwanted changes): revert the offending edit (`git checkout -- <file>` if you have git access;
 otherwise rewrite the affected lines back) and retry without it. For `structure_gate` /
@@ -985,13 +1069,15 @@ Refactoring needed: [or "none"]
 
 Phase checklist (required — main agent re-dispatches on any ✗):
 - [✓/✗] Step 1   — reference docs read
-- [✓/✗] Step 2   — full audit report printed (items 1–18)
+- [✓/✗] Step 2   — full audit report printed (items 1–19)
 - [✓/✗] Step 2.5 — mathlib search-status block printed
 - [✓/✗] Step 2.6 — generalisation status block printed
+- [✓/✗] Step 2.7 — line-packing per-line width table printed (item 6 artifact)
+- [✓/✗] Step 2.8 — inequality scan table printed (item 19 artifact)
 - [✓/✗] Step 3   — golfing-rule pass (every rule has a status line)
 - [✓/✗] Step 4   — step-back-and-think reflection done
 - [✓/✗] Step 5a  — lean_diagnostic_messages clean
-- [✓/✗] Step 5b  — diff-gate status block printed
+- [✓/✗] Step 5b  — diff-gate status block printed (includes inequality_orientation_gate)
 - [✓/✗] Step 6a  — renames (if any) appended to sidecar
 ```
 
@@ -1075,7 +1161,7 @@ For each declaration D in the list from 1d:
   - Was the worker an `Agent` call dispatched specifically for D, or was D rolled up
     into a batched call covering multiple decls?
   - Did D's gate-status table show `structure_gate`, `naming_gate`, and `line_packing_gate`
-    all `✓ pass` (or pass-with-flag)? Or did items 5/6/12 quietly come back as `deferred` /
+    all `✓ pass` (plus inequality_orientation_gate)? Or did items 5/6/12/19 quietly come back as `deferred` /
     `existing convention preserved` / `ok` / `signature locked` with no rename or
     `/decompose-proof` flag?
   - Is every line in D's Step-6 phase checklist `[✓]`? Any `[✗]` means a phase was skipped

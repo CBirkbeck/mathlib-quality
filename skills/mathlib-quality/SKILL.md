@@ -479,6 +479,7 @@ This skill works alongside the `lean4-theorem-proving` skill:
 18. **`by` on its own line** - ALWAYS put `by` at end of preceding line
 19. **Using `λ` instead of `fun`** - Use `fun x ↦ ...`
 20. **Empty lines inside declarations** - Keep declarations compact
+21. **`≥` or `>` in statements / hypotheses** - Mathlib convention: every inequality in Lean code is `≤` / `<` (smaller side on the left). Lemma names are `_le_` / `_lt_`, never `_ge_` / `_gt_`. Enforced by `/cleanup` audit item 19 + `inequality_orientation_gate`. Docstrings and `--` comments may keep `≥`/`>` where natural — the rule is about Lean code.
 
 ## Deprecation Format
 

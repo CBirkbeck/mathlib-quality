@@ -370,6 +370,49 @@ calc
 -- Justifications need not have aligned := symbols
 ```
 
+## Inequality Orientation
+
+**Mathlib convention: every inequality in Lean code is stated with the smaller side on
+the left.** Use `≤`, never `≥`. Use `<`, never `>`. Lemma names follow the same
+orientation: `a_le_b`, not `b_ge_a`.
+
+This applies to statements, hypotheses, and any inequality in Lean code (the type, the
+hypotheses, any `have` with an explicit type). It does NOT apply to docstrings or `--`
+comments where the reversed orientation reads more naturally — the rule is about Lean
+code.
+
+```lean
+-- BAD: ≥ in the statement; name uses _ge_
+theorem primeIdealZetaSum_ge_log_minus_bounded (s : ℝ) :
+    primeIdealZetaSum K univ s ≥ Real.log (1/(s-1)) - C := ...
+
+-- GOOD: ≤ in the statement; name uses _le_; sides swapped to match
+theorem log_minus_bounded_le_primeIdealZetaSum (s : ℝ) :
+    Real.log (1/(s-1)) - C ≤ primeIdealZetaSum K univ s := ...
+```
+
+Same for strict inequalities:
+
+```lean
+-- BAD
+lemma f_gt_zero (h : x > 0) : f x > 0 := ...
+
+-- GOOD
+lemma zero_lt_f (h : 0 < x) : 0 < f x := ...
+```
+
+This is enforced by `/cleanup` audit item 19 + `inequality_orientation_gate` (a hard
+gate). Workers emit a per-occurrence inequality scan table for every declaration; any
+`≥` or `>` in Lean code is rewritten with sides swapped, and any `_ge_` / `_gt_` name
+queues a rename for Phase 5b.
+
+The rewrite is purely syntactic — `a ≥ b` and `b ≤ a` are notational equivalents — so
+the gate is about *uniformity across mathlib* so downstream consumers can rely on the
+convention (e.g. `simp` lemmas that match on `_ ≤ _` won't fire on `_ ≥ _`).
+
+Source: chebotarev-density learning, 2026-06-02
+(`data/community_learnings/archived/2026-06-02_chebotarev-density.jsonl`).
+
 ## Mathlib-First Principle
 
 ### Always Check Mathlib Before Defining
