@@ -787,14 +787,13 @@ theorem valence_formula_textbook_orbit_finsum ...
 
 Note: Definition names within theorem name prefixes (like `fdBoundary`, `normSq`) stay as-is per convention, since they reference lowerCamelCase defs.
 
-### Data-Driven Feedback Categories
+### Feedback categories (this document organises by these)
 
-Based on analysis of curated PR data (`data/pr_feedback/`):
-
-| Category | File | Examples |
-|----------|------|----------|
-| Golf | `curated_golf.json` | 195KB of shortened proofs |
-| Tactic improvement | `curated_tactic_improvement.json` | Better tactic choices |
-| Simp cleanup | `curated_simp_cleanup.json` | Simp lemma fixes |
-| Naming | `curated_naming.json` | Convention fixes |
-| Automation | `clean_examples_by_category.json` | `grind`, `fun_prop` usage |
+| Category | Where examples live |
+|----------|---------------------|
+| Style (formatting, line length, indentation, whitespace, `by`-placement) | this file § 1 + `style-rules.md` |
+| Naming (snake_case vs camelCase, conventions, symbols) | this file § 2 + `naming-conventions.md` |
+| Documentation (module docstrings, declaration docstrings, history) | this file § 3 + `style-rules.md` § Docstring Guidelines |
+| Location (wrong file, duplicates, file size, imports) | this file § 4 |
+| Improvements (long proofs, better tactics, simpler structure, extract API) | this file § 5 + `proof-patterns.md` |
+| Library integration (missing attributes, mathlib-first) | this file § 6 + `style-rules.md` § Mathlib-First Principle |

@@ -70,15 +70,12 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | `/blueprint` | **Author or update the project's verso-blueprint** — wraps [`leanprover/verso-blueprint`](https://github.com/leanprover/verso-blueprint) (the Verso-based tool behind verso-sphere-packing, verso-flt, verso-carleson). Chapter files are `.lean` modules under `<Project>/Chapters/`; statements are `:::theorem "label" (lean := "Foo.bar")` directives; dep-graph edges are `{uses "label"}[]`; math is KaTeX. Verso auto-computes completion status from `(lean := …)` — no manual `\leanok`. Seven-phase workflow (doctor → enumerate → plan → prose context → author → cross-link → hand-off). One worker per declaration; reads project references + module docstrings + `/develop`'s `decomposition.md` if present. Modes: whole-project default, single-file, `--decl <Foo.bar>` (single-decl + closure, non-interactive), `--update`, `--check`, **`--migrate-from-latex [<dir>]`** (one-shot mechanical 1:1 conversion of a legacy `leanblueprint` LaTeX tree). Phase 6 hand-off runs `./scripts/ci-pages.sh` and verifies `_out/site/html-multi/`. Conventions + Verso-specific deployment gotchas in `references/blueprint-conventions.md`. |
 | `/unformalise` | **Turn one Lean declaration into mathematics.** Unicode terminal render by default (Γ, ℂ, ℍ, →, ≤ — readable in chat); after rendering, asks `[b]` add to blueprint as Verso / `[v]` Verso to stdout / `[m]` Markdown / `[n]` terminal-only. Non-interactive: `--verso`, `--md`, `--blueprint`. Single-decl default; `--closure` walks deps; whole-file mode also allowed. Shares the unformalisation worker logic with `/blueprint` Phase 4 (same `references/blueprint-conventions.md`). Conversational sibling to `/blueprint --decl`. |
 | `/fix-pr-feedback` | Fetch PR comments, implement fixes locally, **wait for user approval before pushing**, then watch CI to completion. 8-phase workflow with explicit comment-coverage check. |
-| `/setup-rag` | Set up RAG MCP server for PR feedback search |
 | `/setup-chatgpt` | Set up ChatGPT MCP server for mathematical second opinions |
 | `/teach` | Teach the skill a project-specific pattern or convention |
 | `/contribute` | Contribute local learnings back to the repo via PR |
 | `/integrate-learnings` | (Maintainers) Process community contributions into reference docs |
 
 ## First-Time Setup
-
-For enhanced suggestions based on 4,600+ real mathlib PR reviews, run `/setup-rag` to configure the RAG MCP server. This gives Claude Code access to searchable PR feedback examples for golfing and style.
 
 For mathematical second opinions from ChatGPT during formalization work, run `/setup-chatgpt`. This creates an MCP server that lets Claude Code query ChatGPT via the Codex CLI for proof strategies, Mathlib API hints, or verification of mathematical claims. Requires the ChatGPT desktop app and a Plus/Pro subscription.
 
@@ -429,8 +426,8 @@ Use `/develop` to plan and execute a mathematical development:
 
 ## Reference Files
 
-**Start here - comprehensive guide from PR analysis:**
-- `references/mathlib-quality-principles.md` - **Core quality principles** (synthesized from 4,600+ PR reviews)
+**Start here:**
+- `references/mathlib-quality-principles.md` - **Core quality principles**
 
 For detailed guidance:
 - `references/style-rules.md` - Complete formatting rules
@@ -844,11 +841,11 @@ Is this lemma just combining mathlib lemmas?
 ### Deep Golfing Approach
 
 For thorough optimization, use the **deep golfer** methodology:
-1. Read PR feedback data (`data/pr_feedback/curated_examples.md`)
+1. Read the curated reference docs (`references/proof-patterns.md`, `references/pr-feedback-examples.md`)
 2. Go through **every 3-5 lines** of each proof
-3. Check each pattern against the 12+ specific PR patterns
+3. Check each pattern against the catalogued anti-patterns and high-volume patterns
 4. Try `lean_multi_attempt` on chunks with: `grind`, `aesop`, `simp_all`, `fun_prop`, `omega`, `ring`
-5. Document which PR pattern each change matches
+5. Document which pattern each change matches
 
 See `agents/deep-golfer-prompt.md` for the full deep golfer methodology.
 
@@ -953,47 +950,11 @@ ResidueTheory/
 └── ResidueTheorem.lean        -- Main theorems (imports above)
 ```
 
-## PR Feedback RAG System
+## Reference docs are the propagation channel
 
-We have a **RAG (Retrieval Augmented Generation) system** built from 4,600+ PR review comments.
-Use it to find relevant examples for the specific code you're working on.
-
-### Using the RAG System
-
-**Option 1: MCP Server** (if configured in `.mcp.json`)
-```
-search_golf_examples(code="have h := foo; simp [h]")  # Find similar examples
-search_by_pattern(pattern="use_grind")                # Find grind transformation examples
-search_by_topic(topics=["continuity"])                # Find topic-specific examples
-get_mathlib_quality_principles()                      # Get core quality rules
-```
-
-**Option 2: Query Script**
-```bash
-python3 scripts/query_rag.py --code "simp only [foo]; exact bar" --limit 5
-python3 scripts/query_rag.py --pattern use_grind --limit 5
-python3 scripts/query_rag.py --tactics simp have exact --limit 5
-python3 scripts/query_rag.py --topic continuity --limit 5
-```
-
-### Available Patterns for RAG Queries
-- `simp_to_simpa` - Converting simp to simpa
-- `use_grind` - Using grind tactic (50 examples)
-- `use_fun_prop` - Using fun_prop (22 examples)
-- `use_aesop` - Using aesop (31 examples)
-- `use_omega` - Using omega (3 examples)
-- `term_mode` - Converting to term mode (16 examples)
-- `remove_redundant` - Removing unnecessary code (24 examples)
-
-### Static Reference Files
-
-**Key document:**
-- `references/mathlib-quality-principles.md` - **Comprehensive quality guide** from PR analysis
-
-**Curated examples:**
-- `data/pr_feedback/curated_examples.md` - Best before/after examples with principles
-- `data/pr_feedback/rag_index_focused.json` - Focused index with 891 golf examples
-
-**Raw data (4,600+ items):**
-- `data/pr_feedback/rag_index.json` - Full searchable index (1,905 useful examples)
-- `data/pr_feedback/proof_golf_feedback.json` - All proof golf suggestions (2,786 items)
+Workers read `references/style-rules.md`, `references/naming-conventions.md`,
+`references/proof-patterns.md`, `references/pr-feedback-examples.md`, etc. directly.
+Community contributions land via `/contribute` PRs and propagate into these reference
+docs through `/integrate-learnings`. There is no RAG, no MCP-server-backed search;
+the reference docs are the single source of truth and the skill activates them
+through the standard file-pattern triggers above.

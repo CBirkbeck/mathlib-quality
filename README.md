@@ -113,14 +113,6 @@ tools visible inside subagents.
 Restart Claude Code after adding. Verify by checking that tools like `lean_goal`
 and `lean_diagnostic_messages` appear.
 
-### Optional: RAG MCP Server
-
-The plugin includes a searchable index of PR review examples. To enable:
-
-```
-/setup-rag
-```
-
 ### Optional: ChatGPT MCP Server
 
 Get mathematical second opinions from ChatGPT during Lean 4 work. After setup,
@@ -164,7 +156,6 @@ activate the new tool.
 | `/unformalise` | **Turn one Lean declaration into mathematics.** Unicode terminal render by default (Γ, ℂ, ℍ, →, ≤); then `[b]` blueprint as Verso / `[v]` Verso to stdout / `[m]` Markdown / `[n]` terminal-only. Non-interactive flags `--verso`, `--md`, `--blueprint`. Modes: single decl, `--closure`, whole file. The conversational front door for `/blueprint --decl`. |
 | `/teach` | Record a project-specific pattern or convention |
 | `/contribute` | Push local learnings back as a PR to this repo |
-| `/setup-rag` | Configure the RAG MCP server |
 | `/setup-chatgpt` | Configure ChatGPT MCP server for mathematical second opinions |
 
 ## Usage
@@ -393,29 +384,14 @@ guidelines the agent should remember.**
 
 Pattern: `conclusion_of_hypothesis` (e.g., `norm_le_of_mem_ball`)
 
-## Data
-
-Built from scraping **3,772 merged mathlib4 PRs**:
-
-| Data | Count |
-|------|-------|
-| Reviewer feedback items | 14,063 |
-| Before/after code suggestions | 7,273 |
-| RAG indexed examples | 5,752 |
-| Proof golf examples | 6,782 |
-| Style feedback items | 2,390 |
-| API design feedback | 3,566 |
-
-All data is privacy-preserving -- only technical content is collected, no personal information.
-
 ## Project Structure
 
 ```
 mathlib-quality/
 ├── commands/                    # Slash command implementations
 │   ├── develop.md               # Planning-only: mathlib search, API design, detailed tickets
-│   ├── beastmode.md            # Marathon execution: spawn sub-tickets, replan, stop at nothing
-│   ├── cleanup.md               # Style audit + fix + golf (8-phase; absorbed /check-style + /check-mathlib)
+│   ├── beastmode.md             # Marathon execution: spawn sub-tickets, replan, stop at nothing
+│   ├── cleanup.md               # Style audit + fix + golf (10-phase, 4 hard gates incl. inequality orientation)
 │   ├── cleanup-all.md           # Project-wide cleanup (one /cleanup per file)
 │   ├── decompose-proof.md       # Break long proofs into helper lemmas (with approval gate)
 │   ├── expert-review.md         # Two-mode external review: brief → wait → integrate reply into tickets
@@ -426,28 +402,28 @@ mathlib-quality/
 │   ├── pre-submit.md            # Final pre-PR checklist
 │   ├── fix-pr-feedback.md       # 8 phases: fetch → fix → coverage check → STOP → push → watch CI
 │   ├── bump-mathlib.md          # Bump mathlib + fix breakage (cache verification gate)
+│   ├── blueprint.md             # Author/update the project's verso-blueprint
+│   ├── unformalise.md           # Render one Lean decl as mathematics (Unicode / Verso / Markdown)
 │   ├── teach.md                 # Record a project-specific pattern
 │   ├── contribute.md            # Push local learnings back as a PR
-│   ├── integrate-learnings.md   # (maintainers) merge contributed learnings into refs + RAG
-│   ├── setup-rag.md             # Configure the RAG MCP server
+│   ├── integrate-learnings.md   # (maintainers) merge contributed learnings into the reference docs
 │   └── setup-chatgpt.md         # Configure the ChatGPT MCP server
 ├── skills/mathlib-quality/
 │   ├── SKILL.md                 # Main skill definition
 │   └── references/              # Authoritative reference docs read by workers:
-│       ├── style-rules.md           # File structure, formatting, deprecation
+│       ├── style-rules.md           # File structure, formatting, deprecation, inequality orientation
 │       ├── naming-conventions.md    # snake_case/camelCase/UpperCamelCase + symbol dictionary
 │       ├── golfing-rules.md         # Phase 1/2/3 rules (instant wins, automation, cleanup)
-│       ├── proof-patterns.md        # Data-driven patterns from 7,273 PR suggestions
+│       ├── proof-patterns.md        # Curated patterns + anti-patterns
 │       ├── mathlib-search.md        # Five-method exhaustive search + six strict rules
 │       ├── generalisation-patterns.md  # Typeclass-weakening catalogue
 │       ├── cleanup-gates.md         # Diff gates for /cleanup (borrowed from shouyi)
+│       ├── blueprint-conventions.md # Verso authoring + CI deployment gotchas
 │       ├── pr-feedback-examples.md  # Curated review-category examples
 │       └── linter-checks.md         # Mathlib's built-in linters
-├── mcp_server/
-│   └── mathlib_rag.py           # MCP server for RAG queries over the PR-feedback index
-├── scripts/                     # Scraping, analysis, query, and merge tools
+├── scripts/
+│   └── style_checker.sh         # Local Lean file style validation
 └── data/
-    ├── pr_feedback/             # RAG indexes (built from 3,772 merged PRs)
     └── community_learnings/     # /contribute submissions; archived/ once merged
 ```
 
@@ -492,16 +468,14 @@ community. In particular:
 - **[leanprover-community PR review guide](https://leanprover-community.github.io/contribute/pr-review.html)**
   — informs the review-categories structure in `references/pr-feedback-examples.md`.
 
-### Data
+### Community contributors
 
-- **[leanprover-community/mathlib4](https://github.com/leanprover-community/mathlib4)**
-  — 3,772 merged PRs scraped for 14,063 reviewer-feedback items and 7,273 before/after
-  code suggestions. Privacy-preserving: only public, technical content collected.
-- **Community contributors** to this repo via `/contribute`: each archived JSONL in
-  `data/community_learnings/archived/` represents lessons learned by other Lean users
-  on real PRs (Eisenstein series cleanup, Hecke algebra formalisation, modular forms PR
-  reviews, version-bump breakage, file-deprecation conventions). These feed both the RAG
-  index and — when consensus emerges — the reference docs.
+Each archived JSONL in `data/community_learnings/archived/` represents lessons learned by
+other Lean users on real projects (Eisenstein series cleanup, Hecke algebra formalisation,
+modular forms PR reviews, version-bump breakage, file-deprecation conventions, blueprint
+deployment, inequality orientation, etc.). When consensus emerges across multiple
+contributions (3+ occurrences), `/integrate-learnings` propagates the teaching into the
+relevant reference doc.
 
 ## Contributing
 

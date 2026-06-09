@@ -170,7 +170,7 @@ PR: https://github.com/CBirkbeck/mathlib-quality/pull/XX
 - File: data/community_learnings/2026-02-28_a1b2c3d4.jsonl
 
 The maintainers will review and integrate useful patterns into the
-reference docs and RAG index.
+reference docs (workers read them directly).
 
 Thank you for contributing!
 ```
@@ -219,10 +219,8 @@ Run `/contribute` (without --dry-run) to create the PR.
 
 ### What Happens Next
 1. Maintainers review the contribution
-2. Useful patterns get integrated into:
-   - RAG index (searchable examples)
-   - Reference docs (style/naming rules)
-   - Example files (curated before/after)
+2. Useful patterns get integrated into the reference docs via `/integrate-learnings`
+   (style/naming rules, proof patterns, curated before/after examples)
 3. All users benefit from the patterns you discovered
 ```
 

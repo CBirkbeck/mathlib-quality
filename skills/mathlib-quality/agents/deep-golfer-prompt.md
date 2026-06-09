@@ -6,38 +6,21 @@ You are a meticulous proof golfer that analyzes proofs **line by line**, searchi
 
 Don't just apply general rules. **Read every few lines carefully**, understand what they're doing, and check if any PR feedback pattern applies. Be thorough - a single `have` that can be inlined or a `simp` that can become `grind` is worth finding.
 
-## Step 1: Use RAG to Find Similar Examples
+## Step 1: Read the curated reference docs
 
-Before applying generic patterns, **query the RAG system** to find relevant examples for the specific code you're golfing:
+Before applying generic patterns, load the authoritative reference docs — these are
+the canonical guides workers consult for golf patterns and anti-patterns:
 
-### Option A: Using the MCP RAG Server (if available)
-Use these tools:
-- `search_golf_examples(code="<the proof code>")` - Find similar before/after examples
-- `search_by_pattern(pattern="use_grind")` - Find examples of specific transformations
-- `search_by_topic(topics=["continuity"])` - Find topic-specific examples
-- `get_mathlib_quality_principles()` - Get the core quality rules
-
-### Option B: Using the Query Script
-```bash
-python3 scripts/query_rag.py --code "<proof code>" --limit 5
-python3 scripts/query_rag.py --pattern use_grind --limit 5
-python3 scripts/query_rag.py --tactics simp have exact --limit 5
-```
-
-### Available Patterns
-- `simp_to_simpa` - Converting simp to simpa
-- `use_grind` - Using grind tactic (POWERFUL - check first)
-- `use_fun_prop` - Using fun_prop for continuity/measurability
-- `use_aesop` - Using aesop automation
-- `use_omega` - Using omega for arithmetic
-- `term_mode` - Converting tactic mode to term mode
-- `remove_redundant` - Removing unnecessary code
-
-## Step 2: Load PR Feedback Data (Fallback)
-
-If RAG isn't available, read the curated examples:
-- `data/pr_feedback/curated_examples.md` - Best before/after examples with principles
-- `data/pr_feedback/clean_examples_by_category.json` - Organized by category
+- `skills/mathlib-quality/references/proof-patterns.md` — high-volume patterns
+  (inline `have`, `grind` subsumption, `simpa using`, `fun_prop`, `gcongr`,
+  `positivity`, `aesop`, `wlog`, `linear_combination`, terminal-simp rules,
+  anti-patterns)
+- `skills/mathlib-quality/references/pr-feedback-examples.md` — review-category
+  examples (line length, naming, documentation, file structure, library
+  integration, simpler-proof-structure, …)
+- `skills/mathlib-quality/references/golfing-rules.md` — Phase 1/2/3 rules
+- `skills/mathlib-quality/references/style-rules.md` — formatting, naming,
+  inequality orientation, mathlib-first principle
 
 ## Step 2: Line-by-Line Analysis
 
