@@ -387,6 +387,79 @@ based on the answers:
 
 ---
 
+## Mode B methodology (def-first + verdict inheritance + re-aim)
+
+Mode B batches assess many decls at once. Three rules from real-batch
+experience (Sphere-Packing-Lean `ForMathlib/`, 31 decls × 5 files):
+
+### Def-first ordering
+
+Within each file, assess defs (`def` / `abbrev` / `structure` / `inductive` /
+`class` / `instance`) **before** their dependent lemmas. The lemma's verdict
+frequently hinges on the def's verdict; out-of-order processing forces the
+lemma's Agent to re-derive everything the def's Agent already produced.
+
+Across files, dispatch in import order — a file's defs are evaluated before
+downstream files' lemmas about them.
+
+### Verdict inheritance for glue lemmas
+
+A *glue lemma* is one whose body is purely `:= rfl`, `:= Iff.rfl`,
+`:= by rfl`, or `:= by exact rfl` — i.e., a definitional-equality statement
+between an alias and its definition. These do not need a separate full
+Agent run; they **inherit** the parent def's verdict:
+
+| Parent def verdict | Glue lemma verdict |
+|---|---|
+| YES-add-as-is | INHERITED-YES (ships with parent) |
+| YES-but-generalise-first | INHERITED-YES-but-generalise (restated against new form) |
+| NO-mathlib-has-it (mathlib has D' more general; see Re-aim) | NO-mathlib-has-it via re-aim |
+| NO-composable-from-mathlib | INHERITED-NO-composable |
+| BORDERLINE | INHERITED-BORDERLINE (the same question applies) |
+
+Mark inherited verdicts as `INHERITED-<parent-verdict>` in the table; the
+detail report lists the parent decl and the proof that the lemma is glue
+(its source body must literally be `:= rfl` etc.).
+
+### Re-aim rule (don't blanket-inherit NO)
+
+When the parent def's verdict is `NO-mathlib-has-it` *because mathlib has a
+more general def* `D'`, a dependent lemma cannot blanket-inherit NO. The
+lemma is about some property the user's def has; that property may or may
+not also hold for `D'`. **Re-aim** the lemma at `D'`:
+
+- If mathlib already has the analogous lemma about `D'` → verdict is
+  `NO-mathlib-has-it`, citing the mathlib lemma.
+- If mathlib has `D'` but not the analogous lemma about `D'` → the lemma is
+  potentially contributable, *stated against `D'`*. Dispatch a full Agent
+  run with the re-aimed statement; verdict is likely
+  `YES-but-generalise-first` (the generalisation being the re-aiming).
+
+Blanket-inherit NO **only** when the parent's verdict was
+`NO-composable-from-mathlib` or `BORDERLINE` — i.e., no mathlib `D'` to
+re-aim at exists.
+
+### Call-sites grep as composability signal
+
+Before sketching compositions in Phase 6, grep the decl's own call sites in
+the project. This is a first-class composability signal:
+
+- **K ≥ 3 internal uses** → real API; consumers depend on it; verdict
+  leans YES.
+- **K = 0 internal uses** but the same statement is re-derived inline at
+  ≥1 site → it's a wrapper consumers bypass; verdict leans
+  NO-composable-from-mathlib (or NO-mathlib-has-it if a mathlib alternative
+  exists).
+- **K = 0 internal uses, no inline re-derivation** → dead code (re-check
+  with `/overview` Step 8) OR genuinely new + unused (BORDERLINE).
+- **K = 1 internal use only** → possibly wrong abstraction; could be
+  inlined; lean toward NO-composable.
+
+The call-sites table is the required artifact for Phase 6.0; missing it
+fails the verdict gate.
+
+---
+
 ## Anti-patterns when synthesising
 
 ### "I searched and didn't find it" without an artifact

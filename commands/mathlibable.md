@@ -86,7 +86,7 @@ PHASE 4   GENERALITY            (4a-b) compare current form to literature-standa
                                 (4c) modern-mathlib-idiom restatement — Bourbaki 2.0 check
 PHASE 4.5 DIAMOND/DEFEQ RISK    for `def`/`class`/`instance` only; six-row risk table
 PHASE 5   MATHLIB                five-method exhaustive search (Loogle / LeanSearch / Lean-Finder / grep / lean_local_search)
-PHASE 6   COMPOSITION            can mathlib's existing primitives compose to give the form?
+PHASE 6   COMPOSITION             call-sites grep (first-class composability signal) + can mathlib's primitives compose to give the form?
 PHASE 7   VERDICT                one of the five buckets, with evidence trail
 PHASE 8   REPORT                 consolidated artifact
 ```
@@ -538,7 +538,64 @@ search would miss.
 
 ---
 
-## PHASE 6 — Composition check
+## PHASE 6 — Composition check (+ call-sites signal)
+
+### 6.0. Call-sites grep — first-class composability signal (REQUIRED ARTIFACT)
+
+Before sketching compositions, grep the declaration's own call sites in the
+project. The call-site pattern is a first-class composability signal:
+
+```bash
+PROJ=<project root>
+QUALIFIED="<Foo.bar>"
+# Look for both qualified and dot-notation usages
+grep -rn "\\b${QUALIFIED//./\\.}\\b" "${PROJ}" \
+  --include="*.lean" \
+  --exclude-dir=".lake" \
+  --exclude-dir="_out" \
+  | grep -v "^${PROJ}/<declaring file>"
+```
+
+```
+### Call sites — `<Foo.bar>`
+
+Internal use count: <K>  (within the same project, NOT counting the declaring file)
+External-to-file callers: <N distinct files>
+
+| Caller file:line               | Usage pattern (one-line excerpt)                          |
+|--------------------------------|-----------------------------------------------------------|
+| Foo/Other.lean:42              | `... Foo.bar h1 h2 ...`                                   |
+| Foo/Third.lean:88              | `... hg.add (Foo.bar hf)`                                 |
+| Bar.lean:14                    | `... Foo.bar` (dot notation: `.bar`)                      |
+
+Inline-derivation grep (was the equivalent re-derived elsewhere without using `<Foo.bar>`?):
+  - <one row per inline re-derivation found; or "(none)">
+```
+
+### 6.0.1. What the call-sites pattern tells you
+
+| Pattern | Composability signal | Phase 7 leaning |
+|---|---|---|
+| K ≥ 3 internal uses, no inline re-derivation elsewhere | Real API; consumers depend on it | YES-* bucket |
+| K = 0 internal uses BUT the same statement is re-derived inline at ≥1 site | NO-composable: it's a wrapper that consumers bypass; whether intentionally or because they don't know about it | NO-composable-from-mathlib OR NO-mathlib-has-it (if mathlib has it) |
+| K = 0 internal uses, no inline re-derivation | Dead code? Brand new + unused so far? Re-check Step 8 of `/overview` | Junk OR genuinely-new (BORDERLINE) |
+| K = 1 internal use only | Possibly the wrong abstraction — could be inlined | Lean toward NO-composable |
+| K ≥ 1 use **outside the project** (downstream library) | Public-API signal; consumers exist | YES-* bucket |
+
+The call-sites table is required: a missing table fails the gate (same shape
+as Phase 5 / Phase 4). "Didn't grep call sites" is not a valid skip.
+
+### 6.0.2. Feeding back into Phase 2
+
+If the call-sites grep reveals `K = 0` for a one-liner (per Phase 2b) and
+no defeq/diamond/API exemption was identified, the case for NO is now
+*much* stronger. Phase 7's verdict gate cross-references this: a YES
+verdict on a one-liner with `K = 0` and no exemption requires the rationale
+to explicitly justify why the def is worth shipping despite having no
+current consumers and no exemption — usually because mathlib *should* use
+it elsewhere and the API gap is the reason it's unused locally.
+
+### Composition check
 
 Even when mathlib doesn't have our exact form, sometimes it has primitives that
 compose trivially to give us the result. In that case, no new lemma is needed —
@@ -606,11 +663,29 @@ the top — Phase 7 fails if the required artifact is missing).
 
 <Synthesise. Concrete, not "the searches showed". Cite the specific evidence.>
 
+**Refactor-actionable bar (REQUIRED).** The bucket-specific section below is
+not optional flavour text — it's the report's load-bearing content. The
+report is simultaneously a *refactor plan* (for NO verdicts) and an
+*upstreaming plan* (for YES verdicts). A reader should be able to act on
+this single decl's section without re-reading the lit search, the Phase
+4-6 artifacts, or the mathlib docs. A bare verdict list is insufficient.
+
 <bucket-specific section, mandatory:>
 
 For YES-add-as-is:
+  WHY add it (REQUIRED — 1-2 paragraphs, refactor-actionable detail):
+    - What new mathematical content does it contribute that mathlib is missing?
+    - Cite the *specific gap*: a mathlib TODO, a known-missing API, a recurring
+      reformulation users do manually because mathlib lacks the canonical form,
+      etc. "Searched and didn't find it" is not enough — name the gap.
+    - How does it compose with mathlib's existing API? (Which mathlib lemmas
+      would now apply that didn't before?)
   Proposed mathlib location:    <Mathlib/<Area>/<File>.lean>
   Proposed PR title:            "feat(<area>): add <Foo.bar>"
+  PR grouping (if applicable):  e.g., "ship with related <Foo.baz> as one PR"
+                                — naming any other decls in this batch with
+                                related YES verdicts is required so the PR
+                                is the right grain.
   Pre-PR checklist before opening:
     - [ ] `/generalise <Foo.bar>` — confirm no easy further weakening
     - [ ] `/cleanup <file> <Foo.bar>` — full audit + diff gates
@@ -636,21 +711,37 @@ For YES-but-generalise-first:
   Phase 4c) before opening a PR.
 
 For NO-mathlib-has-it:
+  WHY not (REQUIRED — refactor-actionable detail):
+    - Mathlib already has it. Cite the exact mathlib decl and explain how the
+      user's form follows directly (or how it specialises from a more general
+      mathlib form). The detail must be enough that a refactor can be planned
+      from this entry alone.
   Existing mathlib decl:        `<Mathlib.Qualified.Name>`
   Located at:                   `Mathlib/<Area>/<File>.lean:<line>`
   Our form follows in ≤1 line:
   ```lean
   example : <our statement> := <mathlib_call> ...
   ```
-  Next action: delete `<Foo.bar>` from the project; update call sites to use
-  `<Mathlib.Qualified.Name>` directly.
+  Call sites in our project (from Phase 6.0):  K
+  Refactor plan: at each of those K sites, replace `<Foo.bar> ...` with
+                 `<Mathlib.Qualified.Name> ...` (note any argument-order
+                 differences — dot notation vs. positional, etc.)
+  Next action: delete `<Foo.bar>` from the project; update the K call sites.
 
 For NO-composable-from-mathlib:
-  Mathlib building blocks:      <list of qualified names>
+  WHY not (REQUIRED — refactor-actionable detail):
+    - Mathlib has the building blocks; the user's form is a 1-3 mathlib-call
+      composition. Name the building blocks. The composition sketch below
+      must be specific enough that inlining is mechanical.
+  Mathlib building blocks:      <list of qualified names with full paths>
   Composition sketch (≤3 lines):
   ```lean
   example : <our statement> := <mathlib_call1> (<mathlib_call2> ...)
   ```
+  Call sites in our project (from Phase 6.0):  K
+  Refactor plan: at each of those K sites, inline the composition above
+                 (verify the argument types match; some sites may need
+                 light adjustment for implicit-vs-explicit argument flow).
   Next action: delete `<Foo.bar>` from the project; inline the composition at
   every call site.
 
@@ -701,6 +792,15 @@ The verdict block FAILS if:
 - The bucket is **anything other than BORDERLINE** but cost is cited as the
   reason — "too expensive to generalise so we'll ship the narrow form" is a
   BORDERLINE question to the user, not a self-resolving verdict downgrade.
+- The Phase 6.0 call-sites table is missing or partial (one row per caller
+  required; "internal use count" + "inline-derivation grep" fields filled).
+- For YES verdicts: the bucket-specific WHY paragraph names no concrete
+  mathlib gap / TODO / missing-API anchor (the "searched and didn't find it"
+  trap — Phase 7 requires *naming the gap*, not just asserting absence).
+- For NO verdicts: the bucket-specific WHY paragraph does not include the
+  refactor plan ("at each of the K call sites, do X") at refactor-actionable
+  detail. A bare "use Mathlib.X instead" without naming the K call sites is
+  not enough — the gate fails.
 
 Failed verdict → re-run Phase 7 only (artifacts from 3–6 are preserved).
 
@@ -748,35 +848,148 @@ dispatches one `Agent` per remaining declaration, each running the full
 
 ### B0 — Enumerate
 
-```bash
-find <files> -name "*.lean"   # (validate every arg exists)
-# For each file, list public def / abbrev / structure / inductive / class /
-# instance / theorem / lemma / proposition / corollary.
-# Skip: private / local; declarations in test/ or examples/; names ending _aux;
-# docstrings starting with "internal" or "auxiliary".
+Validate every file argument exists, then walk the file extracting declaration
+heads. The enumeration regex must cover the **Lean 4 module system** —
+declarations appear with `public` (and sometimes `noncomputable` / `protected`)
+modifiers, and may carry one or more `@[attr]` prefixes:
+
+```
+^\s*(@\[[^\]]+\]\s+)*(noncomputable\s+)?(protected\s+)?(public\s+)?(theorem|lemma|def|abbrev|structure|inductive|class|instance|proposition|corollary|example)\b
 ```
 
-### B1 — Pre-filter (cheap, same rules as `/overview` Step 9a)
+Examples this regex must match (and the naive `^(theorem|lemma|def|...)`
+pattern does NOT):
+
+```lean
+public def Foo : ...
+@[expose] public def Bar : ...
+@[simp] public lemma baz : ...
+public instance : Foo X := ...
+public theorem main : ...
+noncomputable public def Quux : ...
+@[simp, fun_prop] public theorem zorg : ...
+```
+
+Skip enumeration if the declaration head matches:
+- the line begins with `private` / `local` (or `protected private`)
+- the file is under `test/` or `examples/` (or `Test/`, `Examples/`)
+- the matched name ends in `_aux`
+- the immediately preceding docstring (a contiguous `/-- ... -/` ending
+  on the line above) starts with `internal` or `auxiliary`
+
+**Naming and qualification.** For each enumerated decl, compute the
+*qualified* name as `<NamespaceFromOpenScopes>.<name>` — walk back through
+the file's `namespace … end namespace` blocks to build the prefix. Use the
+qualified name throughout B1/B2; bare names are unsafe (see B1).
+
+### B1 — Pre-filter (cheap, namespace-aware)
 
 For each enumerated declaration, run the cheap SKIP checks first:
 
-- `private` / `local` modifier
+- `private` / `local` modifier (already filtered in B0, but re-check)
 - in `test/` or `examples/`
 - name ends in `_aux`
 - docstring starts with `internal` or `auxiliary`
-- the exact unqualified name already exists in mathlib (cheap grep over
-  `.lake/packages/mathlib/Mathlib/`)
+- the **qualified** name already exists in mathlib — cheap grep over
+  `.lake/packages/mathlib/Mathlib/` for the *namespace-aware* pattern
+  `\b(theorem|lemma|def|...)\s+<Qualified.Name>\b` (and dot-notation
+  variants like `<Namespace>.<name>`). **Do NOT match on bare name alone.**
 
-Record each pre-filtered decl in the verdict table with verdict `SKIP` and a
-one-line reason. They do NOT get a full Agent run.
+**The bare-name SKIP is unsafe and has been removed.** Common short names
+(`coeFun`, `translateCM`, `continuous_coeFun`, `finite_norm_le`) collide
+with unrelated mathlib decls in other namespaces / types and would wrongly
+drop genuine contributions. The cheap check stays cheap; it just requires
+the qualified name match. A bare-name hit without namespace agreement
+records as `MAYBE-COLLISION` and gets a full Agent run (it might be a
+genuine contribution; the full workflow's Phase 5 mathlib search will
+resolve it).
 
-### B2 — Dispatch (sequential, one Agent per surviving decl)
+Record each pre-filtered SKIP decl with verdict `SKIP` and a one-line
+reason. They do NOT get a full Agent run.
 
-For each surviving declaration, dispatch:
+### B2 — Dispatch (sequential, def-first, with verdict inheritance)
+
+#### Def-first ordering
+
+**Within each file, dispatch defs (`def` / `abbrev` / `structure` /
+`inductive` / `class` / `instance`) before their dependent lemmas.** A
+lemma's verdict frequently hinges on the verdict of the def it's about;
+processing in the wrong order forces the lemma Agent to re-derive
+information the def Agent already produced. Across files, dispatch in
+import order (a file's defs are evaluated before downstream files'
+lemmas).
+
+#### Verdict inheritance for glue lemmas
+
+A *glue lemma* is a lemma whose body is one of:
+
+- `:= rfl`
+- `:= Iff.rfl`
+- `:= by rfl` / `:= by exact rfl`
+- A single `unfold` / direct definitional equality between an alias and
+  its definition
+
+If a glue lemma's statement involves a parent def already assessed in this
+batch, **inherit the parent's verdict — do NOT dispatch a separate full
+Agent run.** Record verdict as `INHERITED-<parent-verdict>` and cite the
+parent decl. The lit search + mathlib search would just re-discover what
+the parent assessment already established.
+
+#### Re-aim rule (don't blanket-inherit NO)
+
+When the parent def's verdict was `NO-mathlib-has-it` *because mathlib has
+a more general def* `D'`, do NOT blanket-inherit NO on a dependent lemma.
+Instead, **re-aim** the lemma at `D'`:
+
+- If `D'` has an analogous lemma in mathlib already → record the dependent
+  lemma's verdict as `NO-mathlib-has-it` citing the mathlib lemma about
+  `D'`. The re-aim was a hit; the lemma is redundant.
+- If `D'` has no analogous lemma in mathlib → the lemma may be worth
+  contributing, *stated against `D'`*. Dispatch a full Agent run with the
+  re-aimed statement (the dispatch args include the re-aim target so the
+  worker knows to evaluate the `D'`-stated form, not the original).
+  Verdict is likely `YES-but-generalise-first` with the re-aim spelled
+  out.
+
+Only blanket-inherit NO when the parent def has no mathlib counterpart
+at all (the parent was `NO-composable-from-mathlib` or `BORDERLINE`, not
+`NO-mathlib-has-it`).
+
+#### Anonymous instance handling
+
+A `public instance` declaration with no user-given name has no qualified
+name to pass as a dispatch handle. For each anonymous instance, synthesize
+a handle:
 
 ```
-Skill(skill="mathlib-quality:mathlibable", args="<Qualified.Decl.Name>")
+<File>__<Line>__inst_<seq>     # e.g., Foo_Bar__lean__115__inst_0
 ```
+
+Pass this as the dispatch arg and include the file:line and the elaborated
+instance signature in the prompt so the Agent can read the actual decl. The
+verdict table records the synthesised handle in column 1 with the resolved
+signature in the rationale column.
+
+#### Dispatch call
+
+For each surviving (non-inherited, non-anonymous-handled, non-pre-filtered)
+declaration, dispatch:
+
+```
+Skill(skill="mathlib-quality:mathlibable",
+      args="<Qualified.Decl.Name> "
+        + "--refs=<absolute path to skills/mathlib-quality/references/> "
+        + "[--reaim=<Qualified.D'.Name>]")
+```
+
+**`--refs` is mandatory.** Worker subagents resolve `references/*.md`
+relative to *their* working directory, not the plugin cache where the docs
+live. Pass an absolute path (the orchestrator can compute it from the skill
+manifest's location) so Phase 5 (mathlib search) and Phase 7 (verdict
+rationale) actually consult the real
+`mathlib-search.md` and `mathlibable-verdicts.md`.
+
+**`--reaim`** is included only when the re-aim rule above fires.
 
 **Sequential**, one decl at a time. Each Agent's WebSearch + ChatGPT MCP +
 nine-channel lit search is already heavy; running many in parallel doesn't
@@ -785,7 +998,7 @@ help and contends on external rate limits.
 Between dispatches, the orchestrator emits exactly one line:
 
 ```
-**K/N decls assessed. R YES-add-as-is, S YES-but-generalise, T NO-mathlib-has-it, U NO-composable, V BORDERLINE.** Continuing.
+**K/N decls assessed. R YES-add-as-is, S YES-but-generalise, T NO-mathlib-has-it, U NO-composable, V BORDERLINE, W INHERITED.** Continuing.
 ```
 
 No "let me check / let me verify / quick sanity check" — those are the
@@ -794,10 +1007,15 @@ when the Agent returns; the orchestrator records and moves on.
 
 Each Agent's full Phase-8 report (with all artifacts: lit table, generality
 analysis, modern-idiom check, mathlib search, composition check, verdict
-rationale) is stored at
+rationale, **per-bucket WHY+alternative — see Phase 7**) is stored at
 `.mathlib-quality/mathlibable/<decl>.md` for later reference. The
 orchestrator only keeps the verdict bucket + one-line rationale in working
 memory.
+
+**Persist findings to disk no matter what.** Each Agent run takes minutes
+to hours; discarding the full Phase-8 report at the end of a batch is a
+serious defect. The orchestrator must verify each `.md` file was written
+before recording the verdict in the table.
 
 ### B3 — Aggregate
 
