@@ -28,6 +28,12 @@ trigger:
     - prose
     - sketch
     - render
+    - mathlibable
+    - mathlib-fit
+    - mathlib-ready
+    - generality
+    - generalise
+    - generalize
 ---
 
 # Mathlib Quality Skill
@@ -67,6 +73,7 @@ This skill helps bring Lean 4 code up to mathlib standards by:
 | `/split-file` | Split large files (>1500 lines) into focused modules |
 | `/pre-submit` | Pre-PR submission checklist |
 | `/bump-mathlib` | Bump mathlib version and fix resulting breakage |
+| `/mathlibable` | **Decide whether a Lean declaration belongs in mathlib.** Methodical ten-phase workflow with required artifacts per phase: doctor → comprehend → BIG/SMALL size + one-line check (with defeq-abuse / diamond-avoidance exemptions) → literature search (bounded: WebSearch ×3 + ChatGPT MCP + local refs; exhaustive adds nLab + Stacks + MathOverflow + arXiv) → generality analysis vs literature-standard → **diamond/defeq risk assessment for `def`/`class`/`instance`** → mathlib five-method search on BOTH the user's form AND the standard form → composition check (≤3 mathlib calls?) → verdict in one of five buckets (`YES-add-as-is`, `YES-but-generalise-first`, `NO-mathlib-has-it`, `NO-composable-from-mathlib`, `BORDERLINE-needs-human`). Each verdict needs its own documented evidence trail; the Phase-7 gate rejects unsupported verdicts. Single declaration per call. `--exhaustive`, `--quick` flags. Worked examples per bucket in `references/mathlibable-verdicts.md`. |
 | `/blueprint` | **Author or update the project's verso-blueprint** — wraps [`leanprover/verso-blueprint`](https://github.com/leanprover/verso-blueprint) (the Verso-based tool behind verso-sphere-packing, verso-flt, verso-carleson). Chapter files are `.lean` modules under `<Project>/Chapters/`; statements are `:::theorem "label" (lean := "Foo.bar")` directives; dep-graph edges are `{uses "label"}[]`; math is KaTeX. Verso auto-computes completion status from `(lean := …)` — no manual `\leanok`. Seven-phase workflow (doctor → enumerate → plan → prose context → author → cross-link → hand-off). One worker per declaration; reads project references + module docstrings + `/develop`'s `decomposition.md` if present. Modes: whole-project default, single-file, `--decl <Foo.bar>` (single-decl + closure, non-interactive), `--update`, `--check`, **`--migrate-from-latex [<dir>]`** (one-shot mechanical 1:1 conversion of a legacy `leanblueprint` LaTeX tree). Phase 6 hand-off runs `./scripts/ci-pages.sh` and verifies `_out/site/html-multi/`. Conventions + Verso-specific deployment gotchas in `references/blueprint-conventions.md`. |
 | `/unformalise` | **Turn one Lean declaration into mathematics.** Unicode terminal render by default (Γ, ℂ, ℍ, →, ≤ — readable in chat); after rendering, asks `[b]` add to blueprint as Verso / `[v]` Verso to stdout / `[m]` Markdown / `[n]` terminal-only. Non-interactive: `--verso`, `--md`, `--blueprint`. Single-decl default; `--closure` walks deps; whole-file mode also allowed. Shares the unformalisation worker logic with `/blueprint` Phase 4 (same `references/blueprint-conventions.md`). Conversational sibling to `/blueprint --decl`. |
 | `/fix-pr-feedback` | Fetch PR comments, implement fixes locally, **wait for user approval before pushing**, then watch CI to completion. 8-phase workflow with explicit comment-coverage check. |
