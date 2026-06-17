@@ -17,10 +17,14 @@ thorough literature + mathlib search. Skipping the search produces wrong verdict
 ## Usage
 
 ```
-/mathlibable <Foo.bar>              # one declaration; literature width auto-picked from size
-/mathlibable <Foo.bar> --exhaustive # force the wider literature sweep even for small decls
-/mathlibable <Foo.bar> --quick      # only the bounded literature protocol (use sparingly; downgrades the verdict's evidence weight)
+/mathlibable <Foo.bar>              # one declaration; full exhaustive workflow, no shortcuts
 ```
+
+There is no `--quick` flag and no `--exhaustive` flag. **Every invocation runs
+the full exhaustive literature search.** Mathlib is Bourbaki 2.0 — adding the
+*right* declaration in the *right* form requires doing the thorough work every
+time. Producing a verdict in five minutes by skipping channels is exactly the
+failure mode this skill exists to prevent.
 
 ## Prerequisites
 
@@ -61,16 +65,19 @@ Eight phases. **Do them in order. Do not skip phases.** Every phase produces a
 required artifact; missing artifacts fail the verdict.
 
 ```
-PHASE 0   DOCTOR              lake build clean; the decl exists and elaborates
-PHASE 1   COMPREHEND          read the decl; capture its mathematical statement in prose
-PHASE 2   SIZE + ONE-LINE     BIG/SMALL classification; one-line check with defeq/diamond/API exemptions
-PHASE 3   LITERATURE          bounded protocol always; exhaustive for BIG or --exhaustive
-PHASE 4   GENERALITY          compare current form to the literature-standard form
-PHASE 4.5 DIAMOND/DEFEQ RISK  for `def`/`class`/`instance` only; six-row risk table
-PHASE 5   MATHLIB             five-method exhaustive search (Loogle / LeanSearch / Lean-Finder / grep / lean_local_search)
-PHASE 6   COMPOSITION         can mathlib's existing primitives compose to give the form?
-PHASE 7   VERDICT             one of the five buckets, with evidence trail
-PHASE 8   REPORT              consolidated artifact
+PHASE 0   DOCTOR                lake build clean; the decl exists and elaborates
+PHASE 1   COMPREHEND            read the decl; capture its mathematical statement in prose
+PHASE 2   PRELIM CHECKS         BIG/SMALL classification (for narrative; does not gate the lit width);
+                                one-line check with defeq/diamond/API exemptions
+PHASE 3   LITERATURE            EXHAUSTIVE protocol — always. WebSearch ×≥3 + ChatGPT MCP
+                                + local refs + nLab + Stacks + MathOverflow + arXiv + nCatLab
+PHASE 4   GENERALITY            (4a-b) compare current form to literature-standard;
+                                (4c) modern-mathlib-idiom restatement — Bourbaki 2.0 check
+PHASE 4.5 DIAMOND/DEFEQ RISK    for `def`/`class`/`instance` only; six-row risk table
+PHASE 5   MATHLIB                five-method exhaustive search (Loogle / LeanSearch / Lean-Finder / grep / lean_local_search)
+PHASE 6   COMPOSITION            can mathlib's existing primitives compose to give the form?
+PHASE 7   VERDICT                one of the five buckets, with evidence trail
+PHASE 8   REPORT                 consolidated artifact
 ```
 
 ---
@@ -142,11 +149,13 @@ Lean spelling, miss the math literature entirely).
 
 ---
 
-## PHASE 2 — Size classification + one-line check
+## PHASE 2 — Preliminary checks (size + one-line)
 
-Two cheap checks before the expensive literature search.
+Two cheap preliminary checks. **These do NOT gate the literature-search width**
+— that's always EXHAUSTIVE. The classification is for narrative clarity in the
+report and to inform the worker's framing.
 
-### 2a. Big vs small (REQUIRED ARTIFACT)
+### 2a. Big vs small — for narrative only (REQUIRED ARTIFACT)
 
 A declaration is **BIG** if any of:
 
@@ -164,14 +173,14 @@ A declaration is **SMALL** if it's none of the above — typically a helper lemm
 a specialisation, a corollary, or a one-step composition.
 
 ```
-### Size classification (Phase 2)
+### Size classification (Phase 2a)
 
 Verdict: BIG | SMALL
 Reason: <one line>
 
-Literature-search width auto-picked: EXHAUSTIVE | BOUNDED
-(BIG → EXHAUSTIVE automatically; SMALL → BOUNDED; `--exhaustive` overrides to EXHAUSTIVE;
- `--quick` overrides to BOUNDED. EXHAUSTIVE always wins if the user passed it.)
+(Note: literature width is EXHAUSTIVE regardless. BIG/SMALL is recorded for
+the report's framing and for the worker's mental model — it does not gate
+which channels Phase 3 runs.)
 ```
 
 ### 2b. One-line check (REQUIRED ARTIFACT)
@@ -229,57 +238,57 @@ note and the check is skipped.
 
 ---
 
-## PHASE 3 — Literature search
+## PHASE 3 — Literature search (EXHAUSTIVE, always)
 
-The single most important phase. **The skill exists to do this carefully.** Skipping
-or short-circuiting this phase produces wrong verdicts. Workers who write
-"searched: didn't find anything" without an artifact fail the gate.
+The single most important phase. **The skill exists to do this carefully.**
+Skipping or short-circuiting this phase produces wrong verdicts. Workers who
+write "searched: didn't find anything" without a full artifact fail the gate.
 
-### 3a. Bounded protocol (ALWAYS runs)
+This phase is **always EXHAUSTIVE**. There is no bounded mode. The user
+explicitly chose to run `/mathlibable` because they want the thorough work
+done — short-circuiting wastes their explicit ask.
 
-Four channels. Print one row per query attempted, including the queries that
-returned nothing.
+### 3a. Channel protocol (REQUIRED ARTIFACT)
 
-```
-### Literature search table — bounded protocol
-
-| # | Channel               | Query                                                   | Hit? | Standard form found | Notes |
-|---|------------------------|---------------------------------------------------------|------|----------------------|-------|
-| 1 | WebSearch             | "translate of continuous function" definition           | yes  | $`(\tau_a f)(x) := f(x-a)`` | Wikipedia: "Translation operator"; standard in harmonic analysis |
-| 2 | WebSearch             | "shift operator" function definition continuous         | yes  | same as #1; also called "shift"    | name varies; "translate" / "shift" both standard |
-| 3 | WebSearch             | "translation of a function" L^p generality              | yes  | well-defined for any measurable f  | strictly more general — continuity is overkill |
-| 4 | ChatGPT MCP           | "What is the standard mathematical definition of the translate of a continuous function, and at what level of generality is it usually stated?" | yes  | same as #3 — `L^p` or measurable functions, NOT continuous specifically | confirms the form found in WebSearch |
-| 5 | local references      | grep `.mathlib-quality/references/` for "translation"   | n/a  | (no references dir)  | skipped |
-| 6 | local references      | (n/a)                                                   | n/a  | n/a                  | n/a — directory absent |
-```
-
-The bounded protocol passes when:
-- WebSearch ran at least **3 distinct queries** at different generality levels
-  (specific form, the most-general form, the "well-known names" form).
-- ChatGPT MCP ran at least **1 query** asking explicitly for the standard form
-  and its generality.
-- Local references were checked (or recorded `n/a` with reason).
-
-`Standard form found` is the most general formulation the search returned.
-This is what Phase 4 compares the user's form against.
-
-### 3b. Exhaustive protocol (BIG decls or `--exhaustive`)
-
-On top of the bounded protocol, ALSO check:
+All nine channels are mandatory. Print one row per query attempted —
+including queries that returned nothing. A row with `n/a` requires a one-line
+reason (e.g., "Stacks Project: not an algebraic-geometry concept").
 
 ```
-| # | Channel                          | Query                                | Hit? | Standard form found |
-|---|----------------------------------|--------------------------------------|------|----------------------|
-| 7 | nLab                            | <concept name>                       | ...  | ...                  |
-| 8 | Stacks Project (if alg geom)    | <concept name>                       | ...  | ...                  |
-| 9 | MathOverflow / Math.StackExchange| <concept name> generality           | ...  | ...                  |
-| 10| recent arXiv (last 5 years)     | <concept name> + adjective           | ...  | ...                  |
-| 11| nCatLab (if categorical)        | <concept name>                       | ...  | ...                  |
+### Literature search table — EXHAUSTIVE protocol
+
+| #  | Channel                          | Query                                                                                                  | Hit? | Standard form found              | Notes |
+|----|----------------------------------|--------------------------------------------------------------------------------------------------------|------|----------------------------------|-------|
+|  1 | WebSearch (specific form)        | "translate of continuous function" definition                                                          | yes  | $`(\tau_a f)(x) := f(x-a)`         | Wikipedia "Translation operator"; standard in harmonic analysis |
+|  2 | WebSearch (general form)         | "translation of a function" L^p generality                                                             | yes  | well-defined for any measurable f  | strictly more general — continuity overkill |
+|  3 | WebSearch (named-after / aliases)| "shift operator" function definition                                                                   | yes  | same as #1; also called "shift"    | name varies; both standard |
+|  4 | ChatGPT MCP                      | "What is the standard mathematical definition of the translate of a function, and at what generality is it usually stated? Has the formulation evolved historically?" | yes  | confirms #2; notes modern abstraction over additive groups | covers historical evolution |
+|  5 | Local references                 | grep `.mathlib-quality/references/` for "translation"                                                  | n/a  | (no references dir)                | dir absent — recorded as n/a |
+|  6 | nLab                             | <concept name>                                                                                          | ...  | ...                                | ... |
+|  7 | nCatLab (if categorical)         | <concept name>                                                                                          | ...  | ...                                | ... |
+|  8 | Stacks Project (if alg geom)     | <concept name>                                                                                          | ...  | ...                                | ... |
+|  9 | MathOverflow / Math.StackExchange| <concept name> generality                                                                              | ...  | ...                                | ... |
+| 10 | recent arXiv (last 5 years)      | <concept name> + topical adjective                                                                      | ...  | ...                                | ... |
 ```
 
-For BIG decls, the exhaustive protocol must show at least three of channels
-7–11 attempted (not all are applicable to every concept — record `n/a` with
-a reason when not).
+The protocol passes when:
+- **WebSearch ran at least 3 distinct queries at different generality
+  levels** (specific form, the most-general form, named-after / common
+  aliases).
+- **ChatGPT MCP ran at least 1 query asking explicitly for the standard
+  form, its generality, and any historical evolution of the formulation.**
+- **Local references were checked** (or recorded `n/a` with a one-line
+  reason if the directory is absent).
+- **nLab was checked.** Even if the concept isn't categorical, nLab often
+  has a clean abstract statement.
+- **Stacks Project / nCatLab / MathOverflow / arXiv** were each checked or
+  recorded `n/a` with reason. "Not an algebraic-geometry concept" is a
+  valid `n/a` for Stacks; "not a categorical concept" for nCatLab. But the
+  worker must look briefly to decide that.
+
+A skipped channel without an `n/a` reason is a defect; a row that says
+`n/a — didn't seem relevant` without further justification is also a
+defect. The protocol exists to force the worker to actually look.
 
 ### 3c. Literature summary block (REQUIRED ARTIFACT)
 
@@ -335,7 +344,7 @@ the most general form Phase 3 identified.
 ### 4b. Generality verdict (REQUIRED ARTIFACT)
 
 ```
-### Generality verdict (Phase 4)
+### Generality verdict (Phase 4b)
 
 The current form is: MAXIMALLY GENERAL | STRICTLY NARROWER THAN STANDARD
 Number of weakening opportunities found: K
@@ -346,8 +355,68 @@ Proposed restatement (if STRICTLY NARROWER):
 Cost of restatement: <CHEAP — mechanical rewrite | MODERATE — proof needs adjustments | EXPENSIVE — proof needs new ideas>
 ```
 
-If MAXIMALLY GENERAL → Phase 7 considers YES-add-as-is or NO buckets only.
+**Cost note.** EXPENSIVE is not a downgrade. Mathlib is Bourbaki 2.0; spending
+significant effort to ship the right form is the work. Cost may inform the
+*sequencing* (do it now vs. flag for a future PR) but should not change the
+verdict bucket.
+
+If MAXIMALLY GENERAL → Phase 7 considers YES-add-as-is or NO buckets, then
+also runs 4c (modernisation may flip a MAXIMALLY GENERAL classical form to
+YES-but-generalise-first if a contemporary idiom is cleaner).
 If STRICTLY NARROWER → Phase 7 considers YES-but-generalise-first prominently.
+
+### 4c. Modern mathlib-idiom restatement — the Bourbaki 2.0 check (REQUIRED ARTIFACT)
+
+The literature-standard form (4a–4b) is one anchor; the *mathlib-idiomatic*
+form is another. Even if the literature standard is "maximally general",
+mathlib may want a different formulation built from contemporary tools that
+compose better with the rest of the library.
+
+Ask each question explicitly. Each row needs an answer.
+
+```
+### Modern-idiom check (Phase 4c)
+
+| #  | Question                                                                                                                                 | Applies? | Proposed reformulation                                                                | Mathlib downstream this enables |
+|----|------------------------------------------------------------------------------------------------------------------------------------------|----------|----------------------------------------------------------------------------------------|----------------------------------|
+|  1 | Could "let X be a foo" preambles become **typeclasses / instances** instead of bundled hypotheses?                                       | yes/no   | <if yes: the new signature>                                                            | <which downstream lemmas compose better> |
+|  2 | Does the literature use **sequences / metric notions** where **filters / nets / topological notions** would generalise more cleanly?    | yes/no   | <if yes: the filter/topological restatement>                                            | <e.g. unifies with all filter-based limit API> |
+|  3 | Does the literature **construct** an object where a **universal-property class** would characterise it?                                 | yes/no   | <if yes: the universal-property class>                                                  | <auto-specialises to the existing concrete construction> |
+|  4 | Does the literature use **set-with-closure-predicate** where a **bundled-substructure type** would compose with mathlib's lattices?     | yes/no   | <if yes: the bundled type>                                                              | <lattice API, quotients, sums, intersections> |
+|  5 | Does the literature treat a **vector-space / metric / field-specific** result that **mathlib's typeclass hierarchy** would weaken to modules / pseudometric / (semi)ring? | yes/no   | <if yes: the weakened-typeclass restatement>                                            | <scalar restriction/extension lemmas, full module API> |
+|  6 | Does the literature give a **1-categorical** statement that has a **higher-categorical or ∞-categorical** generalisation mathlib is moving toward? | yes/no   | <if yes: the higher-categorical statement>                                              | <future-proofs against the categorification effort> |
+|  7 | Does the result mention a **concrete index (ℕ, ℤ, ℝ)** that would generalise to **arbitrary additive groups / monoids / ordered structures**? | yes/no   | <if yes: the index-generalised form>                                                    | <unifies with the rest of the project's algebraic structure> |
+```
+
+Rows do not have to all be `yes`. Most decls will hit 1–3 of these at most.
+Rows that don't apply are answered `no` with a one-line reason (e.g., "this
+is a finite combinatorial identity; no topology to filter-ise").
+
+```
+### Modern-idiom verdict (Phase 4c)
+
+Modern idiom available: yes | no
+If yes:
+  - Proposed mathlib-idiomatic restatement:
+    <new Lean signature, possibly significantly different from the literature form>
+  - Cost: <CHEAP | MODERATE | EXPENSIVE>
+  - Mathlib downstream this enables: <concrete list of API pieces that compose better>
+  - Real mathematical improvement (not just "looks cooler"): <one sentence>
+If no:
+  - One-line reason this is not a modernisation move
+```
+
+**The honesty bar.** "Modernisation" is a real improvement in mathematical
+*organisation* — it eliminates a redundancy, composes with more of mathlib,
+enables proofs that the literature form blocked, etc. "It looks cooler in
+category theory" is not enough. The Phase 7 rationale will require the
+worker to point at the specific downstream API improvements; cherry-picked
+abstraction for its own sake is rejected.
+
+If Phase 4c says "modern idiom available", Phase 7 may produce
+`YES-but-generalise-first` even when Phase 4b said MAXIMALLY GENERAL —
+because the "generalise first" target is the contemporary mathlib form,
+not the classical literature one.
 
 ---
 
@@ -537,14 +606,23 @@ For YES-add-as-is:
     - [ ] Pick a mathlib reviewer based on `Mathlib/<Area>/` recent commits
 
 For YES-but-generalise-first:
+  Reason for the generalisation: <one or both of:>
+    - LITERATURE-WEAKENING: Phase 4b found the user's form strictly narrower than the literature-standard form
+    - MODERN-IDIOM (Bourbaki 2.0): Phase 4c found a contemporary mathlib formulation that is a real organisational improvement
   Proposed restatement:
   ```lean
   theorem <new_name> <generalised signature> : <generalised conclusion> := by
     sorry  -- needs work; current proof may or may not survive
   ```
   Estimated cost of regeneralisation: <CHEAP | MODERATE | EXPENSIVE>
-  Next action: run `/generalise <Foo.bar>` (which will tension against the
-  literature-standard form from Phase 3) before opening a PR.
+  Note: EXPENSIVE does not downgrade the verdict. Mathlib's value is in
+        getting the right form, not the cheap form.
+  Mathlib downstream this enables (REQUIRED if MODERN-IDIOM):
+    - <concrete list — what existing mathlib API composes better with the new form>
+    - <what proofs were blocked by the old form>
+  Next action: run `/generalise <Foo.bar>` (which will tension against both
+  the literature-standard form from Phase 3 and the modern-idiom form from
+  Phase 4c) before opening a PR.
 
 For NO-mathlib-has-it:
   Existing mathlib decl:        `<Mathlib.Qualified.Name>`
@@ -580,10 +658,26 @@ The verdict block FAILS if:
 - The required evidence pointers from the bucket's row in "The verdicts" table
   aren't present in the artifacts from Phases 3–6 (the worker is claiming a
   verdict without the work).
-- The bucket is YES-add-as-is but Phase 4 verdict was STRICTLY NARROWER (the
-  worker should have picked YES-but-generalise-first).
+- The bucket is YES-add-as-is but Phase 4b verdict was STRICTLY NARROWER
+  THAN STANDARD (the worker should have picked YES-but-generalise-first).
+- The bucket is YES-add-as-is but Phase 4c verdict was "modern idiom
+  available" AND the modern restatement is a real mathematical improvement
+  (the worker should have picked YES-but-generalise-first with reason
+  MODERN-IDIOM).
+- The bucket is YES-but-generalise-first but no proposed restatement is given,
+  OR the proposed restatement does not match the literature-standard / modern-
+  idiom target from Phase 4b / 4c.
+- The bucket is YES-but-generalise-first with reason MODERN-IDIOM but the
+  rationale section lists no concrete mathlib downstream consequences (the
+  "looks cooler in category theory" trap — Phase 7 requires real downstream
+  evidence).
 - The bucket is NO-mathlib-has-it but Phase 5's conclusion was not "found in
   mathlib as …" (the worker invented a decl).
+- The bucket is NO-mathlib-has-it but Phase 4c said the mathlib version is
+  in an older formulation AND the user's contribution would be the
+  modernisation (in that case the verdict is YES-add-as-is, with the
+  rationale citing the modernisation per Phase 4c — even though mathlib has
+  *something* by that name).
 - The bucket is NO-composable-from-mathlib but Phase 6's conclusion was
   NOT-COMPOSABLE.
 - The bucket is BORDERLINE but no numbered questions are listed.
@@ -593,6 +687,9 @@ The verdict block FAILS if:
 - The decl is a `def`/`class`/`instance` with Phase-4.5 overall risk `HIGH`
   AND the verdict is YES-add-as-is without the rationale section addressing
   each HIGH-risk row (acceptance reason or mitigation).
+- The bucket is **anything other than BORDERLINE** but cost is cited as the
+  reason — "too expensive to generalise so we'll ship the narrow form" is a
+  BORDERLINE question to the user, not a self-resolving verdict downgrade.
 
 Failed verdict → re-run Phase 7 only (artifacts from 3–6 are preserved).
 

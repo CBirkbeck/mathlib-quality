@@ -9,6 +9,83 @@ mental model of what good evidence looks like.
 
 ---
 
+## Mathlib is Bourbaki 2.0 — the philosophy (READ THIS FIRST)
+
+Mathlib is not a translation of textbooks into Lean. It is a redo of mathematics
+using everything we know *now* about how mathematical structures fit together —
+filters where 20th-century texts used sequences, typeclass hierarchies where
+they used informal "let R be a ring"-style preambles, categorical universal
+properties where they constructed objects explicitly, abstract topological
+groups where Bourbaki used metric spaces.
+
+**Consequences for `/mathlibable` verdicts:**
+
+1. **"The literature has X" is not decisive.** A modernised reformulation that
+   captures the same mathematics with contemporary tools is its own
+   contribution. The classical version may exist; the *mathlib-idiomatic*
+   version may not.
+
+2. **Cost is not a verdict factor.** "Spending a lot more time on a new
+   version of an old definition" is not a reason to downgrade YES-add-as-is or
+   YES-but-generalise-first to NO-mathlib-has-it. EXPENSIVE generalisations
+   are explicitly worth doing — that is the work mathlib is here to do.
+
+3. **The "general form" Phase 3 finds may be the wrong target.** The
+   literature-standard form is one anchor; the mathlib-idiomatic form is
+   another. Phase 4c (the modern-idiom check) asks the second question.
+   YES-but-generalise-first naturally covers "the literature says X, but
+   modern mathlib would say Y — let's do Y".
+
+4. **"Replace classical X with categorical/typed Y" is a legitimate verdict.**
+   If Phase 5 finds mathlib's existing decl uses an older formulation (point-
+   set topology where filters would be cleaner; sequences where a net would
+   abstract better; concrete construction where a universal property would
+   characterise) and the user's contribution is the modernisation, then the
+   verdict is YES-add-as-is — **even though** mathlib has *something* by that
+   name.
+
+5. **What this is NOT a license for.** Modernisation has to be a real
+   improvement in *mathematical organisation* — composes with more of
+   mathlib, eliminates a redundancy, enables proofs that the old form
+   blocked. "It looks cooler in category theory" is not enough. The Phase 7
+   rationale must point at specific downstream consequences.
+
+**Canonical cases of modernisation that worked:**
+
+- **Modules, not vector spaces.** The classical hierarchy starts with vector
+  spaces over a field; mathlib starts with modules over a (semi)ring. Every
+  vector space theorem then specialises automatically, and module theorems
+  serve scalar restriction / extension cleanly. Defining vector-spaces-as-
+  distinct-from-modules would have been a wrong YES; defining the module
+  framework was the right one.
+
+- **Filters, not sequences.** Convergence in topology, limits, neighbourhoods,
+  cluster points: classical texts use sequences (or nets) in metric spaces;
+  mathlib uses filters everywhere. Reformulating a "limit of a sequence"
+  result as a "limit along a filter" result was repeatedly the right move,
+  even when an old sequence-only version already existed in literature.
+
+- **`Submodule` vs ad-hoc subset predicates.** A submodule is a
+  bundled-structure type, not "a set closed under operations". The latter
+  works classically; the former composes with quotients, sums, intersections,
+  and lattices throughout mathlib.
+
+- **`MeasureTheory.OuterMeasure` + Carathéodory + topological-measure
+  triple.** Classical measure theory builds measures from outer measures via
+  Carathéodory and stops there; mathlib's triple (OuterMeasure → Measure →
+  topological-measure-compatibility) was the right modernisation even though
+  the underlying mathematics is decades old.
+
+- **Categorical limits/colimits as universal-property bundles.** Classical
+  texts construct products / coproducts / equalisers explicitly per
+  category; mathlib has them as universal-property classes that specialise.
+
+When the user's declaration is *itself* a modernisation move — even if the
+content is classical — Phase 4c is the right place to flag it, and Phase 7
+should *not* dismiss it as "literature already has X".
+
+---
+
 ## The five verdicts
 
 ### 1. `YES-add-as-is`
