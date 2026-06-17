@@ -12,10 +12,20 @@ missing API, and junk. **This is not a quick scan. Take all the time needed. Do 
 ## Usage
 
 ```
-/overview [directory_or_file]
+/overview [directory_or_file]                  # full overview INCLUDING Step 9 mathlibable assessment
+                                                # (slow — full /mathlibable per public decl; plan on hours)
+/overview [directory_or_file] --skip-mathlibable  # everything except Step 9; faster draft view
 ```
 
-Output: writes `PROJECT_OVERVIEW.md` in the project root.
+Output: writes `PROJECT_OVERVIEW.md` in the project root. Per-decl mathlibable
+detail reports go to `.mathlib-quality/overview/mathlibable/<decl>.md`.
+
+**Step 9 is the slowest by far.** It dispatches one `/mathlibable` Agent per
+non-skipped public declaration; each Agent runs the full 10-phase workflow
+with the exhaustive nine-channel literature search. The orchestrator
+narrates a one-line scoreboard between dispatches so you can leave the
+session running. Use `--skip-mathlibable` when you want a fast structural
+overview without the deep contribution assessment.
 
 ---
 
@@ -419,6 +429,142 @@ For each declaration, check:
 
 ---
 
+### Step 9: Mathlibable Assessment (full `/mathlibable` per declaration)
+
+**Goal: For every surviving public declaration (post-Junk pruning), run the
+complete `/mathlibable` 10-phase workflow and aggregate the verdicts.**
+
+This is the slowest step in `/overview` by far. `/mathlibable` runs an
+exhaustive nine-channel literature search + generality analysis + modern-
+mathlib-idiom check + diamond/defeq risk + mathlib five-method search +
+composition check per declaration. On a 50-decl project, plan on hours.
+**That cost is the point.** Mathlib is Bourbaki 2.0; the value of `/overview`
+is in surfacing every declaration's actual mathlib-contribution potential
+based on real work, not a quick guess.
+
+#### Step 9a — Pre-filter (cheap)
+
+Some declarations don't need a full run because the answer is obvious from
+cheap signals. Skip a declaration if any of:
+
+- `private` or `local` modifier
+- in a `test/` or `examples/` directory
+- name ends in `_aux` (intended to be inlined, not PR'd)
+- docstring starts with `internal` or `auxiliary`
+- already flagged REMOVE by Step 8 (Junk Identification)
+- the exact unqualified name already exists in mathlib (cheap grep over
+  `.lake/packages/mathlib/Mathlib/` for `(theorem|lemma|def) <name> ` — if
+  found, record as `SKIP-collides-with-mathlib` and don't dispatch)
+
+Record these as `SKIP` in the verdict table with a one-line reason. They do
+NOT get a full `/mathlibable` run.
+
+#### Step 9b — Dispatch (orchestrator-worker)
+
+For every surviving declaration, dispatch one `Agent` call running the full
+`/mathlibable` workflow on that single declaration. Use the
+`mathlib-quality:mathlibable` Skill:
+
+```
+Skill(skill="mathlib-quality:mathlibable", args="<Qualified.Decl.Name>")
+```
+
+Sequential, one decl at a time (each Agent does its own WebSearch + ChatGPT
+MCP + nLab + nine-channel lit search — running many in parallel doesn't help
+and contends on external APIs). Wait for each Agent's verdict before
+dispatching the next.
+
+Between Agent dispatches, the orchestrator emits exactly one line — like
+`/cleanup-all`'s scoreboard:
+
+```
+**K/N decls assessed. R YES-add-as-is, S YES-but-generalise, T NO-mathlib-has-it, U NO-composable, V BORDERLINE.** Continuing.
+```
+
+That's the entire orchestrator output between dispatches. **No "let me
+check / let me verify"**, no per-decl narration — the verdict is captured
+when the Agent returns; the orchestrator records and moves on.
+
+The Agent's full verdict report (Phase 8 from `/mathlibable`, including all
+artifacts) is stored in `.mathlib-quality/overview/mathlibable/<Decl.Name>.md`
+for later reference; the orchestrator only keeps the verdict bucket + one-
+line rationale in its working memory.
+
+#### Step 9c — Aggregate
+
+After all dispatches return, build the verdict table:
+
+```markdown
+### Mathlibable Assessment
+
+| # | Declaration               | File:line              | Verdict                          | Cost    | Detail report                                          |
+|---|---------------------------|------------------------|----------------------------------|---------|---------------------------------------------------------|
+| 1 | `Foo.bar`                | Foo/Bar.lean:42        | YES-add-as-is                    | n/a     | `.mathlib-quality/overview/mathlibable/Foo.bar.md`     |
+| 2 | `Foo.helper`             | Foo/Bar.lean:67        | NO-composable-from-mathlib       | n/a     | `.../Foo.helper.md` (composition: `hf.add hg`)         |
+| 3 | `Bar.tricky`             | Foo/Bar.lean:115       | YES-but-generalise-first         | EXPENSIVE | `.../Bar.tricky.md` (modern-idiom: filter-ise)         |
+| 4 | `Bar._aux_step1`         | Foo/Bar.lean:130       | SKIP                             | n/a     | (name ends in `_aux` — pre-filtered)                    |
+| 5 | `Baz.complicatedSetup`   | Baz.lean:88            | NO-mathlib-has-it                | n/a     | `.../Baz.complicatedSetup.md` (= `Mathlib.X.y`)        |
+
+#### Summary
+- SKIP (pre-filter):                K0
+- YES-add-as-is:                     N1
+- YES-but-generalise-first:          N2
+- NO-mathlib-has-it:                 N3
+- NO-composable-from-mathlib:        N4
+- BORDERLINE-needs-human:            N5
+
+Total assessed: K0+N1+N2+N3+N4+N5 (full /mathlibable workflow runs: N1+N2+N3+N4+N5)
+```
+
+#### Step 9d — Per-bucket action lists
+
+The report's Recommended Action Plan (Priority 5) aggregates by verdict:
+
+```markdown
+### Mathlib contribution candidates (YES-add-as-is)
+- `Foo.bar` (Foo/Bar.lean:42) → open mathlib PR; target: `Mathlib/Foo/Bar.lean`
+- `Quux.zog` (Quux.lean:88) → open mathlib PR; target: `Mathlib/Quux.lean`
+- ... (N1 total)
+
+### Generalise-then-PR (YES-but-generalise-first)
+- `Bar.tricky` (Foo/Bar.lean:115) → run `/generalise Bar.tricky`; modern-idiom restatement filter-ises the sequence-version
+- ... (N2 total)
+
+### Delete + use mathlib directly (NO-mathlib-has-it)
+- `my_continuous_comp` → use `Continuous.comp`; update K call sites
+- ... (N3 total)
+
+### Delete + inline composition (NO-composable-from-mathlib)
+- `Foo.helper` → inline `hf.add hg` at the 4 call sites
+- ... (N4 total)
+
+### Open questions (BORDERLINE-needs-human)
+- `localZetaSum_chebotarev`: 3 questions (see `.../localZetaSum_chebotarev.md`)
+- ... (N5 total)
+```
+
+The per-decl detail reports in `.mathlib-quality/overview/mathlibable/` hold
+the full evidence (literature tables, generality analyses, mathlib-search
+results, composition sketches, verdict rationales). The user reviews those
+when acting on the recommendations.
+
+#### Why this is the most expensive step
+
+- N1+N2+N3+N4+N5 Agent dispatches, each running 10 phases of
+  `/mathlibable` including the nine-channel exhaustive literature search.
+- On a 50-decl project with K0=15 pre-filtered SKIPs: 35 Agent dispatches,
+  each minutes long → 2–4 hours typical, longer for projects rich in
+  unfamiliar mathematics.
+- The orchestrator is mostly idle during dispatches — leave the session
+  running; check back when the scoreboard reads `K/N` with K==N-K0.
+
+To opt out of this step (when you want a faster `/overview` for a draft
+view), pass `--skip-mathlibable` to `/overview`. The other 8 steps run as
+normal. To run only the mathlibable assessment without the rest of the
+overview, use `/mathlibable <file1.lean> <file2.lean> ...` directly.
+
+---
+
 ## Phase 3: Write Report
 
 Write the complete document to `PROJECT_OVERVIEW.md` with these sections:
@@ -437,6 +583,7 @@ Generated: [date]
 - Generalization opportunities: G
 - Missing API items: A
 - Junk declarations: J
+- Mathlibable assessment: N1 YES-add-as-is, N2 YES-but-generalise-first, N3 NO-mathlib-has-it, N4 NO-composable-from-mathlib, N5 BORDERLINE-needs-human, K0 pre-filtered SKIP
 
 ---
 
@@ -461,6 +608,12 @@ Generated: [date]
 ## Part 7: Junk / Removable
 [From Step 8 — with clear action items]
 
+## Part 8: Mathlibable Assessment
+[From Step 9 — per-decl verdict table from full `/mathlibable` runs,
+summary by bucket, per-bucket action lists. Per-decl detail reports
+live in `.mathlib-quality/overview/mathlibable/<decl>.md`.
+Skipped entirely if `--skip-mathlibable` was passed.]
+
 ---
 
 ## Recommended Action Plan
@@ -476,6 +629,12 @@ Generated: [date]
 
 ### Priority 4: Structural Changes (major refactoring)
 [Moral duplication unification, definition redesign]
+
+### Priority 5: Mathlib contributions (per Step 9 triage)
+- Top candidates (LIKELY-YES): [list]
+- Worth a `/mathlibable` run (WORTH-FULL-CHECK): [list, with file batches]
+- Once a verdict is reached: open mathlib PR / run `/generalise` / delete + reuse
+  (depending on the verdict bucket; see `/mathlibable` Phase 7)
 ```
 
 Print a summary to the conversation with the top 5 action items.

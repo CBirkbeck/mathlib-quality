@@ -17,7 +17,9 @@ thorough literature + mathlib search. Skipping the search produces wrong verdict
 ## Usage
 
 ```
-/mathlibable <Foo.bar>              # one declaration; full exhaustive workflow, no shortcuts
+/mathlibable <Foo.bar>                          # Mode A: one declaration; full 10-phase workflow
+/mathlibable <file.lean>                        # Mode B: every public decl in this file; orchestrator-worker
+/mathlibable <file1.lean> <file2.lean> ...      # Mode B: same, across multiple files
 ```
 
 There is no `--quick` flag and no `--exhaustive` flag. **Every invocation runs
@@ -25,6 +27,15 @@ the full exhaustive literature search.** Mathlib is Bourbaki 2.0 — adding the
 *right* declaration in the *right* form requires doing the thorough work every
 time. Producing a verdict in five minutes by skipping channels is exactly the
 failure mode this skill exists to prevent.
+
+**Mode B is slow by design.** Each public declaration in the file(s) gets its
+own full 10-phase workflow (one Agent per decl). On a 30-decl file with the
+exhaustive lit search, plan on hours. The orchestrator narrates a one-line
+scoreboard between dispatches so you can leave it running. If you only want
+to know *which* declarations are worth investing this kind of work in, run
+`/overview` first — its Step 9 mathlibable triage assigns each decl to
+`SKIP` / `LIKELY-NO` / `LIKELY-YES` / `WORTH-FULL-CHECK` based on cheap
+signals only.
 
 ## Prerequisites
 
@@ -725,6 +736,117 @@ phase order. Print to chat:
 
 <the bucket's recommended next action, verbatim from Phase 7>
 ```
+
+---
+
+## Mode B — File / multi-file (orchestrator-worker)
+
+When the argument is a `.lean` file (or multiple), `/mathlibable` enumerates
+every public declaration in the file(s), pre-filters obvious skips, then
+dispatches one `Agent` per remaining declaration, each running the full
+10-phase workflow.
+
+### B0 — Enumerate
+
+```bash
+find <files> -name "*.lean"   # (validate every arg exists)
+# For each file, list public def / abbrev / structure / inductive / class /
+# instance / theorem / lemma / proposition / corollary.
+# Skip: private / local; declarations in test/ or examples/; names ending _aux;
+# docstrings starting with "internal" or "auxiliary".
+```
+
+### B1 — Pre-filter (cheap, same rules as `/overview` Step 9a)
+
+For each enumerated declaration, run the cheap SKIP checks first:
+
+- `private` / `local` modifier
+- in `test/` or `examples/`
+- name ends in `_aux`
+- docstring starts with `internal` or `auxiliary`
+- the exact unqualified name already exists in mathlib (cheap grep over
+  `.lake/packages/mathlib/Mathlib/`)
+
+Record each pre-filtered decl in the verdict table with verdict `SKIP` and a
+one-line reason. They do NOT get a full Agent run.
+
+### B2 — Dispatch (sequential, one Agent per surviving decl)
+
+For each surviving declaration, dispatch:
+
+```
+Skill(skill="mathlib-quality:mathlibable", args="<Qualified.Decl.Name>")
+```
+
+**Sequential**, one decl at a time. Each Agent's WebSearch + ChatGPT MCP +
+nine-channel lit search is already heavy; running many in parallel doesn't
+help and contends on external rate limits.
+
+Between dispatches, the orchestrator emits exactly one line:
+
+```
+**K/N decls assessed. R YES-add-as-is, S YES-but-generalise, T NO-mathlib-has-it, U NO-composable, V BORDERLINE.** Continuing.
+```
+
+No "let me check / let me verify / quick sanity check" — those are the
+forbidden orchestrator patterns from `/cleanup-all`. The verdict is captured
+when the Agent returns; the orchestrator records and moves on.
+
+Each Agent's full Phase-8 report (with all artifacts: lit table, generality
+analysis, modern-idiom check, mathlib search, composition check, verdict
+rationale) is stored at
+`.mathlib-quality/mathlibable/<decl>.md` for later reference. The
+orchestrator only keeps the verdict bucket + one-line rationale in working
+memory.
+
+### B3 — Aggregate
+
+After all dispatches return, build the verdict table (same shape as
+`/overview` Step 9c) plus the per-bucket action lists (same shape as Step
+9d). Write the aggregated report to `MATHLIBABLE_REPORT.md` in the project
+root and print a summary to chat.
+
+### B4 — Summary output
+
+```
+## /mathlibable batch report — <files processed>
+
+### Files
+- File1.lean (N1 public decls)
+- File2.lean (N2 public decls)
+- ...
+
+### Totals
+- Public decls enumerated:           ∑Ni
+- Pre-filtered (SKIP):               K0
+- Full /mathlibable runs:            ∑Ni − K0
+- Wall time:                          <H>h <M>m
+
+### Verdict counts
+- YES-add-as-is:                     V1
+- YES-but-generalise-first:          V2
+- NO-mathlib-has-it:                 V3
+- NO-composable-from-mathlib:        V4
+- BORDERLINE-needs-human:            V5
+
+### Per-bucket action lists
+[same shape as /overview Step 9d]
+
+Per-decl detail reports: .mathlib-quality/mathlibable/<decl>.md
+```
+
+### Mode B caveats
+
+- **No `--parallel` flag.** Sequential is intentional. Lit-search APIs rate-
+  limit; ChatGPT MCP serialises; the wall-time gain from parallelism is
+  small and the verdict noise from contended API rate-limiting is real.
+- **Resume on interruption.** If the orchestrator is interrupted mid-batch,
+  re-running on the same file set skips decls that already have a
+  `.mathlib-quality/mathlibable/<decl>.md` report — no double-work.
+- **Use this OR `/overview --skip-mathlibable` then `/mathlibable <files>`**.
+  The latter splits the overview-without-mathlibable from the mathlibable-
+  per-file work, useful when you want the structural overview first then
+  decide which files are worth the slow per-decl assessment.
 
 ---
 
