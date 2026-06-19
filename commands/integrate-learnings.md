@@ -74,8 +74,8 @@ Group validated entries by `pattern_tags`. Print the occurrence count:
 | Pattern (representative description)  | Occurrences | Sources                                   | Eligible for ref docs? (≥3) |
 |---------------------------------------|-------------|-------------------------------------------|------------------------------|
 | junk_def / inline_def                 | 4           | 2026-05-03_mathlib4, 2026-04-21_mathlib4  | yes                          |
-| splits_api / unary_predicate          | 3           | 2026-05-06 leanbridge bump (×3)           | yes                          |
-| review-meta-pattern                   | 1           | 2026-04-29 loefflerd                      | no — single source           |
+| splits_api / unary_predicate          | 3           | 2026-05-06 mathlib-bump session (×3)      | yes                          |
+| review-meta-pattern                   | 1           | 2026-04-29 community contribution         | no — single source           |
 ```
 
 The 3+ rule is the **consensus filter**. Below threshold, a single-source teaching

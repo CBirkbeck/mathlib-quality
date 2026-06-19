@@ -410,8 +410,6 @@ The rewrite is purely syntactic — `a ≥ b` and `b ≤ a` are notational equiv
 the gate is about *uniformity across mathlib* so downstream consumers can rely on the
 convention (e.g. `simp` lemmas that match on `_ ≤ _` won't fire on `_ ≥ _`).
 
-Source: chebotarev-density learning, 2026-06-02
-(`data/community_learnings/archived/2026-06-02_chebotarev-density.jsonl`).
 
 ## Mathlib-First Principle
 
@@ -829,7 +827,6 @@ form (not via dot-notation on a subject), which matches typical downstream usage
 for a deprecation alias.
 
 This applies to any PR that moves or renames declarations downstream code might import.
-[loefflerd review of mathlib4 #38806]
 
 ### Moving a file: TWO PRs, no shim in the move PR
 
@@ -863,7 +860,6 @@ old path defeats the heuristic — Git treats the new file as freshly created, a
 detection in PR 1, downstream-friendly deprecation in PR 2. Tedious but worth it for the
 permanent history.
 
-[loefflerd review of mathlib4 #38806]
 
 ## Error Messages
 

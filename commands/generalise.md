@@ -261,6 +261,72 @@ Use the five-method search from `mathlib-search.md` to look for an *existing* ge
 mathlib version. If mathlib already has a more general statement, the right action is
 usually to delete the local lemma and use mathlib's directly (per the six strict rules).
 
+### 5c.1. Inversion check (REQUIRED — the proof-outruns-the-statement diagnostic)
+
+Phases 4 and 5a–c frame the search as: *"can we weaken the hypotheses of THIS
+theorem?"* That frame has a blind spot — a theorem with **no hypotheses** has
+nothing to chew on, and structural variants get rejected as "a different
+statement". The skill never asks the **inverse** question:
+
+> *Is THIS theorem a corollary of a more abstract theorem whose proof would be
+> identical?*
+
+Equivalently: when the statement mentions a concrete named object (`E2`, `π`,
+a specific group, a specific topology) but the *proof body* doesn't really use
+that object after the first one or two unfolding rewrites, the proof is
+working with abstract properties the object happens to satisfy — and the
+right theorem is the abstract one, with the original as a one-line corollary.
+
+#### Adversarial diagnostic
+
+1. **Grep the proof body** for the named-object identifier (exclude the
+   statement line itself).
+2. **Count occurrences.** If the identifier appears in 0 or 1 lines after the
+   first `rw [<unfolding lemma>]`, the proof from that point forward is
+   working with abstractions only.
+3. **If the diagnostic fires**, the inversion succeeds: propose the abstract
+   restatement and frame the original as a corollary.
+
+Record one of:
+
+```
+### Inversion check — `decl_name`
+
+Named-object identifiers in the statement: <list, e.g., `E2`>
+Occurrences in proof body (excluding statement line): <K>
+First unfolding rewrite: <`rw [E2_eq_tsum_cexp]`, line N>
+Identifier after the unfolding: <appears in K' lines | "never">
+
+Verdict: INVERSION-FIRES | INVERSION-DOES-NOT-FIRE | NOT-APPLICABLE (n/a — statement has no concrete named object)
+
+If INVERSION-FIRES — proposed abstract restatement (REQUIRED):
+
+```lean
+-- abstract theorem (the real content)
+theorem <abstract_name> <abstract hypotheses> : <abstract conclusion> := ...
+-- original as one-line corollary
+theorem <original_name> : <original> :=
+  <abstract_name> <evidence the concrete witness satisfies the abstract hypotheses>
+```
+
+Cost of inverting: <CHEAP — proof transfers verbatim | MODERATE — proof needs adjustments
+for the abstract context | EXPENSIVE — proof needs new ideas for the abstract setting>
+```
+
+If the inversion fires, the verdict in Phase 6 is **big-needs-approval**
+regardless of the mechanical-weakening cost — restating against an abstract
+witness changes the statement, which is exactly what triggers Phase 8's
+user-approval gate.
+
+The inversion check is **mandatory**. NOT-APPLICABLE is a valid outcome but
+must be justified ("statement has no concrete named object" or "the named
+object's identifier appears throughout the proof").
+
+The same diagnostic appears as Q8 in `/mathlibable` Phase 4c
+(concrete-via-abstract); both skills exist to catch this class of theorem
+where the statement is statement-concrete but the proof body is
+content-abstract.
+
 ### 5d. Literature status block (REQUIRED ARTIFACT)
 
 ```

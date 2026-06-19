@@ -336,7 +336,79 @@ two mathlib calls directly. (The `∧` packaging is itself a small anti-pattern
 per `/cleanup` audit item 12 STRUCTURE: split conjunctions don't go in mathlib
 as combined statements when the components are separate mathlib facts.)
 
-### Case 5 — `BORDERLINE-needs-human`
+### Case 6 — `YES-but-generalise-first` (concrete-via-abstract: the proof betrays the right form)
+
+**User's declaration:**
+
+```lean
+/-- The Eisenstein series of weight 2 is bounded at the cusp i∞. -/
+theorem isBoundedAtImInfty_E2 : IsBoundedAtImInfty E2 := by
+  rw [E2_eq_tsum_cexp]
+  -- ... 30 lines of proof here, NEVER mentioning `E2` again ...
+  exact bounded_of_polynomial_growth ...
+```
+
+**Phase 3:** Boundedness at the cusp i∞ is a classical predicate for modular
+forms; the literature handles `E2` specifically because `E2` is the
+canonical weakly-holomorphic modular form (not a modular form proper). The
+statement-form for `E2` specifically is standard, but the literature ALSO
+contains the abstract criterion: any function with q-expansion
+$\sum a_n q^n$ where $a_n = O(n^k)$ for some $k$ and there are no negative-
+exponent terms is bounded at i∞. Folland, Diamond–Shurman.
+
+**Phase 4a-b:** statement-side analysis says MAXIMALLY GENERAL (the
+"`IsBoundedAtImInfty E2`" form matches the literature's E2-specific
+statement). Phase 4b alone would lead to YES-add-as-is.
+
+**Phase 4c Q8 (concrete-via-abstract) — fires.** Grep the proof body:
+the identifier `E2` appears in 0 lines after the first `rw
+[E2_eq_tsum_cexp]`. The proof from that point forward works with
+abstractions only: it never uses any specific property of `E2` beyond
+"has a q-expansion + polynomially-bounded coefficients + no negative
+exponents". Q8 fires → modern-idiom restatement proposed:
+
+```lean
+-- Abstract theorem (the real content)
+theorem isBoundedAtImInfty_of_polyBoundedCoeffs
+    (f : ℍ → ℂ) (hq : <has q-expansion>) (hpoly : <polynomially-bounded coeffs>)
+    (hnonneg : <no negative-exponent terms>) :
+    IsBoundedAtImInfty f := by
+  rw [show f = _ from hq]
+  -- ... the existing 30-line proof, transferred verbatim ...
+
+-- Original as one-line corollary
+theorem isBoundedAtImInfty_E2 : IsBoundedAtImInfty E2 :=
+  isBoundedAtImInfty_of_polyBoundedCoeffs E2
+    E2.hasQExpansion E2.coeffPolyBounded E2.noNegativeTerms
+```
+
+**Phase 5:** mathlib has neither `isBoundedAtImInfty_E2` nor the abstract
+`isBoundedAtImInfty_of_polyBoundedCoeffs`. The abstract form is genuinely
+new for mathlib; both versions would be additions.
+
+**Phase 6:** the original is the abstract form applied to `E2`; the
+composition is mathlib-internal (the existing `E2_eq_tsum_cexp`,
+`E2.coeffPolyBounded`, etc.). COMPOSABLE-FROM-ABSTRACT-VERSION.
+
+**Verdict:** `YES-but-generalise-first` with reason MODERN-IDIOM (Bourbaki
+2.0). Proposed restatement: ship the abstract `isBoundedAtImInfty_of_
+polyBoundedCoeffs` as the primary contribution; ship the original `_E2`
+as the one-line corollary. Mathlib downstream this enables: every weakly-
+holomorphic modular form, every Eisenstein series of higher weight, every
+modular function — all get the boundedness conclusion through the same
+abstract route, eliminating the need for per-witness boundedness proofs.
+
+Cost: CHEAP — the existing 30-line proof transfers verbatim to the
+abstract setting (since it didn't use anything `E2`-specific).
+
+**Why this case exists in the catalogue.** Statement-only Phase 4a-b would
+have said MAXIMALLY GENERAL — there's no typeclass to weaken, no hypothesis
+to drop, no obvious typeclass shift. The signal is in the proof body: the
+named-object identifier vanishes after the first unfolding. Q8 was added
+to Phase 4c explicitly to catch this class; `/generalise` got the same
+diagnostic as a mandatory inversion check in its Phase 5c.1.
+
+### Case 7 — `BORDERLINE-needs-human`
 
 **User's declaration:**
 
@@ -390,7 +462,7 @@ based on the answers:
 ## Mode B methodology (def-first + verdict inheritance + re-aim)
 
 Mode B batches assess many decls at once. Three rules from real-batch
-experience (Sphere-Packing-Lean `ForMathlib/`, 31 decls × 5 files):
+experience on a multi-decl, multi-file project:
 
 ### Def-first ordering
 

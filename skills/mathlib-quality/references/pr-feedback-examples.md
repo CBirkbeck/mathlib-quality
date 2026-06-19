@@ -366,10 +366,8 @@ lemma qExpansion_eq_qExpansion_discriminant_mul (f : ModularForm 𝒮ℒ k)
 **Feedback pattern:** "Looks like more API lemmas for X", "this should be a lemma
 about the underlying object", "can you state this for any ModularFormClass?".
 
-**Source:** [mathlib4#38993](https://github.com/leanprover-community/mathlib4/pull/38993)
-(reviewers: MichaelStollBayreuth, loefflerd). See
-`proof-patterns.md § Extract API Before Bulling Through Ugly Proofs` for the full
-list of signals.
+See `proof-patterns.md § Extract API Before Bulling Through Ugly Proofs` for
+the full list of signals.
 
 ### 6. Library Integration
 

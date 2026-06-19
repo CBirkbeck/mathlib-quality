@@ -103,7 +103,7 @@ Use the HEREDOC pattern (per project convention) so newlines render:
 git commit -m "$(cat <<'EOF'
 address PR feedback
 
-- rename wt_eq_zero → weight_eq_zero (loefflerd)
+- rename wt_eq_zero → weight_eq_zero (reviewer1)
 - inline single-use have h := bar in Foo.lean:60 (reviewer2)
 - add docstring to weightedSum (reviewer2)
 
@@ -213,9 +213,9 @@ After threading (top-level comments): 14
 
 | # | Author | Where | Severity | Category | Comment summary |
 |---|--------|-------|----------|----------|-----------------|
-| 1 | @loefflerd | Foo.lean:45 | 🔴 must-fix | golf | "This can be `simpa using h`" |
+| 1 | @reviewer1 | Foo.lean:45 | 🔴 must-fix | golf | "This can be `simpa using h`" |
 | 2 | @reviewer2 | Bar.lean:78 | 🔴 must-fix | naming | "Rename `wt_eq_zero` → `weight_eq_zero`" |
-| 3 | @loefflerd | Foo.lean:120 | 🟡 should-fix | api-design | "Should this be an instance?" |
+| 3 | @reviewer1 | Foo.lean:120 | 🟡 should-fix | api-design | "Should this be an instance?" |
 | 4 | @reviewer2 | (PR body) | 🟢 question | clarification | "Why prove this here vs in core mathlib?" |
 | ... |
 ```
@@ -257,12 +257,10 @@ Two reasons:
 1. **They cascade.** A new API lemma named for the underlying object (not the
    one-shot target) usually shortens 2–6 other proofs in the same file once
    extracted. Doing it after the golf pass means re-touching the same proofs twice.
-2. **The reviewer is making a teaching point, not a cosmetic one.** Reviewer
-   feedback from MichaelStollBayreuth and loefflerd on
-   [mathlib4#38993](https://github.com/leanprover-community/mathlib4/pull/38993)
-   explicitly framed this: *"it will be more efficient if you learn how to write
-   good Mathlib-ready code"* — meaning the request is about the *shape* of the
-   contribution, not the specific characters in the affected proof.
+2. **The reviewer is making a teaching point, not a cosmetic one.** Reviewers
+   on mathlib PRs flag this pattern explicitly — the request is about the
+   *shape* of the contribution, not the specific characters in the affected
+   proof.
 
 Before applying the fix, **grep all call sites of the underlying object** in the
 file (and adjacent files in the same area) so the new API is named for the broader
@@ -677,7 +675,7 @@ in Phase 4d rather than one bundled commit. Every commit still follows the
 conventions in "PR description, commit messages, dependencies" — short
 imperative subject, bullet body, Claude co-author footer. Commit subjects
 should reference the comment(s) addressed, e.g. `address naming feedback
-(loefflerd)`.
+(reviewer1)`.
 
 ### CI is intermittently flaky
 

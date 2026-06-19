@@ -598,8 +598,7 @@ remaining body is genuinely irreducible case-work.
 
 Mathlib convention: in Lean code, **every inequality is stated with the smaller side on the
 left** — `a ≤ b` and `a < b`, never `b ≥ a` or `b > a`. Lemma names follow the same
-orientation: `a_le_b`, not `b_ge_a`. Source: chebotarev-density learning
-(2026-06-02) — the previous audit didn't flag a `≥` and the bad orientation shipped.
+orientation: `a_le_b`, not `b_ge_a`.
 
 #### Scope
 
@@ -684,8 +683,6 @@ Concluded: <one of:>
 ```
 
 The API-extraction conclusion exists because reviewer feedback on real mathlib PRs
-(MichaelStollBayreuth and loefflerd on
-[mathlib4#38993](https://github.com/leanprover-community/mathlib4/pull/38993))
 flagged exactly this failure mode: a worker finishes the audit, finds no mathlib
 match, ships the ugly proof, and the reviewer asks "why isn't this a one-line
 consequence of an API lemma I can reuse elsewhere?" Naming the missing API up front

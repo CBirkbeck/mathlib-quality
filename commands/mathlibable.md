@@ -397,11 +397,59 @@ Ask each question explicitly. Each row needs an answer.
 |  5 | Does the literature treat a **vector-space / metric / field-specific** result that **mathlib's typeclass hierarchy** would weaken to modules / pseudometric / (semi)ring? | yes/no   | <if yes: the weakened-typeclass restatement>                                            | <scalar restriction/extension lemmas, full module API> |
 |  6 | Does the literature give a **1-categorical** statement that has a **higher-categorical or ∞-categorical** generalisation mathlib is moving toward? | yes/no   | <if yes: the higher-categorical statement>                                              | <future-proofs against the categorification effort> |
 |  7 | Does the result mention a **concrete index (ℕ, ℤ, ℝ)** that would generalise to **arbitrary additive groups / monoids / ordered structures**? | yes/no   | <if yes: the index-generalised form>                                                    | <unifies with the rest of the project's algebraic structure> |
+|  8 | **Concrete-via-abstract:** the statement mentions a concrete named object (`E2`, `π`, a specific group, …), but does the *proof body* use only abstract properties the named object happens to satisfy? (See "How to check Q8" below — adversarial diagnostic.) | yes/no   | <if yes: the abstract restatement, with the concrete result becoming a one-line corollary>                                            | <abstracts the result so other concrete witnesses can reuse the same proof> |
 ```
 
 Rows do not have to all be `yes`. Most decls will hit 1–3 of these at most.
 Rows that don't apply are answered `no` with a one-line reason (e.g., "this
 is a finite combinatorial identity; no topology to filter-ise").
+
+#### How to check Q8 — the concrete-via-abstract diagnostic
+
+A frequent failure mode that Q1–Q7 miss: the *statement* mentions a concrete
+named object (e.g. `E2`, `π`, a specific topology, a specific group), but
+the *proof body*, after one or two unfolding rewrites, never mentions that
+object again. From that point forward the proof is working purely with
+abstract properties — a q-expansion, summability, polynomial bounds,
+analyticity, the universal property — that other objects also have. The
+right form is the abstract theorem, with the concrete result as a one-line
+specialisation.
+
+**Adversarial diagnostic (run it explicitly for Q8):**
+
+1. Grep the proof body for the named-object identifier (exclude the
+   statement line itself).
+2. Count occurrences. If the identifier appears in **0 or 1 lines after the
+   first `rw [<unfolding lemma>]`**, the proof from that point forward is
+   working with abstractions only.
+3. If the diagnostic fires, Q8 is **yes**. Propose the abstract restatement
+   and frame the concrete result as a corollary:
+
+```lean
+-- Original (statement-concrete, proof-abstract)
+theorem isBoundedAtImInfty_E2 : IsBoundedAtImInfty E2 := by
+  rw [E2_eq_tsum_cexp]
+  -- ... proof here, never mentions E2 again ...
+
+-- Abstract restatement (the real content)
+theorem isBoundedAtImInfty_of_polyBoundedCoeffs
+    (f : ℍ → ℂ) (hq : <has q-expansion>) (hpoly : <polynomially-bounded coeffs>)
+    (hnonneg : <no negative-exponent terms>) :
+    IsBoundedAtImInfty f := ...
+
+-- Concrete result as one-line corollary
+theorem isBoundedAtImInfty_E2 : IsBoundedAtImInfty E2 :=
+  isBoundedAtImInfty_of_polyBoundedCoeffs E2 ⟨..⟩ ⟨..⟩ ⟨..⟩
+```
+
+Q8 firing biases Phase 7 strongly toward `YES-but-generalise-first` with
+reason `MODERN-IDIOM` (or sometimes `LITERATURE-WEAKENING` if the abstract
+form is well-known in the literature). The "modernisation" is the
+abstraction of the witness, not just the typeclass shape.
+
+Q1–Q7 only inspect the statement; the diagnostic above inspects the proof
+body, which is where this class of "the statement is concrete but the
+content isn't" failure mode lives.
 
 ```
 ### Modern-idiom verdict (Phase 4c)

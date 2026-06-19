@@ -116,6 +116,71 @@ These almost always change the public API and need explicit approval:
 | Bundled → unbundled API | Splitting `Bijective` lemmas into `_injective` / `_surjective` halves |
 | Add a typeclass for what was a hypothesis | `(h : ∀ x ∈ S, ∃ ε > 0, …)` → `[DiscreteTopology S]` (also lives in `mathlib-search.md`) |
 
+## Inversion check: when the proof outruns the statement
+
+The catalogue above operates on the *statement* — typeclass weakenings,
+hypothesis drops, pointwise restatements. There is one important class of
+generalisation it misses: when the statement names a concrete object but the
+proof body, after the first one or two unfolding rewrites, never mentions
+that object again. The real content is an abstract theorem about whichever
+properties the concrete object happens to satisfy; the concrete version is
+a one-line corollary.
+
+`/generalise` Phase 5c.1 (mandatory inversion check) and `/mathlibable` Phase
+4c Q8 (concrete-via-abstract) both run the same diagnostic.
+
+### The adversarial diagnostic
+
+1. **Grep the proof body** for every named-object identifier in the
+   statement (exclude the statement line itself).
+2. **Count occurrences.** If a named identifier appears in 0 or 1 lines
+   after the first `rw [<unfolding lemma>]`, the proof from that point
+   forward is working with abstractions only.
+3. **If the diagnostic fires**: propose the abstract restatement; the
+   original becomes a one-line corollary.
+
+### Pattern
+
+```lean
+-- Original (statement-concrete, proof-abstract)
+theorem foo_bar : <P concrete_witness> := by
+  rw [<concrete_witness>_unfolding]
+  -- ... proof here, never mentions `concrete_witness` again ...
+
+-- Abstract restatement (the real content)
+theorem foo_bar_of_abstract
+    (x : <abstract type>) (h1 : <abstract hyp>) (h2 : <abstract hyp>) :
+    <P x> := by
+  rw [<abstract unfolding>]
+  -- ... the same proof, transferred verbatim ...
+
+-- Original as one-line corollary
+theorem foo_bar : <P concrete_witness> :=
+  foo_bar_of_abstract concrete_witness <evidence h1> <evidence h2>
+```
+
+### When the diagnostic does NOT fire
+
+- The named-object identifier really does appear throughout the proof —
+  the proof uses specific properties peculiar to that object.
+- The "abstract" version would require hypotheses no other object actually
+  satisfies — the concrete version is the abstract version (a generality
+  of one).
+- The statement has no concrete named object (purely typeclass-parametric
+  from the start).
+
+In any of these cases, record NOT-APPLICABLE with the reason — but record
+it; the inversion check is mandatory.
+
+### Why this is different from the typeclass-weakening table
+
+The catalogue tables ask "can this hypothesis be weaker?" The inversion
+check asks "is this theorem a corollary of a more general one whose proof
+would be the same?" Theorems with no hypotheses (the catalogue cannot
+weaken nothing) are exactly where the inversion check is most useful —
+the right generalisation is restatement against an abstract witness, not
+hypothesis weakening.
+
 ## Adding to this catalogue
 
 When `/generalise` finds a weakening that isn't here, record it via `/teach` or a learnings

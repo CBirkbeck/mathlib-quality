@@ -325,6 +325,133 @@ Run `lean_diagnostic_messages` on the full file. Fix any remaining issues.
 
 ---
 
+## Pass 3.5: Helper Hygiene (REQUIRED before any PR)
+
+**Mechanically-extracted helpers inherit the ambient context of the proof they
+came from.** Sections, typeclasses, whole-family hypotheses, the parent theorem's
+docstring framing, brittle inline reshapes — none of these were stated *for the
+helper*, they came along for the ride. Reviewers catch every one of them. A
+pre-PR `/cleanup` curates each helper to the minimum its own statement needs;
+running this before opening the PR avoids the review round-trip.
+
+For every newly extracted helper, run the five-item curation check below.
+
+### 3.5.1 — Generality (drop unused inherited context)
+
+The helper is now its own declaration; it doesn't get the parent section's
+typeclasses by default — but if you copy-pasted from the parent's signature,
+unused ones came with the helper. Audit per parameter:
+
+- **Drop unused typeclasses.** `[Finite ι]` inherited from the ambient section
+  but never used in the helper's proof → delete.
+- **Turn `∀`-family hypotheses into pointwise.** `(hcop : ∀ i, ¬ (p : ℤ) ∣ d i)`
+  when the proof only uses `hcop i` for one specific `i` → restate as
+  `{i : ι} (hcop_i : ¬ (p : ℤ) ∣ d i)`. The pointwise form is strictly weaker
+  and makes the helper easier to apply at call sites.
+
+Per helper, fill in:
+
+```
+| Inherited param                 | Used in proof? | Action            |
+|---------------------------------|----------------|-------------------|
+| `[Finite ι]`                   | no             | DROP              |
+| `(hcop : ∀ i, ¬ (p : ℤ) ∣ d i)` | only at `i = i_0` | POINTWISE  |
+| `[IsGalois ℚ K]`                | yes (1 site)   | keep              |
+```
+
+### 3.5.2 — Real-name encoding (use mathlib's object names, name the criterion)
+
+Helper names from mechanical extraction often abbreviate the mathlib object
+(`legendre` instead of `legendreSym`) or describe a vague property
+(`split_lemma`) rather than the actual mathematical criterion.
+
+- Use the **real mathlib object name**. `legendreSym`, not `legendre`. `qExpansion`,
+  not `q`. `Module.rank`, not `dim`. Grep mathlib for the exact name.
+- Encode the **actual hypothesis/criterion** in the helper name, not a vague
+  label.
+
+```lean
+-- Bad: vague label, wrong object name
+private theorem legendre_eq_one_of_complete_split ...
+
+-- Good: mathlib object name + the actual criterion that delivers the conclusion
+private theorem legendreSym_eq_one_of_ncard_primesOver_eq_finrank ...
+```
+
+### 3.5.3 — Placement (move generic infrastructure to generic files)
+
+A helper extracted because the parent's proof needed it doesn't automatically
+belong in the parent's file. If the helper is generic infrastructure (e.g. it
+talks about `Ideal` / `IsGalois` / `primesOver` / abstract typeclasses without
+mentioning the parent's specific concept), **move it to the appropriate generic
+file as a public lemma** rather than leaving it `private` next to the specialised
+parent.
+
+Per helper, answer:
+- Is this helper specific to the parent's concept (e.g. multiquadratic-splitting-
+  specific machinery)? → keep `private` here.
+- Or is it a generic fact about the underlying structures? → move to the
+  appropriate generic file (find the analogous mathlib location) and make
+  `public`. Update imports.
+
+### 3.5.4 — Statement-level docstrings (proof narration goes inside)
+
+Helper docstrings describe the statement, not the proof. Move proof narration
+into `--` comments inside the proof body.
+
+```lean
+-- Bad: docstring narrates the proof
+/-- Helper for the splitting law: we apply the orbit-stabiliser lemma to the
+prime ideal Q, then use the fact that the Galois group acts transitively on
+the primes over `(p)`, and conclude by counting. -/
+private lemma legendreSym_eq_one_of_... ...
+
+-- Good: docstring describes the statement; narrative inside
+/-- `legendreSym p (d i) = 1` when `p` splits completely in `K`. -/
+private lemma legendreSym_eq_one_of_... ... := by
+  -- Orbit-stabiliser on Q; transitive Galois action on primesOver (p); count.
+  ...
+```
+
+### 3.5.5 — Document brittle inherited steps
+
+When the helper's proof has a step that depends on a definitional equality,
+a `fun _ => rfl` defeq across a wrapper, a `show … by ring` reshape, or any
+other "this is fragile if mathlib changes the unfolding" step, add a one-line
+comment explaining what's brittle and why. This isn't proof narration (the
+docstring rule above) — it's a maintenance warning for the next person who
+touches it.
+
+```lean
+private lemma foo ... := by
+  -- BRITTLE: the `show … by ring` reshape depends on `Foo.bar` unfolding to a
+  -- specific normal form; if `Foo.bar` is restated, this needs updating.
+  show ... by ring
+  ...
+```
+
+### 3.5.6 — Curation report (REQUIRED ARTIFACT)
+
+After the per-helper check, print:
+
+```
+### Helper hygiene curation report
+
+For each extracted helper:
+
+| # | Helper name (final)                                  | Generality drops          | Renamed from               | Moved to file              | Brittle steps |
+|---|------------------------------------------------------|---------------------------|-----------------------------|----------------------------|---------------|
+| 1 | `legendreSym_eq_one_of_ncard_primesOver_eq_finrank` | dropped `[Finite ι]`; `∀ i, hcop` → pointwise | `legendre_eq_one_of_complete_split` | (same — specific) | none |
+| 2 | `nucleusAtPrime_smul_aux`                           | (none)                    | (no rename)                 | moved to `Algebra/NumberTheory/Generic.lean` | 1 (documented) |
+| ...                                                                                                                                                                                       |
+```
+
+Each `Generality drops` cell must be either "(none)" with a one-line reason or
+the concrete list of dropped/weakened parameters. A row that reads "(none)"
+with no reason is a defect — re-run 3.5.1 for that helper.
+
+---
+
 ## Core Rules
 
 ### Structural Rules (MANDATORY — apply regardless of proof length)

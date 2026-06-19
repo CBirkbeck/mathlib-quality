@@ -96,8 +96,8 @@ user can answer them together. Use the `AskUserQuestion` tool when available.
 4. **Burning questions.** What specific questions does the user already want answered? Get
    the user's actual list — don't synthesise, don't paraphrase. We'll add agent-surfaced
    questions in Phase 5.
-5. **Notation preferences.** Any conventions the reviewer expects? (E.g., "loefflerd
-   prefers `q = e^{2πi z}` written `𝕢 z`"; "use Tate's convention for L-functions".)
+5. **Notation preferences.** Any conventions the reviewer expects? (E.g.,
+   "use `q = e^{2πi z}` written `𝕢 z`"; "use Tate's convention for L-functions".)
 6. **Length budget.** Cap or open-ended? Default: as long as needed.
 
 Print the answers back so the user can correct them, then proceed.
@@ -631,8 +631,8 @@ If multiple are pending: ask the user which one this reply is for. Print a short
 
 ```
 There are 2 pending briefs:
-  [1] 2026-04-22  audience: "loefflerd"  goal: "specific blocker on descent argument"
-  [2] 2026-05-06  audience: "advisor"     goal: "soundness check on definitions"
+  [1] 2026-04-22  audience: "mathlib reviewer"  goal: "specific blocker on descent argument"
+  [2] 2026-05-06  audience: "advisor"            goal: "soundness check on definitions"
 Which is this reply for? (1, 2, or `c` to cancel)
 ```
 

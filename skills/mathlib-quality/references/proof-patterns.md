@@ -298,9 +298,6 @@ exact foo
 
 ## Extract API Before Bulling Through Ugly Proofs
 
-**Source:** reviewer feedback from MichaelStollBayreuth and loefflerd on
-[mathlib4#38993](https://github.com/leanprover-community/mathlib4/pull/38993).
-
 When a target proof is more than ~3 ugly lines, or requires structural massaging,
 **that is itself a signal that API is missing**. Stop, name the missing API in one
 sentence, add it as a public lemma (with `@[simp]` if applicable), then retry the
