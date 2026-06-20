@@ -59,7 +59,7 @@ Each verdict requires its own evidence trail. The Phase 7 verdict block is
 | Bucket | When it fires | Required evidence |
 |---|---|---|
 | `YES-add-as-is` | Literature confirms standard form; the user's Lean form matches it at the right generality; mathlib doesn't have it; composition from mathlib primitives doesn't trivially give it; if it's a one-liner, an exemption from Phase 2b applies; if it's a `def`/`class`/`instance`, Phase 4.5 risk is at most LOW (or each HIGH row is explicitly addressed) | Phase 3 lit table (≥3 channels) + Phase 4 generality analysis ("current form = literature-standard") + Phase 4.5 risk verdict (n/a or NONE/LOW; or HIGH explicitly addressed) + Phase 5 mathlib search (no hit) + Phase 6 composition check (non-trivial) |
-| `YES-but-generalise-first` | Literature confirms a strictly more general statement is standard; the user's form is a specialisation; restating in the general form is reasonable | Phase 3 lit table identifying the general form + Phase 4 generality analysis with specific weakenings proposed + Phase 5 mathlib search (no hit on either form) |
+| `YES-but-generalise-first` | Literature confirms a strictly more general statement is standard; the user's form is a specialisation; restating in the general form is reasonable AND **mechanically reachable** (Phase 4 verified the weakening actually compiles, not just "looks droppable"). | Phase 3 lit table identifying the general form + Phase 4 generality analysis with a specific named hypothesis/typeclass to drop AND a successful mechanical-weakening verification (`lean_diagnostic_messages` clean after the weakening) + Phase 5 mathlib search (no hit on either form). "Literature standard is more general" / "looks specialised" is NOT sufficient by itself. |
 | `NO-mathlib-has-it` | Mathlib already has the result (or a more general one we'd specialise from) | Phase 5 mathlib search citing the existing decl by qualified name + the user's form follows from it in ≤1 line (proof sketch shown) |
 | `NO-composable-from-mathlib` | Mathlib has the *building blocks*, not the exact form, but the form is a 1–3 mathlib-call composition. No new lemma needed — inline at call sites | Phase 5 mathlib search citing the building blocks + Phase 6 composition sketch ≤3 lines |
 | `BORDERLINE-needs-human` | The verdict depends on a judgment call the skill can't make alone (mathematical taste, project policy, audience-narrow result, etc.) | All other phases complete + a numbered list of concrete questions for the user (≤5 questions, each answerable yes/no or with a short response) |
@@ -356,6 +356,18 @@ the most general form Phase 3 identified.
 
 ```
 ### Generality verdict (Phase 4b)
+
+**Verified weakening is mandatory before claiming STRICTLY NARROWER.** For
+every hypothesis/typeclass you propose dropping or weakening, you MUST
+apply the change and run `lean_diagnostic_messages` to confirm the proof
+still compiles. A proposed weakening that the proof actually depends on
+is not a weakening — it's a guess that would loop a downstream
+`/generalise` ticket forever.
+
+If no proposed weakening verifies clean → the form is **MAXIMALLY
+GENERAL** even if it looks specialised. The right verdict is then
+`YES-add-as-is` / `NO-mathlib-has-it` / `NO-composable-from-mathlib` /
+`BORDERLINE`, not `YES-but-generalise-first`.
 
 The current form is: MAXIMALLY GENERAL | STRICTLY NARROWER THAN STANDARD
 Number of weakening opportunities found: K
@@ -817,6 +829,30 @@ The verdict block FAILS if:
 - The bucket is YES-but-generalise-first but no proposed restatement is given,
   OR the proposed restatement does not match the literature-standard / modern-
   idiom target from Phase 4b / 4c.
+- The bucket is YES-but-generalise-first but Phase 4b's verified-weakening
+  step did not actually succeed — i.e. the worker proposed dropping a
+  hypothesis but did not run `lean_diagnostic_messages` after the drop,
+  or the drop broke the proof. "Looks droppable" is not evidence of
+  generalisability; the proof must compile under the weakening. Five
+  classes of false positive this catches (see
+  `references/mathlibable-verdicts.md § False-positive routing`):
+  1. **Already maximally general** — every hypothesis used (`[CommRing R]`
+     with subtraction in the proof; cannot weaken to `[CommSemiring R]`).
+     Route to YES-add-as-is or NO-composable-from-mathlib.
+  2. **Concrete, no type variable** — a specific object (`ℤ_[p]`,
+     `MyTheorem` about a named function). "Generalising" means
+     re-developing machinery, not weakening hypotheses. Not
+     generalise-first.
+  3. **All instance hypotheses used** — `[CompleteSpace L]` is needed for
+     series convergence; nothing to drop. Same routing as class 1.
+  4. **General form already in mathlib** — the user's decl is a
+     specialisation of an existing mathlib decl. Route to
+     `NO-mathlib-has-it`.
+  5. **Real but not a single mechanical edit** — generalising would mean
+     restating a foundational def threaded through the development, or
+     touching multiple files. Route to `BORDERLINE-needs-human` with a
+     dev-ticket-style question — generalise-first implies a single
+     mechanical edit, which this isn't.
 - The bucket is YES-but-generalise-first with reason MODERN-IDIOM but the
   rationale section lists no concrete mathlib downstream consequences (the
   "looks cooler in category theory" trap — Phase 7 requires real downstream

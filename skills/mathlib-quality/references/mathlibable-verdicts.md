@@ -532,6 +532,98 @@ fails the verdict gate.
 
 ---
 
+## False-positive routing — `YES-but-generalise-first` is the most over-produced verdict
+
+`YES-but-generalise-first` is the canonical false-positive verdict in
+batch `/mathlibable` runs. The worker sees a declaration that *looks*
+over-specialised — stated over a type variable, carrying typeclasses
+that *look* droppable, narrower than the literature-standard form — and
+fires the verdict without checking whether the generalisation is actually
+mechanically reachable. At scale this floods downstream `/generalise`
+tickets with un-actionable guesses that loop forever.
+
+The Phase 7 verdict gate requires **positive evidence**: name the specific
+hypothesis/typeclass to drop AND show the Phase-4 mechanical-weakening
+attempt actually compiled. "Literature standard is more general" /
+"looks specialised" is not sufficient.
+
+Five concrete false-positive classes the worker must route correctly
+instead:
+
+### Class 1 — Already maximally general
+
+Every hypothesis is essentially used by the proof. The classic example:
+`[CommRing R]` with subtraction in the proof body cannot weaken to
+`[CommSemiring R]` (no subtraction available); `[CommRing R]` IS the
+floor. Whole clusters of structurally similar lemmas often fall here
+(e.g. an EDS-style cluster of ~13 lemmas all over the same `[CommRing R]`
+floor — none are generalise-first candidates).
+
+Route to `YES-add-as-is` if mathlib lacks the result, or
+`NO-composable-from-mathlib` if it composes from mathlib primitives.
+**Never** route to `YES-but-generalise-first` just because the floor
+typeclass looks restrictive — verify the proof actually uses it before
+calling it "narrower".
+
+### Class 2 — Concrete object, no type variable
+
+The decl is about a specific named object (`ℤ_[p]`, `Real.pi`, a named
+function). "Generalising" here would mean re-developing the same
+machinery for another concrete object — that's a development effort, not
+a single mechanical edit. The result is not generalise-first.
+
+Route to the appropriate non-generalise bucket based on the mathlib
+search: `YES-add-as-is` if novel, `NO-mathlib-has-it` if mathlib has
+it, etc.
+
+### Class 3 — All instance hypotheses used
+
+A `[CompleteSpace L]` needed for series convergence. A `[Fact p.Prime]`
+needed to invoke the `ZMod` field structure. A `[NumberField K]` needed
+for the regulator construction. None of these are droppable — the proof
+uses them essentially. Same as class 1: nothing to drop.
+
+### Class 4 — General form already in mathlib
+
+The user's decl is a specialisation of an existing mathlib decl. (E.g.,
+`isUnit_two_padicInt` is the `n = 2` case of `PadicInt.isUnit_natCast_of_not_dvd`.)
+Mathlib has the general form; the user's specialisation is redundant.
+
+Route to `NO-mathlib-has-it`, citing the existing mathlib decl + showing
+how the user's form follows in ≤1 line.
+
+### Class 5 — Real but not a single mechanical edit
+
+The generalisation IS real (a more general form would be valuable; the
+literature has it; the proof could in principle adapt) — but it's not a
+single hypothesis-weakening edit. It involves restating a foundational
+definition threaded through the entire development, or touching multiple
+files, or rebuilding API around a different abstract structure.
+
+`YES-but-generalise-first` is the verdict for one-edit weakenings the
+downstream `/generalise` skill can mechanically apply. Multi-file
+refactors are a different size of work — route to
+`BORDERLINE-needs-human` with a dev-ticket-style numbered question
+("This would be more general as X over `[CompositeStructure]`, but the
+change threads through 7 files and changes 3 public signatures. Worth a
+dev project, or ship as-is?").
+
+### How to choose the right bucket fast
+
+| Looks generalise-first because… | But really… | Route to |
+|---|---|---|
+| Stated over a type variable that *seems* restrictive | Phase-4 mechanical drop fails (proof uses it) | YES-add-as-is / NO-composable |
+| About a concrete named object | Not a type-variable weakening at all | NO-mathlib-has-it / YES-add-as-is |
+| Carries instance hypotheses | All used essentially | YES-add-as-is / NO-composable |
+| Literature has a more general form | Mathlib already has it | NO-mathlib-has-it |
+| The generalisation is real but big | Multi-file refactor, not a single edit | BORDERLINE-needs-human |
+
+The verdict `YES-but-generalise-first` is reserved for the case where
+Phase 4 produced a specific named hypothesis to drop AND verified the
+drop compiles. Everything else routes elsewhere.
+
+---
+
 ## Anti-patterns when synthesising
 
 ### "I searched and didn't find it" without an artifact
