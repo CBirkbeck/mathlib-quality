@@ -303,7 +303,27 @@ min_le_left, min_le_right, le_min
 
 ## Instance Naming
 
-### Standard Pattern: `inst` + TypeClass + Type
+### Prefer anonymous instances — name only when referenced
+
+Lean auto-generates a name for every `instance`, so **do NOT give an instance an explicit name
+unless it is referred to by name elsewhere** — e.g. it is combined in a later
+`{ SomeInstance with … }` extension, or targeted by an `attribute` / `@[…]` that needs the name.
+An instance that is only ever found by typeclass resolution should stay anonymous; an explicit
+name there is noise and against mathlib convention. `/cleanup` should strip such names.
+
+```lean
+-- Good: found only by resolution → leave anonymous
+instance (P : HeckePair G) (Z : Type*) [Zero Z] : FunLike (𝕋 P Z) (HeckeCoset P) Z := …
+noncomputable instance (P : HeckePair G) : DecidableEq (HeckeCoset P) := Classical.decEq _
+
+-- Good: named ONLY because a later instance extends it by name
+instance instAddCommGroupHeckeRing (P : HeckePair G) (R : Type*) [AddCommGroup R] :
+    AddCommGroup (𝕋 P R) := …
+noncomputable instance : NonUnitalNonAssocSemiring (𝕋 P R) :=
+  { instAddCommGroupHeckeRing P R with … }
+```
+
+### Naming pattern (when a name IS needed): `inst` + TypeClass + Type
 ```lean
 instance instAddCommMonoidNat : AddCommMonoid Nat := ...
 instance instRingInt : Ring Int := ...
