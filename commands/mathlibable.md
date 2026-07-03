@@ -410,6 +410,7 @@ Ask each question explicitly. Each row needs an answer.
 |  6 | Does the literature give a **1-categorical** statement that has a **higher-categorical or ∞-categorical** generalisation mathlib is moving toward? | yes/no   | <if yes: the higher-categorical statement>                                              | <future-proofs against the categorification effort> |
 |  7 | Does the result mention a **concrete index (ℕ, ℤ, ℝ)** that would generalise to **arbitrary additive groups / monoids / ordered structures**? | yes/no   | <if yes: the index-generalised form>                                                    | <unifies with the rest of the project's algebraic structure> |
 |  8 | **Concrete-via-abstract:** the statement mentions a concrete named object (`E2`, `π`, a specific group, …), but does the *proof body* use only abstract properties the named object happens to satisfy? (See "How to check Q8" below — adversarial diagnostic.) | yes/no   | <if yes: the abstract restatement, with the concrete result becoming a one-line corollary>                                            | <abstracts the result so other concrete witnesses can reuse the same proof> |
+|  9 | **False-generalisation guard.** Any proposed generalisation from Q1–Q8 must preserve the mathematical content of the original. Would the "generalised" form actually be the *same mathematical object* — or would it be a different one that happens to share a symbol? (Canonical failure: "generalising" `ModuleCat` to `AddCommMonoid` — the resulting def is the wrong category.) | yes/no   | <if no false-generalisation: the proposal from Q1–Q8 stands. If yes false-generalisation: the proposal is rejected; document why the widening changes meaning>                                            | <safeguards against ship-then-revert cycles> |
 ```
 
 Rows do not have to all be `yes`. Most decls will hit 1–3 of these at most.
@@ -488,6 +489,60 @@ If Phase 4c says "modern idiom available", Phase 7 may produce
 `YES-but-generalise-first` even when Phase 4b said MAXIMALLY GENERAL —
 because the "generalise first" target is the contemporary mathlib form,
 not the classical literature one.
+
+---
+
+## PHASE 4.6 — Proof strategy optimality (mandatory)
+
+Yang's six-stage review framework (Stage 3): *is the proof strategy
+optimal mathematically?* — read from
+`references/mathlib-review-stages.md` before this phase.
+
+Not every proof arrived at through a specific development is the shape
+the shipped proof should have. The mathlib bar is:
+
+> **The shortest path modulo what SHOULD be in mathlib, not modulo what
+> IS currently in mathlib.**
+
+If the current proof would be shorter given API that mathlib doesn't
+have yet, the API gap is itself a mathlib contribution — file it as a
+separate PR / dev-ticket. Don't route around it.
+
+### 4.6a. Idiom check (REQUIRED ARTIFACT)
+
+```
+### Proof strategy — `<Foo.bar>`
+
+| # | Question                                                                                              | Applies? | Idiomatic alternative | Cost of switch |
+|---|-------------------------------------------------------------------------------------------------------|----------|------------------------|----------------|
+| 1 | Topology proof — does it argue with ε-δ / explicit neighbourhoods where filters would compose?        | yes/no   | filter-based restatement | CHEAP / MODERATE / EXPENSIVE |
+| 2 | Algebra proof — does it argue about elements where ideal/submodule/subring inclusions would abstract? | yes/no   | point-free restatement   | ... |
+| 3 | Analysis proof — does it argue with sequences where nets or filter-limits would generalise?           | yes/no   | net / filter restatement | ... |
+| 4 | Category-theory proof — does it construct an object where a universal property would characterise?    | yes/no   | universal-property proof | ... |
+| 5 | Does the current proof need helper lemmas that mathlib SHOULD have but doesn't?                       | yes/no   | list the missing helpers | (file follow-up PR) |
+```
+
+### 4.6b. Verdict (REQUIRED ARTIFACT)
+
+```
+### Proof strategy verdict (Phase 4.6)
+
+Current strategy: MATHLIB-IDIOMATIC | REFACTOR-RECOMMENDED
+If REFACTOR-RECOMMENDED:
+  - Proposed strategy: <one-line summary>
+  - Cost: <CHEAP | MODERATE | EXPENSIVE>
+  - Missing mathlib API (if any): <list>
+  - Would refactoring make the proof strictly shorter / cleaner? yes / no
+```
+
+If MATHLIB-IDIOMATIC → Phase 7 proceeds unchanged. If REFACTOR-
+RECOMMENDED → Phase 7's rationale must note the strategy proposal (for
+YES verdicts, the proof should be refactored before the PR; for NO
+verdicts, the alternative is noted for the follow-up).
+
+Cost is still not a verdict factor. EXPENSIVE proof-strategy refactors
+are worth doing before the PR — a proof that argues with ε-δ where
+filters compose is a proof mathlib maintainers will ask to be rewritten.
 
 ---
 
@@ -595,6 +650,97 @@ the general form (modules, measurable functions, additive groups) even when
 the user's form is specific (vector spaces, continuous functions, real scalars).
 The general-form search catches NO-mathlib-has-it cases that the user's-form
 search would miss.
+
+---
+
+## PHASE 5.5 — Statement shape (mandatory)
+
+Yang's Stage 5: *are the results stated correctly in Lean?* — a
+mathematical result has many syntactically-different Lean statements;
+pick the right one. Three sub-checks, each a required artifact.
+
+### 5.5a. Normal form
+
+Each mathematical idea should have one canonical form in mathlib. If a
+statement has n equivalent formalisms, mathlib wants O(n) equivalence
+lemmas `A ↔ X`, `B ↔ X`, `C ↔ X` (X the normal form) — not O(n²)
+lemmas `A ↔ B`, `A ↔ C`, `B ↔ C`. Because of how `simp` works,
+**the normal form usually goes on the RHS**.
+
+```
+### Normal-form check — `<Foo.bar>`
+
+Equivalent formalisms this statement could take: <list at least 2 if any exist>
+Does mathlib already have a canonical form for this idea? <yes / no + citation>
+
+If yes: is our statement stated against the canonical form?
+  - YES: our statement is either the canonical form itself, or `X ↔ our_form` where X is canonical → OK.
+  - NO: our statement is `our_form_A ↔ our_form_B` (an "orthogonal" equivalence) → REFACTOR: prove `our_form_X ↔ canonical_form` instead, delete our_form_A ↔ our_form_B.
+
+If no: name the canonical form we'd propose. Follow the RHS convention.
+
+RHS convention respected? yes / no
+```
+
+### 5.5b. Syntactic generality
+
+Even in the correct normal form, a mathematically-equivalent
+restatement is sometimes materially easier to apply at call sites.
+
+```
+### Syntactic generality — `<Foo.bar>`
+
+Alternative restatements attempted (list):
+- <restatement 1>
+- ...
+
+Chosen restatement: <the one that's easiest to apply>
+Justification: <one line — why is this easier to apply than the alternatives?>
+```
+
+The check is not "which is shortest" — it's "which is easiest to
+supply at call sites". A helper you had to bundle vs. an equality you
+can rewrite along may point at different restatements.
+
+### 5.5c. Superfluous arguments and typeclasses
+
+The linter catches most dead arguments. Subtle superfluous typeclasses
+survive it. Example: an equiv lemma stated with `[LocallyCompactSpace G]`
+when the *conclusion* would hold without local compactness — the
+typeclass is superfluous.
+
+```
+### Superfluous-argument audit — `<Foo.bar>`
+
+For every hypothesis and typeclass, does the proof / conclusion essentially need it?
+
+| # | Argument / typeclass                | Essentially used?  | Notes                                              |
+|---|-------------------------------------|--------------------|-----------------------------------------------------|
+| 1 | `[LocallyCompactSpace G]`          | no                 | drop; conclusion doesn't depend on local compactness |
+| 2 | `[MeasurableSpace G]`               | yes                | needed for the µ construction                        |
+| 3 | ...                                 | ...                | ...                                                 |
+```
+
+This is more than the linter's dead-argument check — it's about whether
+the *conclusion* would hold without the hypothesis, not just whether
+the syntactic proof term references it.
+
+### 5.5d. Statement-shape verdict (REQUIRED ARTIFACT)
+
+```
+### Statement-shape verdict (Phase 5.5)
+
+Normal form: OK / REFACTOR (state the target normal form)
+Syntactic generality: OK / RESTATE (proposed restatement)
+Superfluous arguments: NONE / K to drop (list them)
+
+Overall: SHIP-AS-STATED / RESTATE-BEFORE-SHIP
+```
+
+If RESTATE-BEFORE-SHIP → Phase 7's proposed restatement carries these
+changes into the YES verdict's next-action list. For NO verdicts, the
+statement-shape observations are noted so the user can act on the ones
+that matter locally.
 
 ---
 
@@ -776,6 +922,10 @@ For NO-mathlib-has-it:
       user's form follows directly (or how it specialises from a more general
       mathlib form). The detail must be enough that a refactor can be planned
       from this entry alone.
+  Belongs-elsewhere check (per Yang's Stage 1): if the result is worth
+  keeping somewhere but not in mathlib proper, name the alternative
+  destination (Archive/, CombinatorialGames, a downstream library, a
+  project-local file) with a one-line justification.
   Existing mathlib decl:        `<Mathlib.Qualified.Name>`
   Located at:                   `Mathlib/<Area>/<File>.lean:<line>`
   Our form follows in ≤1 line:
@@ -793,6 +943,8 @@ For NO-composable-from-mathlib:
     - Mathlib has the building blocks; the user's form is a 1-3 mathlib-call
       composition. Name the building blocks. The composition sketch below
       must be specific enough that inlining is mechanical.
+  Belongs-elsewhere check: same as NO-mathlib-has-it — if this result is
+  worth keeping somewhere despite the composition, name the destination.
   Mathlib building blocks:      <list of qualified names with full paths>
   Composition sketch (≤3 lines):
   ```lean
@@ -878,6 +1030,20 @@ The verdict block FAILS if:
   BORDERLINE question to the user, not a self-resolving verdict downgrade.
 - The Phase 6.0 call-sites table is missing or partial (one row per caller
   required; "internal use count" + "inline-derivation grep" fields filled).
+- The Phase 4.6 proof-strategy verdict is missing (the idiom check
+  table + verdict must have been produced).
+- The Phase 5.5 statement-shape verdict is missing (normal-form check,
+  syntactic-generality attempt, superfluous-argument audit all
+  required).
+- A YES verdict was issued but Phase 4c Q9 (false-generalisation guard)
+  said "yes false generalisation" on any proposal — the widening
+  changes mathematical meaning and cannot ship as-is; a proposal that
+  fails Q9 is rejected and Phase 7 must revert to the pre-widening
+  form or move to BORDERLINE with the semantic-mismatch question
+  surfaced.
+- A YES verdict was issued but Phase 5.5's overall verdict was
+  RESTATE-BEFORE-SHIP AND the rationale does not name the restatement
+  in the next-action list.
 - For YES verdicts: the bucket-specific WHY paragraph names no concrete
   mathlib gap / TODO / missing-API anchor (the "searched and didn't find it"
   trap — Phase 7 requires *naming the gap*, not just asserting absence).

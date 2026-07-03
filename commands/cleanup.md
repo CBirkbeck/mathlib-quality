@@ -412,7 +412,16 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
                    merge sequential `rw [a]; rw [b]` → `rw [a, b]`]
  9. COMMENTS      [strip ALL narrative `--` inside the proof]
 10. DOCSTRING     [public theorem/def → 1-sentence; private/aux → none;
-                   if missing on public, CREATE one — do not skip]
+                   if missing on public, CREATE one — do not skip.
+                   For non-trivial public results, docstrings should ALSO
+                   include: (a) tips-when-applying (context the raw type
+                   doesn't convey), (b) difference from similar-looking
+                   lemmas nearby. Reminder: readers of the docstring also
+                   see the statement — the docstring should ADD value, not
+                   paraphrase the type. Mathlib is under-documented; err
+                   on the "more documentation" side. See
+                   `references/mathlib-review-stages.md § Documentation
+                   depth`.]
 11. VISIBILITY    [only-used-in-file → private; helper → private + _aux]
 12. STRUCTURE     [HARD GATE (structure_gate, Step 5b) — proof length, ∧ in statement,
                    branches >10 lines. "Signature locked" is NOT a reason to skip
@@ -427,7 +436,12 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
 17. PUSH_NEG      [any remaining `push_neg`? → `push Not at h` (deprecated)]
 18. GENERALISE    [required: print the generalisation-status block — see Step 2.6 below.
                    Run the mechanical-weakening pass on EVERY hypothesis. Big-change
-                   candidates are flagged for Phase 5, not done here.]
+                   candidates are flagged for Phase 5, not done here.
+                   **Beware of false generalisations.** Not every widening is
+                   a generalisation; some produce a semantically-different
+                   object (e.g. `ModuleCat` → `AddCommMonoid`). Every
+                   proposed weakening must preserve the mathematical
+                   content, not just the elaboration.]
 19. INEQUALITY    [HARD GATE (inequality_orientation_gate, Step 5b) — REQUIRED ARTIFACT:
                    per-occurrence inequality scan table (see INEQUALITY procedure below).
                    In Lean code (statement + every hypothesis), every `≥` must be rewritten
@@ -435,6 +449,26 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
                    names containing `_ge_` or `_gt_` queue a rename for Phase 5b
                    (`a_ge_b` → `b_le_a`). Math prose in docstrings may keep `≥`/`>` if
                    that reads more naturally; the rule is about Lean code.]
+20. NORMAL-FORM   [Yang Stage 5: each mathematical idea has one canonical
+                   form in mathlib. If the statement has known equivalent
+                   forms, one of them is the RHS-normal canonical target;
+                   don't create O(n²) equivalence lemmas — prove
+                   `our_form ↔ canonical` instead. Print a normal-form
+                   status: identified canonical form / already in normal
+                   form / RESTATE-TO-NORMAL-FORM proposed. See
+                   `references/mathlib-review-stages.md § Normal forms`.]
+21. SYNTAX-GEN    [Yang Stage 5: is there a mathematically-equivalent
+                   restatement that is easier to APPLY at call sites?
+                   (Not shorter — easier. A bundled hypothesis you can
+                   `rw` along vs. a derived one you have to construct.)
+                   Print: OK / RESTATE proposed. See
+                   `references/mathlib-review-stages.md § Syntactic
+                   generality`.]
+22. IMPORT-FANOUT [Yang Stage 6: if this decl needs a new file-level
+                   import, check downstream fanout. Is the file being
+                   modified a leaf? Would a user importing this file
+                   expect the new import? Skip with `n/a` if no new
+                   imports were needed.]
 
 Issues to fix: [numbered list — every item has a concrete action]
 Refactoring needed: [cross-declaration changes; fed back to main agent for Phase 5a
