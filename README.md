@@ -2,7 +2,17 @@
 
 A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill plugin for developing, proving, cleaning up, and bringing Lean 4 code up to [mathlib](https://github.com/leanprover-community/mathlib4) standards.
 
-Built on **14,000+ real mathlib PR review comments** with **7,273 before/after code suggestions**, extracted into concrete golfing rules and quality principles.
+Twenty commands spanning the whole workflow: **plan → prove → cleanup → assess mathlib-fit → blueprint → PR**. Every workflow is methodical, phase-numbered, and gated (missing artifacts fail the step); mathematical judgement is enforced through required evidence rather than through post-hoc review.
+
+## Sibling: [`MQSlim`](https://github.com/CBirkbeck/MQSlim)
+
+A [parallel slim plugin](https://github.com/CBirkbeck/MQSlim) that shadows this
+one — same workflows, same load-bearing rails, restated in the "trust frontier-
+model judgement; minimal instructions" style Anthropic's skill-authoring guide
+explicitly recommends. Load both together and pick per task by typing `/cleanup`
+(verbose, gated) vs. `/clnup` (slim). MQSlim tests the hypothesis that
+frontier models produce better output when the prompts state the goal + the
+gates that catch real failures, and then get out of the way.
 
 ## What It Does
 
@@ -32,15 +42,44 @@ job.
 
 ### Clean Up Existing Code (`/cleanup`)
 
-Methodical 8-phase workflow for any Lean file. Replaces what used to be three commands (`/check-style`, `/check-mathlib`, plus the original `/cleanup`):
+Methodical **10-phase** workflow for any Lean file. Absorbed what were once three separate commands (`/check-style`, `/check-mathlib`, and the original `/cleanup`):
 
-- **Phase 0 — Doctor**: pre-flight `lake build` baseline check; aborts if the project doesn't currently compile (we can't tell what we broke without a clean baseline)
-- **Phase 2 — Style audit**: full numbered punch-list; what was the standalone `/check-style`
-- **Phase 3 — File-level fixes**: copyright + module docstring (CREATED if missing) + imports + subsection-divider strip + `set_option` removal + batched mechanical replacements
-- **Phase 4 — Per-declaration deep cleanup**: one worker per decl; **18-item audit** with required status blocks for golf rules (1.1 → 3.7), the **five-method mathlib search** (formerly `/check-mathlib`), and **inline `/generalise` mechanical pass** with literature search for public decls
-- **Phase 5 — Refactoring**: cross-declaration items (renames, junk-def inlining, mathlib replacements, big-change generalisations escalated to standalone `/generalise`)
-- **Phase 6 — Final verification**: file-level **gates** (definition_protected, theorem_statement_protected, lake_build_file, cumulative_no_unintended_breakage) — borrowed from [shouyi](https://github.com/frenzymath/shouyi)
-- One agent per declaration, deep focus on shortest proof; 60+ rules from `golfing-rules.md` and `proof-patterns.md` applied systematically (data-driven from 7,273 PR suggestions)
+- **Phase 0 — Doctor**: pre-flight `lake build` baseline check; aborts if the project doesn't currently compile.
+- **Phase 2 — Style audit**: full numbered punch-list (file-level + linter findings + per-declaration light scan). No fixes yet.
+- **Phase 3 — File-level fixes**: copyright + module docstring (CREATED if missing) + imports + subsection-divider strip + `set_option` removal + batched mechanical replacements (`λ` → `fun`, `$` → `<|`, `push_neg` → `push Not`, `haveI`/`letI` → anonymous `have`/`let`).
+- **Phase 4 — Per-declaration deep cleanup**: one dedicated agent per declaration, **sequential on the same file** (parallel workers silently clobber each other's edits). **22-item audit** with required status blocks: every golfing rule, the **five-method mathlib search** (with the six strict mathlib-replacement rules), the **inline mechanical generalisation pass**, plus specific checks including **normal-form**, **syntactic generality**, **superfluous-typeclass** audit (Yang Stage 5), **cast audit**, **instance-name audit**, and the **inequality orientation** check.
+- **Phase 5 — Refactoring (split into 5a + 5b)**. Phase-4 workers never rename in place — parallel workers race on shared call sites. They append to `.mathlib-quality/renames.jsonl`. **5a** applies non-rename cross-file refactoring; **5b** drains the rename queue with a repo-wide sequential pass.
+- **Phase 6 — Final verification + gates**: `definition_protected`, `theorem_statement_protected`, `lake_build_file`, `cumulative_no_unintended_breakage` — borrowed from [shouyi](https://github.com/frenzymath/shouyi) — plus the four hard **content gates** (`naming_gate`, `line_packing_gate` with per-line arithmetic check, `structure_gate`, `inequality_orientation_gate`).
+- **Phase 6.5 — Simplify pass**: hand off to the built-in `/simplify` skill for a holistic sweep; re-run gates if it modified anything.
+- **Phase 7 — Report**: one consolidated report with all required-artifact status blocks.
+
+Every phase produces a required artifact; missing or blank artifacts fail the phase. Worker phase-checklists surface skipped steps.
+
+### Decide What Belongs in Mathlib (`/mathlibable`)
+
+Slow, methodical, ten-phase workflow that decides whether a single Lean declaration belongs in mathlib. Every invocation runs the full **exhaustive nine-channel literature sweep** (WebSearch ×≥3 + ChatGPT MCP + local refs + nLab + nCatLab + Stacks + MathOverflow + arXiv) — there is no `--quick` flag; the slowness is the point.
+
+- **Phase 3 — literature** grounds the analysis in what the field actually calls this + at what generality.
+- **Phase 4a-c — generality vs literature-standard form AND Bourbaki 2.0 modern-idiom check** (contemporary typeclass / filter / universal-property / bundled-type / module / higher-categorical formulations) + **Q8 concrete-via-abstract** (proof-outruns-the-statement diagnostic) + **Q9 false-generalisation guard** (widening that preserves mathematical content, not just elaboration).
+- **Phase 4.5 — diamond/defeq risk** for `def`/`class`/`instance`.
+- **Phase 4.6 — proof strategy optimality** (Yang Stage 3): filters over ε-δ; point-free algebra; *shortest path modulo what SHOULD be in mathlib*, not modulo what currently is.
+- **Phase 5 — mathlib five-method search** on the user's form AND the literature-standard form AND the modern-idiom form.
+- **Phase 5.5 — statement shape** (Yang Stage 5): normal form (RHS convention; avoid O(n²) equivalence-lemma explosion), syntactic generality (mathematically-equivalent form easier to apply), superfluous typeclasses.
+- **Phase 6 — composition check** (≤3 mathlib calls?) + call-sites signal.
+
+**Verdict in one of five buckets**, each with required documented evidence:
+
+| Bucket | Fires when |
+|---|---|
+| `YES-add-as-is` | Novel + maximally general + non-trivial. Rationale must NAME the specific mathlib gap. |
+| `YES-but-generalise-first` | Novel in some form, but user's form is strictly narrower AND generalisation is mechanically reachable (Phase 4 verified). Positive evidence required (specific hypothesis to drop + verified weakening). |
+| `NO-mathlib-has-it` | Cite the existing mathlib decl by full qualified name; ≤1-line follow-from. |
+| `NO-composable-from-mathlib` | Building blocks in mathlib; composition sketch ≤3 lines. |
+| `BORDERLINE-needs-human` | Numbered questions ≤5 for the user. |
+
+**Cost is NOT a verdict factor** — EXPENSIVE generalisations are explicitly worth doing (mathlib is Bourbaki 2.0). The Phase-7 verdict gate rejects unsupported verdicts, cost-based downgrades, and unverified "looks generalise-able" YES-but-generalise-first (five named false-positive routing classes catalogued in `references/mathlibable-verdicts.md`).
+
+**Mode A**: single declaration per invocation. **Mode B**: `/mathlibable <file.lean>` or multi-file — orchestrator-worker with one Agent per public decl (def-first ordering, verdict inheritance for `:= rfl` glue lemmas, re-aim when parent is `NO` because of a more-general mathlib def). Also runs as **`/overview` Step 9** for project-wide mathlibable assessment.
 
 ### Additional Tools
 
@@ -221,10 +260,10 @@ activate the new tool.
 **How `/cleanup` works (10 phases, methodical, no skipping):**
 
 0. **Doctor** — pre-flight: `lake exe cache get`, `lake build` (must pass — without a clean baseline we can't tell what breakage we introduced), LSP responsive on the target file. Aborts if the baseline is broken.
-1. **Prepare** — read the file, run `lean_diagnostic_messages`, read the five reference docs (golfing-rules, proof-patterns, mathlib-search, generalisation-patterns, cleanup-gates), build the declaration list.
+1. **Prepare** — read the file, run `lean_diagnostic_messages`, read the six reference docs (`golfing-rules`, `proof-patterns`, `mathlib-search`, `generalisation-patterns`, `cleanup-gates`, `mathlib-review-stages`), build the declaration list.
 2. **Style audit** — complete numbered punch-list (file-level + linter findings + per-declaration light scan). No fixes yet. Replaces what used to be `/check-style`.
-3. **File-level fixes** — copyright, **module docstring (CREATED if missing)**, imports, subsection dividers, file-level `set_option`, batch mechanical replacements (`λ`→`fun`, `$`→`<|`, `push_neg`→`push Not`).
-4. **Per-declaration deep cleanup** — one dedicated agent per declaration. The worker reads the reference docs, runs the **18-item audit** with required status blocks for: every golfing rule (1.1 → 3.7), the **five-method mathlib search** (with the six strict mathlib-replacement rules — replaces `/check-mathlib`), the **inline mechanical generalisation pass** (catalogue-driven typeclass-hierarchy walk, drop-test, pointwise / strict→weak), and (for public decls) a literature search. Then runs the **per-worker diff gates** on the worker's edits before completing — including the hard `structure_gate` / `naming_gate` / `line_packing_gate`: audit items 12/5/6 are pass/fail, not deferrable, so a worker that leaves a long body ("signature locked" is not a valid excuse — a `private` helper above the decl is not a signature change), a scheme-number name (`m6_2_…`, `multipass_…`), or one-hypothesis-per-line signatures is re-dispatched, not accepted.
+3. **File-level fixes** — copyright, **module docstring (CREATED if missing)**, imports, subsection dividers, file-level `set_option`, batch mechanical replacements (`λ`→`fun`, `$`→`<|`, `push_neg`→`push Not`, `haveI`/`letI`→anonymous `have`/`let`).
+4. **Per-declaration deep cleanup** — one dedicated agent per declaration, **sequential on the same file** (parallel workers silently clobber each other's edits — the second worker's Edit sees a file that has drifted since its Read). The worker reads the reference docs, runs the **22-item audit** with required status blocks for: every golfing rule (1.1 → 3.7), the **five-method mathlib search** (six strict mathlib-replacement rules — replaces `/check-mathlib`), the **inline mechanical generalisation pass** (catalogue-driven typeclass-hierarchy walk, drop-test, pointwise / strict→weak) with a **"beware false generalisations"** check, and (for public decls) a literature search. Also audits: **inequality orientation** (item 19; `≤` not `≥`, `<` not `>`), **normal form** (item 20; RHS convention), **syntactic generality** (item 21), **import fanout** (item 22), **casts** (item 23; drop redundant ascriptions), **instance-name** (item 24; anonymous by default). Then runs the **per-worker diff gates** — including the hard `structure_gate` / `naming_gate` / `line_packing_gate` / `inequality_orientation_gate`: pass/fail, not deferrable. `line_packing_gate` uses per-line arithmetic (`current + 1 + next-token ≤ 100`). `naming_gate` forbids single-letter public names, scheme-number patterns, and `_ge_` / `_gt_` orientation-rule violations.
 5. **Refactoring (split into 5a + 5b).**
    - **5a — Non-rename refactoring:** cross-declaration items from Phase 4 worker reports — mathlib replacements, junk-def inlining, big-change generalisations escalated to standalone `/generalise` (which has the user-approval gate on big changes).
    - **5b — Rename pass:** Phase 4 workers never rename in place (parallel workers would race on shared call sites). They append `{old, new, scope, file, …}` JSON to `.mathlib-quality/renames.jsonl`. Phase 5b reads the queue, dedupes, conflict-checks, then applies each rename sequentially across the whole repo with `Grep` + `Edit replace_all` + `lean_diagnostic_messages` between each. The queue is truncated when done.
@@ -238,8 +277,32 @@ activate the new tool.
 
 ```
 /cleanup MyFile.lean            # Audit + fix + golf (one command)
+/mathlibable Foo.bar            # Is this decl the right shape for mathlib?
 /pre-submit MyFile.lean         # Final checklist
 ```
+
+### Assessing Mathlib-Fit
+
+```
+/mathlibable Foo.bar                          # single decl — full 10-phase workflow
+/mathlibable Foo/Bar.lean                     # every public decl in file (sequential)
+/mathlibable Foo/Bar.lean Baz.lean            # multi-file batch
+/overview                                     # project survey + /mathlibable per public decl (Step 9)
+/overview --skip-mathlibable                  # faster survey without the Step 9 lit-search sweep
+```
+
+Every `/mathlibable` invocation runs the full exhaustive workflow described above; verdicts + per-decl detail reports go to `.mathlib-quality/mathlibable/<decl>.md`. `/overview` aggregates verdicts into per-bucket action lists in `PROJECT_OVERVIEW.md`.
+
+The mental model — Yang's [six stages of reviewing a mathlib PR](skills/mathlib-quality/references/mathlib-review-stages.md), ordered global-to-local:
+
+1. Do we want this result in mathlib? (interest, applications beyond this PR, belongs-elsewhere routing to Archive/CSLib/downstream)
+2. Do we want this generality? (encompass every case mathematicians care about; ease downstream development; beware false generalisations)
+3. Is the proof strategy optimal? (*shortest path modulo what SHOULD be in mathlib, not modulo what IS*)
+4. Is the proof executed correctly?
+5. Are results stated correctly in Lean? (normal form; syntactic generality; superfluous typeclasses)
+6. Are results presented correctly? (file placement, imports, docstring depth)
+
+`/mathlibable` covers Stages 1–5; `/cleanup` covers Stages 5–6. Stage 5 is the overlap.
 
 ### Authoring a Blueprint
 
@@ -331,13 +394,18 @@ The recent rewrites of `/cleanup`, `/fix-pr-feedback`, `/develop`, `/beastmode`,
 The throughline: **enforcement happens through artifacts the agent must emit, not through
 guidelines the agent should remember.**
 
-## Key Rules (from 14,000+ PR reviews)
+## Key Rules
+
+The reference docs (`references/style-rules.md`, `references/naming-conventions.md`, `references/proof-patterns.md`, `references/pr-feedback-examples.md`, `references/mathlib-quality-principles.md`) were originally seeded from a scraped corpus of 3,772 mathlib PRs / 14,063 review comments; the scraped data itself was removed in v0.46.0 once the curated docs took over as the live propagation channel. Contributions flow in via `/contribute` PRs and get propagated into the reference docs by `/integrate-learnings`.
 
 ### The Cardinal Rule: Terminal vs Nonterminal `simp`
 
 - **Terminal `simp` must NOT be squeezed** -- leave as `simp` or `simp [lemmas]`
 - **Nonterminal `simp` MUST be squeezed** to `simp only [...]`
-- This is the #1 most enforced rule in mathlib reviews (282+ comments)
+
+### Inequality Orientation
+
+Lean code uses `≤` not `≥`, `<` not `>`, **smaller side on the left**. Lemma names follow: `a_le_b` not `b_ge_a`. Docstrings may keep `≥`/`>` where prose reads naturally; the rule is about Lean code. Enforced by `inequality_orientation_gate`.
 
 ### Tactic Priority (try in order)
 
@@ -368,12 +436,16 @@ guidelines the agent should remember.**
 
 ### Style Rules
 
-- Line length: **100 chars max**
+- Line length: **100 chars max** — but pack signature lines *toward* 100 (per-line arithmetic check enforced by `line_packing_gate`; don't break at 60 chars when the next token fits)
 - Proof length: **50 lines max** (decompose if longer)
 - `by` at **end of preceding line**, never on its own line
 - No comments inside proofs
 - No `sorry` in committed code
 - No new axioms
+- No `haveI` / `letI` — Lean 3 habit; the `I` stood for "inline", not "instance". Use anonymous `have :` / `let :` (typeclass resolution picks them up just as well)
+- No single-letter public names (`def m`, `theorem f`) — undiscoverable in mathlib search and autocomplete
+- No global `noncomputable instance : DecidableEq X := Classical.decEq _` — "as useful as a chocolate teapot" and can shadow genuine `Decidable` instances downstream; use the `classical` tactic in proofs or `open scoped Classical in` before a specific noncomputable def
+- No redundant type ascriptions (`(g.det.val : ℝ)` when `g.det.val` is already ℝ) — keep only genuine cross-type coercions
 
 ### Naming Conventions
 
@@ -383,7 +455,23 @@ guidelines the agent should remember.**
 | `def` | `lowerCamelCase` | `cauchyPrincipalValue` |
 | `structure` | `UpperCamelCase` | `ModularForm` |
 
-Pattern: `conclusion_of_hypothesis` (e.g., `norm_le_of_mem_ball`)
+Pattern: `conclusion_of_hypothesis` (e.g., `norm_le_of_mem_ball`).
+
+Forbidden name patterns (auto-fail `naming_gate`):
+- Scheme numbers: `\d+_\d+_\d+_` (e.g. `miyake_4_6_5_…`), `m\d+_` (e.g. `m6_2_…`), `multipass_`, numeric `_aux\d+`
+- Abbreviations: `wt`, `whomog`, `thm`, `eqn`, `imp`, `soln`, `mvpoly`
+- Single-letter public names
+- `_ge_`, `_gt_` (inequality-orientation rule)
+
+Renames queue to `.mathlib-quality/renames.jsonl` and apply in Phase 5b (repo-wide, sequential) — Phase-4 workers never rename in place.
+
+### Design Buzzphrases (durable heuristics)
+
+- **Shortest path modulo what SHOULD be in mathlib**, not modulo what IS currently in mathlib. Missing API is a separate follow-up, not something to route around.
+- **Comments explain _why_, not _what_.** The what is in the code.
+- **Rules are meant to be breached. Breaches are meant to be documented.**
+- **The best comment is when it is unnecessary.**
+- **Mathlib is Bourbaki 2.0.** Adding the *right* declaration in the *right* form is worth the effort — cost is not a reason to ship the wrong shape.
 
 ## Project Structure
 
@@ -409,19 +497,26 @@ mathlib-quality/
 │   ├── contribute.md            # Push local learnings back as a PR
 │   ├── integrate-learnings.md   # (maintainers) merge contributed learnings into the reference docs
 │   └── setup-chatgpt.md         # Configure the ChatGPT MCP server
+├── commands/
+│   ├── mathlibable.md           # Slow 10-phase workflow: is this the right shape for mathlib? (5 verdict buckets)
+│   ├── cleanup-all.md           # Orchestrator-worker project-wide cleanup
+│   └── ...                      # (all 20 commands)
 ├── skills/mathlib-quality/
 │   ├── SKILL.md                 # Main skill definition
 │   └── references/              # Authoritative reference docs read by workers:
-│       ├── style-rules.md           # File structure, formatting, deprecation, inequality orientation
-│       ├── naming-conventions.md    # snake_case/camelCase/UpperCamelCase + symbol dictionary
-│       ├── golfing-rules.md         # Phase 1/2/3 rules (instant wins, automation, cleanup)
-│       ├── proof-patterns.md        # Curated patterns + anti-patterns
-│       ├── mathlib-search.md        # Five-method exhaustive search + six strict rules
-│       ├── generalisation-patterns.md  # Typeclass-weakening catalogue
-│       ├── cleanup-gates.md         # Diff gates for /cleanup (borrowed from shouyi)
-│       ├── blueprint-conventions.md # Verso authoring + CI deployment gotchas
-│       ├── pr-feedback-examples.md  # Curated review-category examples
-│       └── linter-checks.md         # Mathlib's built-in linters
+│       ├── style-rules.md              # File structure, formatting, deprecation, inequality orientation
+│       ├── naming-conventions.md       # snake_case/camelCase/UpperCamelCase + symbol dictionary
+│       ├── golfing-rules.md            # Phase 1/2/3 rules (instant wins, automation, cleanup)
+│       ├── proof-patterns.md           # Curated patterns + anti-patterns
+│       ├── mathlib-search.md           # Five-method exhaustive search + six strict rules
+│       ├── mathlib-review-stages.md    # Yang's six-stage framework: /mathlibable and /cleanup both read
+│       ├── mathlibable-verdicts.md     # Verdict definitions, worked cases per bucket, false-positive routing, anti-pattern catalogue
+│       ├── generalisation-patterns.md  # Typeclass-weakening catalogue + inversion check
+│       ├── cleanup-gates.md            # Diff gates for /cleanup (borrowed from shouyi)
+│       ├── blueprint-conventions.md    # Verso authoring + CI deployment gotchas
+│       ├── pr-feedback-examples.md     # Curated review-category examples
+│       ├── mathlib-quality-principles.md  # Core quality principles
+│       └── linter-checks.md            # Mathlib's built-in linters
 ├── scripts/
 │   └── style_checker.sh         # Local Lean file style validation
 └── data/
@@ -468,6 +563,11 @@ community. In particular:
   pattern, etc.).
 - **[leanprover-community PR review guide](https://leanprover-community.github.io/contribute/pr-review.html)**
   — informs the review-categories structure in `references/pr-feedback-examples.md`.
+- **The public mathlib-review talk framework** — the six-stage global-to-local
+  review order (want this in mathlib? / right generality? / proof strategy
+  optimal? / executed correctly? / stated correctly? / presented correctly?)
+  that structures `references/mathlib-review-stages.md` and gates `/mathlibable`
+  Phases 3–7 and `/cleanup` audit items 20/21/22.
 
 ### Community contributors
 
