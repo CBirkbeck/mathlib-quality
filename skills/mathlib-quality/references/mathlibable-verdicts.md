@@ -459,6 +459,49 @@ based on the answers:
 
 ---
 
+## Anti-patterns that route to specific NO buckets
+
+A short catalogue of recurring "looks like a contribution but shouldn't
+ship" patterns and where they route. Grow this over time as new ones
+surface.
+
+### Global `noncomputable instance : DecidableEq X := Classical.decEq _`
+
+A noncomputable decidability instance is (per mathlib review) *"as
+useful as a chocolate teapot"* — it decides nothing, and it can shadow
+genuine `Decidable` instances downstream by winning typeclass search on
+`X` while providing no computation.
+
+Route to `NO-composable-from-mathlib`. The refactor plan:
+
+- In proofs that need decidability: `classical` tactic inside the proof.
+- Before a specific noncomputable def: `open scoped Classical in def foo
+  := ...`.
+- Where the caller can provide it: add `[DecidableEq X]` as an instance
+  argument to the consumer instead.
+
+If the user's decl is the offending global instance, Phase 7 rationale
+must (a) name the classical-instance trap in the refactor plan and
+(b) list the K call sites that need the local-classical or
+instance-arg rewrite.
+
+### Left-coset equality via singleton-set products
+
+`({x} : Set G) * (H : Set G) = {y} * H` with hand-rolled cancellation
+wrappers is a re-implementation of mathlib's coset API.
+
+Route to `NO-mathlib-has-it`. Mathlib has:
+
+- `QuotientGroup.mk x = QuotientGroup.mk y` in `G ⧸ H` (with
+  `QuotientGroup.eq`, `mk_out_eq_mul` for the algebraic manipulations).
+- `x • (H : Set G) = y • H` (with `leftCoset_eq_iff`) when the set-form
+  is genuinely needed.
+
+Phase 7 rationale cites both mathlib APIs and shows the ≤1-line
+follow-from for the user's statement.
+
+---
+
 ## Mode B methodology (def-first + verdict inheritance + re-aim)
 
 Mode B batches assess many decls at once. Three rules from real-batch

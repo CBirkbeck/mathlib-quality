@@ -400,8 +400,10 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
                    Forbidden abbreviations: whomog, mvpoly, wt, soln, imp, eqn, thm.
                    Forbidden name patterns (auto-fail the gate): `\d+_\d+_\d+_` (e.g.
                    `miyake_4_6_5_`), `m\d+_` (e.g. `m6_2_`), `multipass_`, numeric
-                   `_aux\d+` (e.g. `_aux1`). Rename to describe what is PROVED, not an
-                   internal scheme/section number.]
+                   `_aux\d+` (e.g. `_aux1`), **single-letter public defs/lemmas** (e.g.
+                   `def m`, `theorem f`) — undiscoverable in search/autocomplete; use
+                   a descriptive lowerCamelCase / snake_case name. Rename to describe
+                   what is PROVED, not an internal scheme/section number.]
  6. LINE PACKING  [HARD GATE (line_packing_gate, Step 5b) — REQUIRED ARTIFACT: per-line
                    width table covering EVERY signature line (see LINE PACKING procedure
                    below). "LINE PACKING: ok" without the table is an automatic gate
@@ -409,7 +411,15 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
                    `current + 1 + next-token ≤ 100` must be repacked.]
  7. BY PLACEMENT  [`by` at end of line, never alone]
  8. FORMAT        [2-space indent; no empty lines inside; one tactic per line;
-                   merge sequential `rw [a]; rw [b]` → `rw [a, b]`]
+                   merge sequential `rw [a]; rw [b]` → `rw [a, b]`.
+                   **`haveI` / `letI` in the diff is ALWAYS a defect** — never an
+                   output. The `I` stood for "inline" in Lean 3, not "instance";
+                   Lean 4's plain `have :` / `let :` with an explicit type
+                   annotation (or an anonymous `have :` when the name isn't
+                   referenced) is picked up by typeclass resolution just as
+                   well. A worker that transforms `have hH : T := e` into
+                   `haveI : T := e` has regressed the file — the correct
+                   simplification is the anonymous `have : T := e`.]
  9. COMMENTS      [strip ALL narrative `--` inside the proof]
 10. DOCSTRING     [public theorem/def → 1-sentence; private/aux → none;
                    if missing on public, CREATE one — do not skip.
@@ -429,7 +439,20 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
                    change this declaration's signature. Either extract, or raise a
                    `/decompose-proof` flag in Refactoring needed — a silent "deferred for
                    Phase 5" fails the gate.]
-13. MATHLIB       [print the five-method search-status block — see Step 2.5 below]
+13. MATHLIB       [print the five-method search-status block — see Step 2.5 below.
+                   Two recurring anti-patterns the mathlib search should catch:
+                   (a) **Global `noncomputable instance : DecidableEq X := Classical.decEq _`**
+                   is banned — a noncomputable decidability instance is "as useful as
+                   a chocolate teapot" (per mathlib review) and can shadow genuine
+                   Decidable instances downstream. Replace with the `classical` tactic
+                   inside proofs; `open scoped Classical in` before a specific
+                   noncomputable def; or a `[DecidableEq X]` instance argument.
+                   (b) **Left-coset equality via singleton-set products** — writing
+                   `({x} : Set G) * (H : Set G) = {y} * H` and hand-rolling
+                   cancellation wrappers duplicates mathlib. Use
+                   `QuotientGroup.mk x = QuotientGroup.mk y` (`QuotientGroup.eq`,
+                   `mk_out_eq_mul`) or `x • (H : Set G) = y • H`
+                   (`leftCoset_eq_iff`).]
 14. JUNK DEF      [n/a unless decl is a `def`; if so, has API? used >1 place? if not → inline]
 15. EXISTS LEMMA  [n/a unless private single-use ∃-lemma `:= ⟨_, rfl, …⟩` → inline]
 16. SHOW vs CHANGE [each `show T` in tactic mode: → `change`, drop, or leave (term-mode)]
@@ -469,6 +492,26 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
                    modified a leaf? Would a user importing this file
                    expect the new import? Skip with `n/a` if no new
                    imports were needed.]
+23. CASTS         [After golfing, audit every explicit `(e : T)` ascription
+                   and `↑` coercion in the DIFF. Drop the redundant ones:
+                   `(g.det.val : ℝ)` when `g.det.val` is already ℝ (e.g. it
+                   is `.val` of an `ℝˣ`); `(k + 2 - 1 : ℤ)` when `k : ℤ`
+                   already forces ℤ. Keep only (i) genuine cross-type
+                   coercions bridging different types (ℝ→ℂ, ℤ→ℂ, ℍ→ℂ), and
+                   (ii) ascriptions that are elaboration-load-bearing
+                   (e.g. `: ℂ → ℂ` fixing the target of a `↑`). Print a
+                   status: `casts: N dropped / M kept as cross-type / K
+                   kept as load-bearing`.]
+24. INSTANCE-NAME [Instances should be anonymous by default. Give an
+                   instance an explicit name ONLY when the name is
+                   referenced elsewhere — combined via `{ SomeInstance
+                   with ... }` in a later declaration, targeted by an
+                   attribute, or resolved by-name in a proof. Instances
+                   found only by typeclass resolution (FunLike,
+                   DecidableEq, Fintype, Mul, forwarding AddComm*,
+                   inferInstanceAs, etc.) should stay anonymous. If the
+                   worker sees `instance instFoo : Foo := ...` and no
+                   downstream reference to `instFoo`, strip the name.]
 
 Issues to fix: [numbered list — every item has a concrete action]
 Refactoring needed: [cross-declaration changes; fed back to main agent for Phase 5a
@@ -1004,7 +1047,7 @@ declaration is not a signature change; extract first, flag only as a last resort
 
 **Phase-4 workers never apply renames in place — not even for private/local decls.** All
 renames queue and apply together in the dedicated Phase 5b rename pass. The reason is
-that Phase-4 workers can run in parallel: two workers each greping for `weight_*` to
+that Phase-4 workers, even if serialized within a file, can still collide across files: two workers each greping for `weight_*` to
 update call sites collide on shared files. Queueing centralises that work into one
 sequential pass at the end. A worker that renames in place — even a private decl —
 fails this gate.
@@ -1122,14 +1165,35 @@ collect it for Phase 5a.
 
 ### Dispatching workers
 
+**Workers are SEQUENTIAL by default.** Parallel dispatch on the same file is
+a footgun: two Phase-4 workers each producing correct `Edit` operations
+on adjacent declarations can silently clobber each other's changes when
+the second worker's `Edit` sees a file that has drifted since its Read.
+This is observable in real batches: workers report successful inlining of
+single-use `have`s that don't appear in the final diff, because a
+neighbouring worker's `Write` or subsequent `Edit` overwrote them.
+
 For each declaration in the list from 1d:
 
-1. Decide if it can run in parallel. A declaration that uses helpers being modified by
-   another worker should run *after* those helpers are done.
-2. Send the worker prompt as one `Agent` call **per declaration**. Substitute
-   `[file_path]`, `decl_name`, line range, lint warnings for the range, and the C.x
-   punch-list items.
+1. Send the worker prompt as one `Agent` call **per declaration**, one at
+   a time. Substitute `[file_path]`, `decl_name`, line range, lint warnings
+   for the range, and the C.x punch-list items. **Wait for the worker to
+   return before dispatching the next.**
+2. Include this rail in the worker prompt: *"Read the target file
+   immediately before your first `Edit`, no matter how recent your last
+   Read is. Do not use `Write` on this file — it would clobber any edits
+   from prior workers in this Phase-4 batch. Every mutation must be `Edit`
+   with a `old_string` that includes at least three lines of surrounding
+   context, so stale positions fail loudly instead of silently
+   overwriting."*
 3. Wait for completion, capture the report.
+
+Parallel dispatch is only safe when the workers target *different files*
+(and even then, cross-file rename queueing to `.mathlib-quality/renames.jsonl`
+must go through the Phase-5b sequential pass — see Step 6a). If you find
+yourself wanting parallel per-declaration Phase-4 workers on the same
+file, resist the temptation; the wall-time savings do not survive the
+edit races.
 4. **Re-dispatch on gate OR phase-checklist failure.** Read the worker's Step-5b gate-status
    block, Step-6 `Gates:` line, AND the Step-6 phase checklist. If any gate is `✗ FAIL` — or
    any of items 5 (NAMING), 6 (LINE PACKING), 12 (STRUCTURE) came back `deferred for Phase 5` /
