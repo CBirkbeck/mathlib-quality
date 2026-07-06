@@ -330,7 +330,7 @@ adversarially verified.
    - Step 3: tension against references with verbatim quotes per leaf;
      Lean ↔ source match paragraphs
    - Step 4: per-leaf provability check (mathlib / project / API gap)
-   - Step 5: confidence gate (three binding conditions)
+   - Step 5: confidence gate (seven binding conditions)
    - Step 6: write `.mathlib-quality/decomposition.md`
 
 4. **Stop. Do NOT create tickets.** This mode is planning-only-planning.
@@ -520,6 +520,15 @@ For each new definition:
 **Rule: No one-off definitions without API.** Every definition must have at least
 basic API lemmas (membership, composition, monotonicity as appropriate).
 
+**Rule: One conclusion per declaration.** A result whose statement would bundle two or
+more independently-provable conclusions — a top-level `∧`-chain, a source theorem with
+numbered parts (i)/(ii)/(iii) — is designed as **one lemma per part**, plus (only when
+something downstream genuinely consumes the bundled form) a one-line assembly lemma
+`⟨part₁, part₂, …⟩`. Long theorem statements are a planning defect, not a style nit for
+`/cleanup` to catch weeks later. Genuine exceptions (shared-witness existentials,
+simultaneous-induction bundles) and the full procedure:
+`references/statement-splitting.md`.
+
 ### 1e: Methodical Decomposition (pre-work for tickets — binding)
 
 **This is the pre-work pass. No tickets exist yet.** The goal is to verify, before
@@ -649,6 +658,23 @@ sub-lemma the source introduces becomes a candidate leaf:
      Steps 1 and 2 with the sub-lemma in place of R.
    - If the source defers the sub-lemma to another reference, follow
      that reference and read its proof too.
+4. **Split multi-part statements — one leaf per part (binding).** If R
+   itself, or any candidate leaf, bundles two or more independently-provable
+   conclusions — a top-level `∧`-chain in the conclusion, or a source
+   statement with numbered parts (i)/(ii)/(iii) — it enters the tree as
+   **one leaf per part**, never as a single many-`∧` leaf. A source
+   "Theorem N: (a) …; (b) …" is several top-level results sharing a prose
+   proof section, each with its own leaf set. If the source's later proofs
+   (or a downstream result) consume the bundled form, add an **assembly
+   node**: a lemma whose statement is the conjunction and whose entire
+   planned proof is the anonymous constructor `⟨L_a, L_b, …⟩` — one line;
+   if the assembly would need more, the parts weren't independent and the
+   split is drawn in the wrong place. Genuine exceptions — shared-witness
+   existentials (`∃ x, P x ∧ Q x` must NOT become two existentials; extract
+   a `def` + per-property spec lemmas, or keep the bundle) and
+   simultaneous-induction bundles (`private` bundled aux + public per-part
+   projections) — are catalogued in `references/statement-splitting.md`;
+   using one requires a one-line justification in the leaf's entry.
 
 The decomposition tree depth is set by **the source's proof structure**,
 not by guesswork. A source that proves R via four lemmas, each in one
@@ -720,6 +746,13 @@ files (per the API design from 1d). Every declaration ends in `:= by sorry`.
 This produces a compilable skeleton: a set of `.lean` files where every
 lemma exists as a real declaration, all with `sorry`, and the whole project
 still passes `lake build` (sorries are warnings, not errors).
+
+One declaration per conclusion: the per-part leaves produced by Step 2's
+multi-part splitting each get their own declaration; an assembly node is
+declared like any other lemma (its `sorry` will become a one-line `⟨…⟩`).
+A skeleton declaration whose conclusion is a top-level `∧`-chain and which
+is not a marked assembly node or documented exception is a Step-2 defect
+surfacing here — go back and split it.
 
 Each Lean declaration is the **canonical** form of the lemma — the
 markdown signature in Step 2 was a draft; the Lean form is the source of
@@ -981,7 +1014,7 @@ explicitly addressed in the new decomposition, the confidence gate
 
 #### Step 5 — Confidence gate (binding)
 
-You may not proceed to step 1f until **all six** of the following hold:
+You may not proceed to step 1f until **all seven** of the following hold:
 
 1. **Every leaf** of the decomposition tree is one of:
    - Discharged directly from mathlib (cited lemma name + verified existence
@@ -1016,6 +1049,15 @@ You may not proceed to step 1f until **all six** of the following hold:
    in the tree must cite the corresponding source line count (e.g.
    "source proves L3.1 in 12 lines, p. 97; expecting ~30 LOC Lean").
    Ungrounded LOC estimates block the gate.
+7. **Every leaf is single-conclusion (statement-shape check).** No leaf's
+   Lean statement has a top-level `∧`-chain in its conclusion, and no leaf
+   transcribes a multi-part source statement ((i)/(ii)/(iii)) as one
+   declaration. Bundled statements appear in the tree only as (a) marked
+   **assembly nodes** whose recorded proof plan is the one-line anonymous
+   constructor over their part-leaves, or (b) documented exceptions
+   (shared-witness existential / simultaneous-induction bundle) with a
+   one-line justification per `references/statement-splitting.md`. An
+   undocumented bundled leaf blocks the gate.
 
 In addition, **REVIEW-PENDING leaves do not pass the gate.** If any leaf
 (or any ancestor of a REVIEW-PENDING leaf) is awaiting an `/expert-review`
@@ -1315,6 +1357,11 @@ ticket lacks any of fields 2–6, `/beastmode` will refuse to start and report
 - Every definition ticket includes its API lemmas (`_zero`, `_one`, `_singleton`,
   `_insert`, etc., as appropriate) — all in the **Statement** field with their own
   individual proof sketches.
+- **One conclusion per ticket.** A proof ticket's Statement never bundles two or more
+  independently-provable conclusions (gate condition 7 checked this at 1e). Each part is
+  its own ticket; the assembly, when kept, is its own ticket depending on all part
+  tickets, with the one-line `⟨…⟩` as its entire proof sketch. Documented exceptions per
+  `references/statement-splitting.md` carry their justification into the ticket.
 - Cleanup tickets are inserted **algorithmically** (see "Cleanup cadence" below) — not by feel.
 - Mark parallel opportunities explicitly.
 - For sources: the planner is responsible for digging through the references the user
@@ -1567,4 +1614,6 @@ been skipped. Stop and add the missing cleanup ticket before proceeding.
 - `skills/mathlib-quality/references/proof-patterns.md` — data-driven proof patterns
 - `skills/mathlib-quality/references/naming-conventions.md` — mathlib naming
 - `skills/mathlib-quality/references/style-rules.md` — mathlib style
+- `skills/mathlib-quality/references/statement-splitting.md` — one-conclusion-per-declaration
+  rule: multi-part statements split at planning time (1d, 1e Step 2 item 4, gate condition 7)
 - `commands/cleanup.md` — cleanup procedure run during CLEANUP tickets

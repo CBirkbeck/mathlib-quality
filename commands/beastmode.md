@@ -39,6 +39,10 @@ Beastmode reflexes (the only legitimate per-turn motions):
 - See a missing dependency → spawn a sub-ticket → start its declaration.
 - See an enumerable list of new lemmas the proof needs → that list IS the
   sub-ticket plan → spawn them all → start the first one.
+- See a multi-part statement to prove (top-level `∧`-chain, source parts
+  (i)/(ii)/(iii) in one declaration) → split per Tier A5: one sub-ticket
+  per part → start the first part; the bundled form ends as a one-line
+  `⟨…⟩` assembly.
 - See a broken sketch → invoke `/develop --continue` to replan → continue.
 - See "this is multi-day work" → that's exactly the work beastmode targets
   → continue.
@@ -223,6 +227,20 @@ A3. **DEPENDENCY MISSING FROM THE BOARD** — the current ticket's `Depends on`
 A4. **PARAMETRIC SUB-STEP NEEDED** — the sketch's step is parametric in a way
     that's better discharged as its own universally-quantified lemma. Spawn a
     sub-ticket with the universal claim. Recurse. Return.
+
+A5. **MULTI-PART STATEMENT** — the statement in front of you (the ticket's, or a
+    sub-ticket you are about to spawn) bundles two or more independently-provable
+    conclusions: a top-level `∧`-chain in the conclusion, or a source theorem's
+    (i)/(ii)/(iii) parts transcribed as one declaration. Do not prove it
+    monolithically. Split per `references/statement-splitting.md`: spawn one
+    sub-ticket per part (each a clean single-conclusion lemma with its own name
+    and minimal hypotheses), work them in order, then discharge the bundled
+    declaration as the one-line assembly `exact ⟨part₁, part₂, …⟩`. The ticketed
+    statement itself is never edited (`theorem_statement_protected`) — the split
+    lives in the new part-lemmas; the original stays and becomes trivial. Check
+    the exceptions first: a shared-witness existential (`∃ x, P x ∧ Q x`) is NOT
+    split into two existentials, and a simultaneous-induction bundle becomes a
+    `private` aux + public per-part projections.
 
 In every Tier-A case, log to the parent ticket's progress notes what was spawned
 and why, then proceed.
@@ -954,7 +972,13 @@ tool aimed at its goal. No "I've spawned T205, will work it next" messages.
    - `Parent`: the parent ticket's ID (new field — tracks the sub-ticket
      relationship; show this in reports)
    - `Type`: `lemma` / `def` / etc.
-   - `Statement`: the exact Lean statement of the missing piece
+   - `Statement`: the exact Lean statement of the missing piece —
+     **single-conclusion**. If the missing piece is naturally "A ∧ B ∧ C",
+     that is several sub-tickets (one per part, per Tier A5), not one; add a
+     one-line `⟨…⟩` assembly sub-ticket only if a later step genuinely
+     consumes the bundled form. Exceptions (shared-witness existentials,
+     simultaneous-induction bundles): `references/statement-splitting.md`,
+     justified in one line in the ticket.
    - `Proof sketch`: numbered steps. Draw from the context in which the gap
      was hit — the parent's sketch step that referenced this is the
      starting point for the new sketch
@@ -1372,6 +1396,17 @@ lean_diagnostic_messages [file]
 
 Confirm the declaration parses, the `sorry` is registered as a warning, and nothing else
 broke.
+
+**Multi-part statement check (Tier A5).** If the ticket's Statement has a top-level
+`∧`-chain in its conclusion (or transcribes a source's (i)/(ii)/(iii) parts as one
+declaration), do not walk into Phase 4 planning to prove it monolithically. State it
+verbatim as required above — the signature is untouchable — then apply Tier A5: spawn one
+sub-ticket per part, prove those first, and let this declaration's Phase 4 be the one-line
+assembly `exact ⟨part₁, part₂, …⟩`. Check `references/statement-splitting.md`'s exceptions
+first (a shared-witness existential stays bundled; a simultaneous-induction bundle becomes
+a `private` aux + projections). Log the split in the ticket's Progress notes, and note the
+planning defect in the Phase-8 report — `/develop`'s gate condition 7 should have caught
+this — but do not stop over it.
 
 ---
 
@@ -1854,4 +1889,6 @@ with (B4 BROKEN BASELINE). "It's hard" is still not evidence. Neither is
 - `commands/develop.md` — the planner that produces the tickets this skill executes
 - `references/cleanup-gates.md` — the gate definitions used in Phase 6
 - `references/mathlib-search.md` — the five-method search used in Phase 4a
+- `references/statement-splitting.md` — one-conclusion-per-declaration rule behind Tier A5
+  and the sub-ticket template's single-conclusion requirement
 - `commands/cleanup.md` — invoked directly by Phase 2c when the ticket is a cleanup ticket
