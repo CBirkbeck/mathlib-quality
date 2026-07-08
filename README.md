@@ -58,6 +58,17 @@ Methodical **11-phase** workflow for any Lean file. Absorbed what were once thre
 
 Every phase produces a required artifact; missing or blank artifacts fail the phase. Worker phase-checklists surface skipped steps.
 
+### Make Slow Proofs Fast (`/buzz`)
+
+The workflow a mathlib reviewer applies to an AI-written PR, automated: compile each file and watch the **orange bars** (the editor's still-elaborating indicator); for the few declarations whose bars linger, read the traces, find the issue, fix it — then check the other slow declarations for the **same issue** before diagnosing them from scratch. Target: **every declaration elaborates in under a second**.
+
+- **Sweep** — one profiled compile per target file (`lake env lean -Dprofiler=true`), producing a per-declaration timing table. PR mode by default (files changed vs the default branch); also single file, single declaration, `--all`, and `--budget <ms>` (default 1000).
+- **Diagnose worst-first** — escalation ladder: `lean_profile_proof` → `trace.profiler` tree → targeted traces (`synthInstance` / `isDefEq` / `simp.rewrite` / `diagnostics`), classified against the **eight-cause taxonomy** in `references/profiling.md` (instance-synthesis blowup, fat simp, defeq blowup, heavy terminal automation, metavariable churn, coercion churn, duplicated subterms, kernel replay) — each cause with its trace signature and fixes in preference order.
+- **Same-issue propagation (binding)** — root cause #1 is tested against every remaining slow declaration *before* any fresh diagnosis. One PR's slow declarations nearly always share an author-pattern; this "it's the same issue" step is what makes the human version of the workflow fast, and it is a required phase here.
+- **Measured fixes only** — before/after in wall-clock and heartbeats (`count_heartbeats`, temporary); a declaration is only deferred after ≥3 measured fix attempts, and deferrals route to `/decompose-proof` (five 200ms helpers beat one 1s monolith).
+- **Hard rules** — statements stay byte-identical; `maxHeartbeats` / `synthInstance.maxHeartbeats` / `maxRecDepth` are never raised (existing raises get *removed*); no `native_decide`; all profiling scaffolding is gate-checked out of the final diff; API-touching fixes (shortcut instances, instance priorities, file-wide attributes) are flagged for user approval, never auto-applied.
+- **Runs automatically as `/cleanup` Phase 6.6** — and therefore inside `/beastmode`'s mandatory post-proof cleanup and every `/cleanup-all` worker. Freshly-proven declarations get profiled and fixed before their ticket is marked done; standalone `/buzz` remains the tool for PR-wide sweeps.
+
 ### Decide What Belongs in Mathlib (`/mathlibable`)
 
 Slow, methodical, ten-phase workflow that decides whether a single Lean declaration belongs in mathlib. Every invocation runs the full **exhaustive nine-channel literature sweep** (WebSearch ×≥3 + ChatGPT MCP + local refs + nLab + nCatLab + Stacks + MathOverflow + arXiv) — there is no `--quick` flag; the slowness is the point.
@@ -279,11 +290,23 @@ activate the new tool.
 
 **No-skipping enforcement.** `/cleanup`'s anti-skip defence sits on four mechanisms: required artifacts (status blocks the agent must emit — golf-rule status, mathlib search-status, generalisation status, gate status, simplify status, buzz status; missing or blank cells = step skipped), verification gates between phases (`lake build` baseline, diagnostics-clean), diff gates on edits (definition_protected, theorem_statement_protected — catches *out-of-scope* edits), and user-approval pauses for high-blast-radius actions. The Phase-7 report's required-section list lets a missing artifact fail the report.
 
+### Making Slow Proofs Fast
+
+```
+/buzz                               # PR mode: profile the files changed vs the default branch
+/buzz MyFile.lean                   # Sweep one file
+/buzz MyFile.lean slow_theorem      # One declaration, straight to diagnosis
+/buzz --all                         # Every project file (audit mode)
+/buzz --budget 500                  # Tighter per-decl budget (default 1000ms)
+```
+
+**How `/buzz` works:** doctor (baseline build must be green) → **sweep** (one profiled compile per file; per-decl timing table; SLOW = over budget, and any declaration carrying a `maxHeartbeats` raise is SLOW by definition) → **diagnose** the worst declaration down the trace ladder to a named root cause (required diagnosis block with evidence — no pattern-guessing) → **fix + re-measure** (success = under budget; both ms and heartbeats recorded) → **propagate** the root cause across the remaining slow declarations before diagnosing any of them fresh → **gates** (statement protection, no limit raises, no leftover profiling scaffolding, build clean, final re-sweep) → before/after report with speedups, removed raises, deferrals, and an approval menu for any API-touching fix. If nothing is over budget, it prints `FAST BOARD` and stops — `/buzz` invents no work.
+
 ### Preparing a PR
 
 ```
-/cleanup MyFile.lean            # Audit + fix + golf (one command)
-/buzz                           # Profile the changed files; trace + fix slow decls (<1s each)
+/cleanup MyFile.lean            # Audit + fix + golf (one command; ends with the /buzz pass)
+/buzz                           # Or standalone: profile changed files; trace + fix slow decls
 /mathlibable Foo.bar            # Is this decl the right shape for mathlib?
 /pre-submit MyFile.lean         # Final checklist
 ```
@@ -388,7 +411,8 @@ Mechanical 1:1 translation: each `.tex` file becomes one chapter file; `\begin{t
 
 The recent rewrites of `/cleanup`, `/fix-pr-feedback`, `/develop`, `/beastmode`,
 `/project-status`, `/expert-review`, `/generalise`, `/decompose-proof`, `/split-file`,
-`/integrate-learnings`, `/bump-mathlib`, and `/overview` all follow a single pattern:
+`/integrate-learnings`, `/bump-mathlib`, and `/overview` — and new commands like `/buzz` —
+all follow a single pattern:
 
 1. **Multi-step procedures with explicit phase numbers.** A workflow that says "do X, then Y, then Z" silently drops Y when the agent gets tired. A workflow with `PHASE 1` … `PHASE 8` makes phase-skipping visible.
 2. **Required artifacts.** Each phase produces a structured output — a punch-list, a status block, a gate-status table, a per-hypothesis classification table. The artifact is the proof the phase actually ran. Skipping a step is detectable in the missing or malformed artifact.
@@ -472,6 +496,14 @@ Forbidden name patterns (auto-fail `naming_gate`):
 
 Renames queue to `.mathlib-quality/renames.jsonl` and apply in Phase 5b (repo-wide, sequential) — Phase-4 workers never rename in place.
 
+### Performance Rules
+
+- **Every declaration under ~1 second of elaboration** — reviewers compile files and watch the orange bars; a lingering bar draws a comment. `/buzz` is the workflow (and runs automatically as `/cleanup` Phase 6.6).
+- **Never raise `maxHeartbeats`** (or `synthInstance.maxHeartbeats` / `maxRecDepth`) — a raise hides the defect and taxes every future build. Diagnose the root cause from the traces instead (`references/profiling.md`).
+- **Measure → fix → re-measure.** A performance "fix" without before/after numbers (ms + heartbeats) is a guess.
+- **One root cause per PR.** Slow declarations written by the same author at the same time almost always share it — test the first diagnosis against the rest before diagnosing any of them fresh.
+- **When speed and brevity conflict, speed wins** — a squeezed simp or an added `haveI` is accepted where it's the measured hotspot fix; golf never undoes a perf fix.
+
 ### Design Buzzphrases (durable heuristics)
 
 - **Shortest path modulo what SHOULD be in mathlib**, not modulo what IS currently in mathlib. Missing API is a separate follow-up, not something to route around.
@@ -479,6 +511,8 @@ Renames queue to `.mathlib-quality/renames.jsonl` and apply in Phase 5b (repo-wi
 - **Rules are meant to be breached. Breaches are meant to be documented.**
 - **The best comment is when it is unnecessary.**
 - **Mathlib is Bourbaki 2.0.** Adding the *right* declaration in the *right* form is worth the effort — cost is not a reason to ship the wrong shape.
+- **Watch the orange bars.** Slow elaboration is a reviewable defect, not a taste question — every declaration under a second.
+- **"It's the same issue."** Diagnose one slow declaration thoroughly; test the others against that root cause before diagnosing them fresh.
 
 ## Project Structure
 
