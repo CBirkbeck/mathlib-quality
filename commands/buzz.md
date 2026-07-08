@@ -244,11 +244,14 @@ beyond the taxonomy, suggest `/teach` to record it.
 
 ## Interplay with the other commands
 
-- **`/cleanup`** deletes `maxHeartbeats` raises (3.7) and has a blunt timeout ladder
-  (grind → inline haves → extract helpers). When that ladder fails, or when you want the
-  *reason* not just a workaround, `/buzz` is the trace-driven follow-up. Conversely, after
-  a `/buzz` fix that made a proof more verbose, `/cleanup <file> <decl>` re-golfs it —
-  keeping the timing (re-measure after; golf must not undo the perf fix).
+- **`/cleanup`** runs `/buzz` automatically as its **Phase 6.6** (after the simplify
+  hand-off, file-scoped; single-decl mode scopes to the decl) — every cleaned file comes
+  out fast as well as pretty, and since `/beastmode`'s Phase 6.5 invokes `/cleanup` on
+  every new declaration, freshly-proven code gets buzzed too. Standalone `/buzz` remains
+  the tool for PR-wide sweeps and one-off diagnosis. `/cleanup` also deletes
+  `maxHeartbeats` raises (3.7) with a blunt timeout ladder (grind → inline haves →
+  extract helpers); `/buzz` is the trace-driven version. When a buzz fix un-golfs a proof
+  inside cleanup, speed wins — cleanup does not loop back to re-golf (its 6.6c).
 - **`/decompose-proof`** is where `/buzz` sends declarations whose elaboration work is
   genuinely irreducible — five 200ms helpers beat one 1s monolith.
 - **`/pre-submit`** greps for the limit raises and leftover `set_option`s that `/buzz`'s

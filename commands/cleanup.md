@@ -31,13 +31,17 @@ Skip the file-wide phases. Run Phase 4 (per-declaration deep cleanup) on just `d
 3. Dispatch the worker agent for that declaration (Phase 4 worker prompt below). The worker
    MUST read `golfing-rules.md` and `proof-patterns.md` in full as its first step.
 4. Verify compilation.
-5. Print before/after report.
+5. Run the buzz pass on the declaration —
+   `Skill(skill="mathlib-quality:buzz", args="<file_path> <decl_name>")` — the same
+   hand-off as Phase 6.6 below, scoped to one decl. The declaration must come out under
+   the elaboration budget or carry an explicit buzz deferral (→ `/decompose-proof` flag).
+6. Print before/after report (including the buzz-pass status block from 6.6b).
 
 ---
 
 ## Mode B: Whole File (the standard mode)
 
-Ten phases. **Do them in order. Do not skip phases.**
+Eleven phases. **Do them in order. Do not skip phases.**
 
 ```
 PHASE 0   DOCTOR                  pre-flight: baseline must be green
@@ -49,6 +53,7 @@ PHASE 5a  NON-RENAME REFACTORING  mathlib replacements, junk-def inlining, big-c
 PHASE 5b  RENAME PASS             consume .mathlib-quality/renames.jsonl queue, apply sequentially
 PHASE 6   FINAL VERIFICATION      file-level gates + cumulative checks
 PHASE 6.5 SIMPLIFY                hand off to the built-in /simplify skill for a holistic review pass
+PHASE 6.6 BUZZ                    hand off to /buzz for a performance pass — every decl under budget
 PHASE 7   REPORT                  one consolidated report
 ```
 
@@ -1538,6 +1543,72 @@ simplify-pass status block fails the Phase-7 report's required-artifact check.
 
 ---
 
+## PHASE 6.6 — Buzz pass (hand-off to `/buzz` for performance)
+
+A clean file that elaborates slowly is not at mathlib quality — reviewers compile each
+file and watch the orange bars, and a declaration that keeps one lingering draws a
+comment. Golfing can even *create* slowness: a compressed terminal `simp`/`aesop` can
+cost more than the explicit proof it replaced. So after the simplify pass, hand off to
+`/buzz` so every declaration also comes out FAST.
+
+### 6.6a. Invoke `/buzz`
+
+```
+Skill(skill="mathlib-quality:buzz", args="<file_path>")
+```
+
+(In single-declaration mode — Mode A step 5 — the args are `"<file_path> <decl_name>"`.)
+
+`/buzz` runs its full workflow scoped to this file: profiled-compile sweep → per-decl
+timing table → trace diagnosis of anything over budget (default 1000ms) → measured fixes
+→ same-issue propagation → its own gates (statements byte-identical, no limit raises, no
+leftover profiling scaffolding, build clean, re-sweep). See `commands/buzz.md` and
+`references/profiling.md`.
+
+### 6.6b. Required artifact: buzz-pass status block
+
+```
+### Buzz pass — <file_path>
+
+Outcome: <FAST-BOARD (nothing over budget) | FIXED (all brought under budget) |
+          FIXED-WITH-DEFERRALS>
+
+| Decl | Before | After | Root cause | Fix |
+|------|--------|-------|------------|-----|
+| <only decls that were over budget; omit table entirely on FAST-BOARD>
+
+maxHeartbeats raises removed: <n> · added: 0 (always 0 — raises are forbidden)
+Deferred (still over budget): <none | list>
+Flagged big changes (need user approval): <none | list>
+```
+
+### 6.6c. Gate interaction
+
+`/buzz` re-runs the build and statement-protection gates itself and never ends red (it
+fixes or reverts its own edits), and its edits are proof-only — so Phase 6's cumulative
+gates remain valid and need no separate re-run beyond `/buzz`'s own. One interaction to
+watch: if a buzz fix visibly un-golfs a proof (a squeezed simp, an added `haveI`, a type
+ascription), record it in the 6.6b block and move on — do **NOT** loop back to Phase 4.
+When speed and brevity conflict, speed wins; mathlib reviews flag slow declarations, not
+one extra line.
+
+### 6.6d. Deferrals and flags feed Phase 7
+
+- Declarations `/buzz` deferred (still over budget after ≥3 measured fix attempts) join
+  the Phase-7 "Flagged for /decompose-proof" list — splitting the elaboration work is the
+  honest fix at that point.
+- Big changes `/buzz` flagged (shortcut instances, instance-priority edits, file-wide
+  attribute changes) join the follow-up section for user approval — same policy as the
+  Phase-5a big-change escalations.
+
+### 6.6e. Why we always run `/buzz`, never skip
+
+Same logic as 6.5e: if the file is already fast, the sweep is one profiled compile and
+the block says FAST-BOARD in seconds. A missing buzz-pass status block fails the Phase-7
+report's required-artifact check — skipping is detectable.
+
+---
+
 ## PHASE 7 — Report (Main agent)
 
 Required artifacts that must appear in the report (a missing section = the corresponding
@@ -1556,6 +1627,7 @@ phase wasn't completed; treat as a defect and re-run that phase):
 - **Verification (Phase 6)** — diagnostics-clean confirmation
 - **Gates (Phase 6 cumulative)** — proves gates were run
 - **Simplify pass (Phase 6.5)** — proves the simplify hand-off happened
+- **Buzz pass (Phase 6.6)** — proves the performance hand-off happened
 - **Total line delta** — confirms the work made measurable changes
 
 Single consolidated report:
@@ -1626,8 +1698,18 @@ Issues identified:
 - Redundant `simp only [foo, bar]` chain in three lemmas collapsed to a single `simp` call (terminal position).
 Fixes applied: 2 (verified diagnostics-clean and gates-clean afterwards)
 
+### Buzz pass (Phase 6.6)
+Outcome: FIXED
+| Decl          | Before | After | Root cause                  | Fix                       |
+|---------------|--------|-------|-----------------------------|---------------------------|
+| `main_result` | 2.3s   | 0.4s  | instance re-search per `rw` | `haveI` the instance once |
+maxHeartbeats raises removed: 1 · added: 0
+Deferred: (none)
+Flagged big changes: (none)
+
 ### Flagged for /decompose-proof
 - `theorem_X` (now 38 lines) — STRUCTURE branch >15 after golfing
+- (plus any Phase-6.6 buzz deferrals — decls still over the elaboration budget)
 
 ### Simplify suggestions for follow-up
 - (none — all issues addressed in 6.5)
@@ -1657,6 +1739,8 @@ Fixes applied: 2 (verified diagnostics-clean and gates-clean afterwards)
 - `skills/mathlib-quality/references/proof-patterns.md` — data-driven golf patterns (3,772 PRs)
 - `skills/mathlib-quality/references/style-rules.md` — file-level + declaration style
 - `skills/mathlib-quality/references/naming-conventions.md` — naming + forbidden abbreviations
+- `skills/mathlib-quality/references/profiling.md` — root-cause taxonomy behind the Phase-6.6
+  buzz hand-off (`commands/buzz.md`)
 
 ## Learnings
 

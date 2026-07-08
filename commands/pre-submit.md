@@ -82,13 +82,13 @@ Print the artifact:
 /cleanup [modified_files]
 ```
 
-`/cleanup` runs its full 9-phase workflow — Doctor (Phase 0) → audit → file-level fixes →
-per-decl golf → refactoring → final verification → simplify pass → report. Capture
-`/cleanup`'s Phase-7 report and embed its summary here:
+`/cleanup` runs its full 11-phase workflow — Doctor (Phase 0) → audit → file-level fixes →
+per-decl golf → refactoring (5a + 5b) → final verification → simplify pass → buzz
+performance pass → report. Capture `/cleanup`'s Phase-7 report and embed its summary here:
 
 ```
-[Step 2] /cleanup:      <PASS-CLEAN — diagnostics clean, all gates pass, simplify pass-through>
-                        <PASS-WITH-CHANGES — N issues fixed; gates clean; simplify fixed M things>
+[Step 2] /cleanup:      <PASS-CLEAN — diagnostics clean, all gates pass, simplify pass-through, buzz FAST-BOARD>
+                        <PASS-WITH-CHANGES — N issues fixed; gates clean; simplify fixed M things; buzz fixed K slow decls>
                         <FAIL — /cleanup ended in Overall: FAIL on gate <name>>
 ```
 

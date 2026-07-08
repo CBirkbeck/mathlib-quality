@@ -189,6 +189,11 @@ For each file:
   PHASE 6.5 SIMPLIFY                **REQUIRED.** Invoke `Skill(skill="simplify")`
                                     on the file. Re-run Phase 6 gates if it
                                     made changes. See cleanup.md Phase 6.5.
+  PHASE 6.6 BUZZ                    **REQUIRED.** Invoke
+                                    `Skill(skill="mathlib-quality:buzz", args="<file>")`
+                                    — performance pass; every decl under the
+                                    elaboration budget or explicitly deferred.
+                                    See cleanup.md Phase 6.6.
   PHASE 7   REPORT                  per-file summary
 
 **Renames are NOT a per-file phase here.** Phase-4 sub-workers append rename
@@ -217,10 +222,10 @@ Return a single compact summary at the end of the batch, in this exact shape:
 
   Phase checklist per file (required — orchestrator re-dispatches on any ✗):
 
-  | File | P1 | P2 | P3 | P4 | P5a | P6 | P6.5 | P7 |
-  |------|----|----|----|----|-----|----|------|----|
-  | File1.lean | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-  | File2.lean | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | File | P1 | P2 | P3 | P4 | P5a | P6 | P6.5 | P6.6 | P7 |
+  |------|----|----|----|----|-----|----|------|------|----|
+  | File1.lean | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | File2.lean | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
   ...
 
   Renames queued to .mathlib-quality/renames.jsonl during this batch:
@@ -258,7 +263,7 @@ After each batch returns, the orchestrator does TWO things — both compact, nei
 "analysis":
 
 **1. Sweep the batch's phase checklist for ✗.** Each file row should have
-`✓` in all eight columns (P1, P2, P3, P4, P5a, P6, P6.5, P7). For every `✗`,
+`✓` in all nine columns (P1, P2, P3, P4, P5a, P6, P6.5, P6.6, P7). For every `✗`,
 re-dispatch a single-file follow-up Agent call for that file with the
 missing phase named — e.g. *"Re-run File1.lean from the start; the previous
 worker reported ✗ for P6.5 (simplify hand-off) and ✗ for P4 (declaration
