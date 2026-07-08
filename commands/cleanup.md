@@ -644,7 +644,9 @@ Per-declaration `set_option maxHeartbeats X in` (or `maxRecDepth`) is unacceptab
    c. Extract the largest `have ... := by ...` blocks (>8 lines) as private helpers above
       this theorem. Splitting elaboration work usually fits within default heartbeats.
    d. If STILL timing out: report `Refactoring needed: /decompose-proof on decl_name`.
-      The `set_option` line stays deleted. No exceptions.
+      The `set_option` line stays deleted. No exceptions. Also suggest `/buzz <file>
+      <decl_name>` in the report — it diagnoses *why* the proof is slow from the profiler
+      traces (`references/profiling.md`) and usually fixes it without decomposition.
 
 ### STRUCTURE procedure (attempt fixes — never just flag)
 

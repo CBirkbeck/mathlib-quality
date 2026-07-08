@@ -88,6 +88,7 @@ Slow, methodical, ten-phase workflow that decides whether a single Lean declarat
 - **`/project-status`** — chat-only mathematical status report. Reads the project's `.lean` files (plus `plan.md` / `tickets.md` if present) and answers four questions in mathematical English: what result is the worker on, what (if anything) is blocked and what is mathematically missing, how does the current work connect to the overall goal, and how far along is the whole project. **Three-tier progress** — code-level coverage (declarations sorry-free), main-goal chain coverage (only the dependency closure of the main result), and distance-to-unconditional (parametric hypotheses on the main goal still to discharge). Unicode math only, no LaTeX. Read-only — no server, no browser.
 - **`/generalise`** — weaken assumptions on a single lemma/def: typeclass-hierarchy walk, drop-test, point-localise, strict→weak, plus mandatory literature search; auto-applies small safe changes, presents big changes as a numbered approval menu (also runs inline as part of `/cleanup` Phase 4)
 - **`/decompose-proof`** — break proofs >30 lines into focused helper lemmas (with mandatory user approval gate before dispatch)
+- **`/buzz`** — make slow proofs fast (target: each declaration elaborates in <1s). Sweeps the changed files with one profiled compile each, trace-diagnoses the worst declaration to a named root cause (instance-synthesis blowup, fat simp, defeq blowup, heavy automation, …), applies a measured fix, then tests the *same* root cause on the other slow declarations before diagnosing them fresh. Statements stay byte-identical; `maxHeartbeats` raises are removed, never added; the trace-reading and fix-pattern knowledge lives in `references/profiling.md`
 - **`/expert-review`** — produce a self-contained mathematical brief (`REVIEW_BRIEF.md`) for an external reviewer with no repo access; pure math, no Lean, no file paths; then in Mode 2 (`--reply`) integrate the reviewer's response into ticket-board updates
 - **`/blueprint`** — author or update the project's [verso-blueprint](https://github.com/leanprover/verso-blueprint) — the Verso-based Lean-native artifact behind verso-sphere-packing, verso-flt, verso-carleson, verso-noperthedron, verso-algebraic-combinatorics. Chapter files are `.lean` modules; statements use `:::theorem "label" (lean := "Foo.bar")` directives; dep-graph edges use `{uses "label"}[]`; math is KaTeX (``$`...` `` inline, ``$$`...` `` display). Verso auto-computes completion status from `(lean := …)` — no manual `\leanok` to maintain. Seven-phase workflow: doctor → enumerate (diff against existing chapters) → plan → prose context → author (one worker per declaration; Verso directives only) → cross-link pass → hand-off (`./scripts/ci-pages.sh`; verify `_out/site/html-multi/`). Whole-project default; modes for single-file, `--decl <Foo.bar>` (single decl + closure), `--update` (drift-only), `--check` (inventory + diff), `--migrate-from-latex [<dir>]` (one-shot mechanical 1:1 conversion of a legacy `leanblueprint` LaTeX tree)
 - **`/unformalise`** — turn one Lean declaration into mathematics. Unicode terminal render by default (Γ, ℂ, ℍ, →, ≤ — readable in chat); then `[b]` blueprint as Verso / `[v]` Verso markup to stdout / `[m]` Markdown / `[n]` terminal-only. Non-interactive: `--verso`, `--md`, `--blueprint`. The conversational front door for `/blueprint --decl`
@@ -189,6 +190,7 @@ activate the new tool.
 | `/expert-review` | Two-mode external review: produce a self-contained math brief (`REVIEW_BRIEF.md`), wait for the reviewer's response, then integrate their guidance into the ticket board |
 | `/generalise` | Weaken assumptions on a lemma or definition: mechanical weakenings + literature search; auto-apply small safe changes, propose big changes as a numbered menu |
 | `/decompose-proof` | Break long proofs into helper lemmas |
+| `/buzz` | **Profile → trace → fix slow declarations (target <1s each).** Headless "orange-bar watch": one profiled compile per file → per-decl timing table → trace-driven diagnosis (`trace.profiler`, `synthInstance`, `isDefEq`, simp traces) against the eight-cause taxonomy in `references/profiling.md` → measured fixes. **Same-issue propagation**: the first root cause is tested on every other slow decl before any fresh diagnosis. Statements never change; `maxHeartbeats` never goes up (existing raises get removed); profiling scaffolding is gate-checked out of the final diff. PR mode by default (changed files vs default branch); also `<file>`, `<file> <decl>`, `--all`, `--budget <ms>`. |
 | `/split-file` | Split files >1000 lines (with approval gate) |
 | `/pre-submit` | Pre-PR submission checklist |
 | `/fix-pr-feedback` | Fetch PR comments → fix → STOP for approval → push → watch CI. Every commit and PR-description update follows binding conventions (short imperative subject, concrete bullet body, `Depends on` line, Claude co-author footer). |
@@ -279,6 +281,7 @@ activate the new tool.
 
 ```
 /cleanup MyFile.lean            # Audit + fix + golf (one command)
+/buzz                           # Profile the changed files; trace + fix slow decls (<1s each)
 /mathlibable Foo.bar            # Is this decl the right shape for mathlib?
 /pre-submit MyFile.lean         # Final checklist
 ```
@@ -485,6 +488,7 @@ mathlib-quality/
 │   ├── cleanup.md               # Style audit + fix + golf (10-phase, 4 hard gates incl. inequality orientation)
 │   ├── cleanup-all.md           # Project-wide cleanup (one /cleanup per file)
 │   ├── decompose-proof.md       # Break long proofs into helper lemmas (with approval gate)
+│   ├── buzz.md                  # Profile → trace → fix slow declarations (<1s each; no maxHeartbeats raises)
 │   ├── expert-review.md         # Two-mode external review: brief → wait → integrate reply into tickets
 │   ├── generalise.md            # Weaken hypotheses; mechanical pass + literature search; user approval for big changes
 │   ├── split-file.md            # Split files >1000 lines (with approval gate)
@@ -502,7 +506,7 @@ mathlib-quality/
 ├── commands/
 │   ├── mathlibable.md           # Slow 10-phase workflow: is this the right shape for mathlib? (5 verdict buckets)
 │   ├── cleanup-all.md           # Orchestrator-worker project-wide cleanup
-│   └── ...                      # (all 20 commands)
+│   └── ...                      # (all 21 commands)
 ├── skills/mathlib-quality/
 │   ├── SKILL.md                 # Main skill definition
 │   └── references/              # Authoritative reference docs read by workers:
@@ -515,6 +519,8 @@ mathlib-quality/
 │       ├── mathlibable-verdicts.md     # Verdict definitions, worked cases per bucket, false-positive routing, anti-pattern catalogue
 │       ├── generalisation-patterns.md  # Typeclass-weakening catalogue + inversion check
 │       ├── cleanup-gates.md            # Diff gates for /cleanup (borrowed from shouyi)
+│       ├── statement-splitting.md      # One-conclusion-per-declaration rule (multi-part statements)
+│       ├── profiling.md                # Measurement how-to, trace reading, slow-proof root-cause taxonomy
 │       ├── blueprint-conventions.md    # Verso authoring + CI deployment gotchas
 │       ├── pr-feedback-examples.md     # Curated review-category examples
 │       ├── mathlib-quality-principles.md  # Core quality principles

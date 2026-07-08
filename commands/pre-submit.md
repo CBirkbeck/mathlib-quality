@@ -32,7 +32,8 @@ For each modified file:
 
 ### 3. Code Quality
 - [ ] No bare `simp` (use `simp only`)
-- [ ] No `set_option maxHeartbeats`
+- [ ] No `set_option maxHeartbeats` (a proof that needs one is slow — run `/buzz` to
+      diagnose and fix it; never raise the limit)
 - [ ] No `set_option trace.*`
 - [ ] No `set_option pp.*`
 - [ ] Instance names are explicit
