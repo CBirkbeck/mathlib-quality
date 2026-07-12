@@ -287,7 +287,11 @@ The protocol passes when:
   levels** (specific form, the most-general form, named-after / common
   aliases).
 - **ChatGPT MCP ran at least 1 query asking explicitly for the standard
-  form, its generality, and any historical evolution of the formulation.**
+  form, its generality, and any historical evolution of the formulation** —
+  OR recorded `n/a: ask_chatgpt_math unavailable`. The server is
+  user-configured (`/setup-chatgpt`) and optional; when absent, note the
+  missing channel in the Phase-8 report and continue — its absence never
+  fails the protocol, and the other channels are not reduced.
 - **Local references were checked** (or recorded `n/a` with a one-line
   reason if the directory is absent).
 - **nLab was checked.** Even if the concept isn't categorical, nLab often

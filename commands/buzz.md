@@ -101,6 +101,18 @@ timings are this file's own):
 lake env lean -Dprofiler=true -Dprofiler.threshold=100 Path/To/File.lean
 ```
 
+**Module-system files** (the file starts with the `module` keyword / `public import …`):
+plain `lake env lean` lacks the `--setup` that `lake build` passes and fails with spurious
+"definition not exposed" errors. Sweep those via `lake lean` (which builds deps and passes
+the module setup), forwarding the options after `--`:
+
+```bash
+lake lean Path/To/File.lean -- -Dprofiler=true -Dprofiler.threshold=100
+```
+
+If that is also unavailable, fall back to per-declaration measurement
+(`lean_profile_proof`, temporary `count_heartbeats in`). See `references/profiling.md`.
+
 Parse the output: timing messages are anchored to source positions — map each position to
 its declaration (via the file outline) and record the total and the dominant category
 (`typeclass inference`, `simp`, `tactic execution`, `type checking`, `compilation`, …).

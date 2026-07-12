@@ -20,7 +20,7 @@ For EVERY declaration, print:
 6. LINE PACKING: [short lines to fix, or "all filled to ~100"]
 7. BY PLACEMENT: [violations, or "OK"]
 8. FORMAT: [λ, $, show, indent, empty lines, or "OK"]
-9. COMMENTS: [inline comments, or "clean"]
+9. COMMENTS: [preserved N / re-anchored M / relocated-from-docstring K; removed (reason each), or "none present"]
 10. DOCSTRING: [action needed, or "OK"]
 11. TERM MODE: [by exact, by rfl, eta, or "none"]
 12. AUTOMATION: [grind/fun_prop opportunities, or "none"]
@@ -130,7 +130,7 @@ Copy the "Try this:" content exactly.
 | 5 | NAMING | lemma→snake_case, def→lowerCamelCase, conclusion_of_hypothesis |
 | 7 | BY | `by` must be at end of preceding line, never alone |
 | 8 | FORMAT | `fun` not `λ`, `<|` not `$`, `change` not `show`, 2-space indent |
-| 9 | COMMENTS | Remove ALL inline comments from proofs |
+| 9 | COMMENTS | PRESERVE inline proof comments — re-anchor them to golfed steps; relocate docstring proof-sketch prose INTO the proof as `--` comments. Remove only wrong/stale or tactic-restating comments, one-line reason each |
 | 10 | DOCSTRING | Public: one sentence. Private: none. |
 | 11 | TERM MODE | `by exact h`→`h`, `by rfl`→`rfl`, `fun x => f x`→`f` |
 | 12 | AUTOMATION | Try grind/fun_prop/omega. `rw+exact`→`rwa`. `simp+exact`→`simpa` |
@@ -155,7 +155,7 @@ After processing all declarations:
 ## Worker Report
 
 ### `decl_1` (lines N-M)
-- Fixed: GOLF(inlined 2 haves), FORMAT(packed 3 lines), COMMENT(removed 2)
+- Fixed: GOLF(inlined 2 haves), FORMAT(packed 3 lines), COMMENT(re-anchored 3, relocated 1 from docstring)
 - Skipped: AUTOMATION(grind failed on L55-60)
 
 ### `decl_2` (lines P-Q)

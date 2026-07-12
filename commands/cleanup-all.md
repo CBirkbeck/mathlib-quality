@@ -270,6 +270,14 @@ worker reported ✗ for P6.5 (simplify hand-off) and ✗ for P4 (declaration
 `foo_bar` is missing a per-decl worker report)."* Do this BEFORE counting
 the file as done in the scoreboard.
 
+**LSP-unavailable is not a pass (binding).** Parallel batches share ONE Lean LSP server;
+under contention, workers report they could not elaborate their file at all ("import
+lockout") — and an honest `diagnostics: could-not-verify` in a worker summary is a
+**failure, not a pass**. Any file whose worker reported it couldn't verify its own edits
+is re-dispatched as a single-file follow-up (serially, once the LSP frees up) and is NOT
+counted done in the scoreboard. In a live run, counting these as passes let a hallucinated
+lemma name ship in a batch that reported "0 failures" while the build was broken.
+
 **2. Emit exactly one scoreboard line:**
 
 ```

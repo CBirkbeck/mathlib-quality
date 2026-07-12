@@ -202,73 +202,71 @@ theorem foo : P
 - May omit blank lines for grouped short definitions
 - **Exactly one blank line between consecutive declarations** (lemma/theorem/def). Two or more is rejected; zero is rejected.
 
-### No Subsection Dividers Inside Files
+### Section Headers Inside Files (`/-! ## … -/`) — standard practice, preserve them
 
-Do not add `/-! ### Foo -/` (or `/-! ## Foo -/`) subsection headers inside a Lean file. The only module-level docstring belongs at the top of the file. Subsection dividers below the header are rejected by review and `/cleanup` strips them.
+Section headers below the module docstring are **standard mathlib practice**: mathlib
+itself contains ~2,500 `/-! ## … -/` / `/-! ### … -/` headers across ~900 files. They make
+long files navigable and group related API. (A pre-v0.58.0 version of this rule claimed
+they are "rejected by review" — that was factually wrong; `/cleanup` no longer strips
+them.)
+
+- **Never strip an existing section header** during cleanup; preserve it with its
+  surrounding blank lines.
+- Only genuinely contentless headers are removable: an empty `/-! -/`, or a header whose
+  section no longer contains any declarations.
+- Cleanup doesn't gratuitously *add* headers either — introducing structure is an
+  authoring decision.
+- A file that needs many headers to stay navigable may still be a `/split-file` candidate,
+  but that's a flag for the user, not a reason to delete the headers.
+
+### Comments in Proofs — preserve them; mathlib is under-documented
+
+**Rule REVERSED in v0.58.0** after live maintainer feedback (a mathlib maintainer, six
+times in one review, asking for deleted comments back):
+
+> "Don't delete helpful comments from proofs. 'No comments in proofs' is NOT a mathlib
+> style requirement — many maintainers believe there *should* be more comments in proofs,
+> it's just that people don't write them."
+
+Signpost comments that narrate the mathematical stages of a long proof (`-- factor out
+the linear factor over R/I`, `-- lift the factorisation to R`, `-- CRT identifies S with
+(R⧸I)×(R⧸M)`) are **valuable and are kept**. During golf they are **re-anchored** to the
+rewritten step, never deleted — a proof that shrinks from 20 lines to 8 still tells the
+same story, and the signposts move with the steps they describe.
+
+**Division of labour between docstring and proof comments:**
+- The **docstring** says *what* the declaration states (one or two sentences; no proof
+  strategy).
+- **Inline `--` comments** say *how* the proof goes. Proof-sketch prose found in a
+  docstring is **relocated into the proof body** as `--` comments — moved, not deleted.
+
+**The only removable comments** (each with a one-line justification in the cleanup
+report):
+- Factually **wrong or stale** ones (describing code that no longer exists) — fix or
+  remove.
+- Ones that literally **restate the next tactic** (`-- apply foo` directly above
+  `apply foo`) — pure noise, no mathematical content.
 
 ```lean
--- BAD: subsection divider inside a file
-/-! ### Surjectivity of `evalE₄E₆` -/
+-- GOOD: signposted proof — comments narrate the mathematical stages
+theorem henselian_of_isAdjoinRootEquiv … := by
+  -- factor out the linear factor over R/I
+  obtain ⟨g, hg⟩ := exists_factor_of_root hroot
+  -- lift the factorisation to R via the Henselian property
+  obtain ⟨G, hG₁, hG₂⟩ := lift_factorisation hg
+  -- CRT identifies S with (R⧸I) × (R⧸M)
+  exact (crtEquiv hG₁).symm.trans (idealQuotientEquiv hG₂)
 
-theorem evalE₄E₆_surjective : ... := by ...
+-- BAD (during golf): deleting the three comments above because the proof got shorter.
+-- Re-anchor them to the new steps instead.
 
-/-! ### Injectivity of `evalE₄E₆` -/
-
--- GOOD: just declarations, no dividers
-theorem evalE₄E₆_surjective : ... := by ...
-
-theorem evalE₄E₆_injective : ... := by ...
-```
-
-If a chunk of declarations needs a header to be discoverable, the file is probably too large — split it instead.
-
-### Comments in Proofs
-
-**Mathlib proofs should have NO inline comments.** Proofs should be self-documenting through
-clear variable names and logical structure. Use docstrings for documentation.
-
-**Narrative `--` comments inside proofs (`-- now apply the IH`, `-- use linearity`, `-- Step 1: ...`) are rejected.** `/cleanup` strips them automatically. The only `--` comments that survive a review pass are those documenting a non-obvious WHY: a hidden constraint, a workaround for a specific bug, or behaviour that would surprise a reader.
-
-**What to avoid:**
-```lean
--- Bad: ANY inline comments in proofs
+-- BAD (authoring): comments that restate the literal tactic — these ARE removable
 theorem foo : P := by
-  -- First we show that A holds
-  have hA : A := by
-    -- This is because of lemma bar
-    exact bar
-  -- Now we can use hA to get B
-  have hB : B := by
-    -- Apply transitivity
-    exact trans hA hC
-  -- Finally conclude
-  exact final_step hB
-
--- Also bad: "Step N" markers
-theorem bar : Q := by
-  -- Step 1: Setup
-  have h1 := setup_lemma
-  -- Step 2: Main argument
-  have h2 := main_lemma h1
-  -- Step 3: Conclude
-  exact h2
+  -- apply bar
+  apply bar
 ```
 
-**What to use instead:**
-```lean
--- Good: clean proof with SHORT docstring (no strategy), NO inline comments
-/-- The sum of two even numbers is even. -/
-theorem foo : P := by
-  have hA : A := bar
-  have hB : B := trans hA hC
-  exact final_step hB
-
--- Good: no step markers, no explanatory comments
-theorem bar : Q := by
-  have h1 := setup_lemma
-  have h2 := main_lemma h1
-  exact h2
-```
+When in doubt, keep the comment.
 
 ### Docstring Guidelines
 

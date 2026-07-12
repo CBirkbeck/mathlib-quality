@@ -24,3 +24,6 @@ Thumbs.db
 # Temporary
 *.tmp
 *.temp
+
+# MCP server config is machine-local (absolute paths into a user home) — never commit
+.mcp.json

@@ -211,6 +211,13 @@ cd ~/.claude/mcp-servers/chatgpt-math && npm install
 Add the `chatgpt-math` server to the **project-level** `.mcp.json` in the
 user's current working directory.
 
+`.mcp.json` is a **machine-local file — never commit it.** It contains an absolute path
+into one user's home directory, so a committed copy breaks the server on every other
+machine (and a broken MCP entry surfaces as an error each session while silently costing
+`/mathlibable` and `/develop` their ChatGPT channel). This repo gitignores it; make sure
+the target project does too. All consumers of `ask_chatgpt_math` degrade gracefully when
+the server is absent — setup is optional.
+
 Read the existing `.mcp.json` if it exists (to preserve other servers), then
 add or update the `chatgpt-math` entry:
 

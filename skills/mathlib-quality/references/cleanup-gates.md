@@ -27,6 +27,13 @@ place; the gates run on the diff captured against the pre-edit state.
 refactoring is done. Optionally per-worker (Phase 4 step 5b) for files that build
 independently within a few seconds.
 
+**It is a tool-call gate, not an assertion.** The Phase-6 gate row must cite the actual
+`Bash` invocation and exit status from the session; an uncited "✓ pass" is invalid and the
+run may not report success. Per-worker deferral of this gate is legitimate *only because*
+Phase 6 runs it unconditionally on every touched module — LSP diagnostics are necessary
+but never a substitute (a live run reported success on LSP evidence while a hallucinated
+lemma name had broken the build).
+
 **Why it's stronger than `lean_diagnostic_messages`.** LSP diagnostics catch most errors,
 but `lake build` also checks: import-graph effects, transitive build-only-fails-fresh
 errors, the actual compilation pipeline CI uses. A green LSP is *necessary but not
@@ -197,11 +204,16 @@ suffix for private helpers; only the *numbered* `_aux\d+` is forbidden.
 
 ### `line_packing_gate` — every signature line packed, not just the first
 
-**What it checks.** Every signature line in the declaration is packed toward ~100 chars and
-breaks only where the next token would overflow. Workers must emit a per-line width table
-(see `/cleanup` LINE PACKING procedure) with one row per signature line showing the
-arithmetic `current_chars + 1 + next-token-width ≤ 100`. The table is the gate's required
-artifact; a missing table — or a table that covers only some lines — is an automatic FAIL.
+**What it checks.** Every signature line in the declaration is packed toward ~100
+**codepoints** (`wc -m` semantics, never bytes — `∑ ⧸ ↦` are 3 bytes but 1 column; a
+byte-based check invents phantom violations on math-heavy lines) and breaks only where the
+next token would overflow. The **conclusion line is part of the check**: `: conclusion :=`
+counts as the next-token of the last hypothesis line, so a short conclusion dangling on
+its own line when it would fit is a FAIL, not a style choice. Workers must emit a per-line
+width table (see `/cleanup` LINE PACKING procedure) with one row per signature line showing
+the arithmetic `current_codepoints + 1 + next-token-width ≤ 100`. The table is the gate's
+required artifact; a missing table — or a table that covers only some lines — is an
+automatic FAIL.
 
 **When it runs.** Phase 4 per-worker (audit item 6).
 

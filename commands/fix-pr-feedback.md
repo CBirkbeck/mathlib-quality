@@ -59,6 +59,13 @@ When you do update it, follow these rules:
   changes. No background paragraphs. No "this PR addresses the following
   comments" walls of text — comments are visible in the PR thread; don't
   duplicate them.
+- **Re-tighten, never accrete.** Across review rounds the description must
+  not grow by appending — rewrite it back down to the one-liner + bullets,
+  and keep it factually in sync with the code (if notation or naming changed
+  during review, the description changes with it). Reviewer @loefflerd on
+  mathlib4#41251: *"As so often happens with AI-generated PR's, the PR
+  description is getting longer and longer with each iteration. Please keep
+  it a bit more to the point."*
 - **Concrete.** Each bullet names *what changed*, not *why* in the abstract.
   "Renames `wt_eq_zero` → `weight_eq_zero`" not "Improves naming consistency".
 - **Lists dependencies.** If the PR depends on another PR being merged first

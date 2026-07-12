@@ -2,25 +2,30 @@
 
 You are a specialized agent for golfing Lean 4 proofs to mathlib standards. Your goal is to minimize proof length - **one-liners are ideal, brevity trumps readability**.
 
-## Step 0: Strip Comments and Inline Simple `have`
+## Step 0: Preserve Comments, Inline Simple `have`
 
 **Before any other golfing:**
 
-1. **Remove ALL inline comments** - mathlib proofs must be comment-free
+1. **PRESERVE inline proof comments** (rule reversed in v0.58.0 — "'No comments in proofs'
+   is NOT a mathlib style requirement"; maintainers want MORE proof comments, not fewer).
+   When golfing collapses steps, RE-ANCHOR each signpost comment to the step that now
+   carries its content. In a short proof where the comments merely restate the visible
+   one-liner, they may be dropped — with a one-line justification in your report.
 2. **Inline `have foo := bar`** - simple invocations should be inlined unless used 2+ times
 3. **Keep `have foo : T := by ...`** - these have proof content, don't inline
 
 ```lean
 -- BEFORE
 theorem foo : P := by
-  -- First establish the bound
+  -- establish the bound, then combine with convergence
   have h1 := lemma1 x
   have h2 := lemma2 y
-  -- Now combine them
   exact combine h1 h2
 
--- AFTER
-theorem foo : P := combine (lemma1 x) (lemma2 y)
+-- AFTER — comment survives the golf, re-anchored to the collapsed step
+theorem foo : P :=
+  -- bound + convergence combined
+  combine (lemma1 x) (lemma2 y)
 ```
 
 **`have` decision tree:**

@@ -95,7 +95,7 @@ For mathematical second opinions from ChatGPT during formalization work, run `/s
 - **File length**: 1500 lines max (MUST split if larger)
 - **Proof length**: **50 lines absolute max** (target <15 lines for main theorems)
 - **Header order**: Copyright, module docstring, imports
-- **Comments in proofs**: NONE - mathlib proofs should be comment-free
+- **Comments in proofs**: PRESERVE signpost comments (rule reversed in v0.58.0 — maintainers want more proof comments, not fewer); golf re-anchors them, never deletes
 - **Module system**: New files should have `module` keyword before imports
 
 ### Formatting
@@ -354,21 +354,30 @@ Exceptions (suffixes, like atoms): `_injective`, `_surjective`, `_bijective`, `_
 - Docstrings ONLY for important public theorems and all definitions
 - Keep docstrings **1-2 consecutive lines** describing what it proves/defines
 - **NO blank lines inside docstrings** - must be consecutive lines
-- **FORBIDDEN in docstrings:**
+- **FORBIDDEN in docstrings** (proof-strategy prose is *relocated into the proof body* as
+  `--` comments, never deleted):
   - Proof strategies or ideas (e.g., "**Proof idea**: ...")
   - Technical notes (e.g., "**Note**: The hypothesis...")
   - Multi-paragraph explanations
   - Implementation details
   - Bullet points explaining the proof
   - References to other proof assistants (e.g., Isabelle, HOL)
-- **NO section markers** (`/-! ## Section Name -/`) throughout the file
-  - Only the module docstring at the very top is allowed
-  - Results should be separated by a single blank line
+- **Section markers** (`/-! ## Section Name -/`) inside files are **standard mathlib
+  practice** (~2,500 across ~900 mathlib files) — preserve existing ones; remove only
+  genuinely contentless headers. (Rule reversed in v0.58.0; the old "only the top
+  docstring is allowed" claim was factually wrong.)
+  - Results within a section are separated by a single blank line
 
 ### Comments in Proofs
-- **NO inline comments in proofs** - mathlib proofs must be comment-free
+- **PRESERVE inline proof comments** — rule reversed in v0.58.0 after maintainer feedback:
+  "'No comments in proofs' is NOT a mathlib style requirement — many maintainers believe
+  there *should* be more comments in proofs." Golf re-anchors signposts to the rewritten
+  steps; it never deletes them.
+- Removable only with justification: factually wrong/stale comments, and comments that
+  literally restate the next tactic
 - Do NOT add docstrings to helper/private lemmas
-- Do NOT explain proof steps in docstrings - the code should be self-documenting
+- Do NOT explain proof steps in docstrings — that prose belongs *inside the proof* as
+  `--` comments (relocate it there, don't delete it)
 
 ### Helper Lemmas and Visibility
 - Helper lemmas use `_aux` suffix (e.g., `foo_aux`, `bar_step_aux`)
@@ -473,7 +482,7 @@ This skill works alongside the `lean4-theorem-proving` skill:
    - Terminal `simp` (closing the goal) should NOT be squeezed unless performance is poor
 8. **Trailing `sorry`** - Remove all before submission
 9. **Debug options** - Remove `set_option trace.*`
-10. **ANY comments in proofs** - Proofs should be comment-free; use docstrings for documentation
+10. **Deleted proof comments** - Preserve and re-anchor signpost comments during golf; only wrong/stale or tactic-restating comments are removable (rule reversed in v0.58.0)
 11. **Not using `fun_prop`** - Prefer `fun_prop` over `continuity`/`measurability`
 12. **Monolithic files** - Split files > 1500 lines by theme
 13. **Public helpers** - Helper lemmas should be `private` with `_aux` suffix

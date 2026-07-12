@@ -20,6 +20,19 @@ per-import):
 lake env lean -Dprofiler=true -Dprofiler.threshold=100 Path/To/File.lean
 ```
 
+**Module-system files** (leading `module` keyword, `public import …`, `@[expose] public
+section`): the command above fails — plain `lake env lean` lacks the `--setup <setup.json>`
+that `lake build` passes, and throws spurious "definition not exposed" type mismatches.
+Use `lake lean`, which builds the dependencies and passes the module setup, forwarding
+options after `--`:
+
+```bash
+lake lean Path/To/File.lean -- -Dprofiler=true -Dprofiler.threshold=100
+```
+
+(Fallback if needed: per-declaration `lean_profile_proof` or temporary
+`count_heartbeats in` wrappers.)
+
 Every command whose elaboration exceeds the threshold (ms) prints timing messages anchored
 at its source position — `elaboration took 1.2s` plus category lines such as `typeclass
 inference`, `simp`, `tactic execution`, `type checking` (kernel replay), `compilation`,
@@ -57,7 +70,8 @@ record *improvements* in heartbeats. Remove the wrapper when done — it is scaf
   - `set_option trace.Meta.Tactic.simp.rewrite true in` — every rewrite a `simp` call used
 - Optional flamegraph for gnarly cases:
   `lake env lean -Dtrace.profiler=true -Dtrace.profiler.output=prof.json File.lean`, load
-  `prof.json` in the Firefox Profiler UI.
+  `prof.json` in the Firefox Profiler UI. (Module-system files: route through
+  `lake lean File.lean -- -D…` as above.)
 
 All of these are **temporary scaffolding**. They are added to read, then removed. A file
 that ships with `set_option profiler`/`trace.*`/`diagnostics` or a `count_heartbeats in`

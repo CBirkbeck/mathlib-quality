@@ -119,6 +119,14 @@ This block goes into the final report so the user knows what the baseline was.
 
 `Read [file_path]` with no limit. You need to see the whole thing.
 
+**Dialect probe (record the answer for later phases):** does the file start with the Lean
+**module system** — a leading `module` keyword, `public import …` lines, `@[expose] public
+section`? If yes, record `dialect: module`. Two rules adapt downstream: the A.3
+import-reorder (3.4) and the item-11 private-visibility rewrite are marked
+`n/a: module file` — `public import` and `@[expose] public section` are load-bearing and
+are never rewritten to classic form. (`/buzz` also profiles module files differently; see
+`references/profiling.md`.)
+
 ### 1b. Collect Lean diagnostics
 
 ```
@@ -168,7 +176,7 @@ The punch-list output goes into the conversation as a markdown section like:
 A.1  COPYRIGHT — present, authors line OK
 A.2  MODULE DOCSTRING — MISSING (will create in 3.2)
 A.3  IMPORTS — out of order: `Mathlib.Topology.Basic` after `Mathlib.Data.Set.Basic`
-A.4  SUBSECTION DIVIDERS — 3 found at L42, L91, L156 (will strip in 3.3)
+A.4  SECTION HEADERS — 3 found at L42, L91, L156, all with content → preserve (3.3)
 A.5  FILE LENGTH — 740 lines (OK; <1000)
 A.6  FILE-LEVEL SET_OPTION — `set_option maxHeartbeats 400000 in` at L33 (will remove in 3.5)
 A.7  MECHANICAL — `λ` ×4 (L60, L91, L102, L201); `$` ×2 (L88, L155); `push_neg at h` ×3 (will batch in 3.6)
@@ -208,7 +216,7 @@ C.3  `main_result` (theorem, L65)
 | **A.1 COPYRIGHT** | First few lines: `Copyright (c) YYYY Author. All rights reserved.` / `Released under Apache 2.0...` / `Authors: ...` | OK or what's wrong |
 | **A.2 MODULE DOCSTRING** | `/-! # Title ... -/` *immediately* after imports? | Present, or **MISSING (will create in 3.2)** |
 | **A.3 IMPORTS** | Mathlib first, alphabetical within groups, no obvious unused imports | OK or list of issues |
-| **A.4 SUBSECTION DIVIDERS** | `/-! ##` or `/-! ###` *inside* the file body (below the top docstring) | List every line |
+| **A.4 SECTION HEADERS** | `/-! ##` / `/-! ###` headers that are *contentless* (empty text, or heading a section with no declarations). Headers with content are standard mathlib practice — NOT audit items; do not list them. | List only contentless ones |
 | **A.5 FILE LENGTH** | `wc -l` on the file. <1000 OK, ≥1000 flag for `/split-file` | Line count + verdict |
 | **A.6 FILE-LEVEL SET_OPTION** | `set_option maxHeartbeats`, `set_option maxRecDepth`, debug `set_option trace.*`, etc. | List every line |
 | **A.7 MECHANICAL** | Count of `λ` (vs `fun`), `$` (vs `<|`), `push_neg` (deprecated → `push Not`) | Counts + line numbers |
@@ -287,14 +295,25 @@ How to write it without guessing:
 If the file is genuinely a grab-bag with no clear theme, that's a signal for `/split-file`,
 but write a docstring anyway: "This file collects miscellaneous results about X." is fine.
 
-### 3.3 Strip subsection dividers
+### 3.3 Section headers (`/-! ## … -/`) — PRESERVE them
 
-Every `/-! ## ... -/` and `/-! ### ... -/` *below* the top module docstring is rejected by
-review. Delete them — both the comment and the leading/trailing blank line that hugged it.
+Section headers below the module docstring are **standard mathlib practice** — mathlib
+itself contains ~2,500 of them across ~900 files. (This REVERSES a pre-v0.58.0 rule that
+called them "rejected by review"; that rule was factually wrong, and on a normal mathlib
+file it vandalised structure.)
 
-Only the top-of-file `/-!` block survives.
+- **Preserve** every existing `/-! ## … -/` / `/-! ### … -/` header, with its surrounding
+  blank lines.
+- **Remove** only genuinely contentless ones: an empty `/-! -/`, or a header whose section
+  contains no declarations (e.g. after other phases moved them).
+- **Don't gratuitously add** headers during cleanup — adding structure is an authoring
+  decision, not a cleanup action.
 
 ### 3.4 Imports
+
+**Module-system files (dialect probe from 1a): skip this step** — record
+`n/a: module file`. `public import` / `import` distinctions there are semantic
+(re-export control), not stylistic; reordering or rewriting them changes meaning.
 
 Reorder: Mathlib first (alphabetical), then project imports (alphabetical), with one blank
 line between groups. One import per line. Don't speculatively delete imports here — wait
@@ -425,7 +444,19 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
                    well. A worker that transforms `have hH : T := e` into
                    `haveI : T := e` has regressed the file — the correct
                    simplification is the anonymous `have : T := e`.]
- 9. COMMENTS      [strip ALL narrative `--` inside the proof]
+ 9. COMMENTS      [PRESERVE inline proof comments — rule REVERSED in v0.58.0 after
+                   live maintainer feedback: "'No comments in proofs' is NOT a
+                   mathlib style requirement — many maintainers believe there
+                   *should* be more comments in proofs, it's just that people
+                   don't write them." Golfing a step means RE-ANCHORING its
+                   signpost comment onto the rewritten step, never deleting it.
+                   Proof-sketch prose found in a *docstring* is moved INTO the
+                   proof body as `--` comments (docstrings say WHAT, proof
+                   comments say HOW) — relocated, not deleted. The only
+                   removable comments, each with a one-line justification in
+                   the report: factually wrong/stale ones, and ones that
+                   literally restate the next tactic (`-- apply foo` directly
+                   above `apply foo`). When in doubt, keep it.]
 10. DOCSTRING     [public theorem/def → 1-sentence; private/aux → none;
                    if missing on public, CREATE one — do not skip.
                    For non-trivial public results, docstrings should ALSO
@@ -437,7 +468,10 @@ If an item doesn't apply, write `n/a: <one-sentence reason>`. If it does, write 
                    on the "more documentation" side. See
                    `references/mathlib-review-stages.md § Documentation
                    depth`.]
-11. VISIBILITY    [only-used-in-file → private; helper → private + _aux]
+11. VISIBILITY    [only-used-in-file → private; helper → private + _aux.
+                   Module-system files (Phase-1a dialect probe found a leading
+                   `module` keyword): mark `n/a: module file` — visibility works
+                   through `public section` / `@[expose]` there; do not rewrite.]
 12. STRUCTURE     [HARD GATE (structure_gate, Step 5b) — proof length, ∧ in statement,
                    branches >10 lines. "Signature locked" is NOT a reason to skip
                    extraction: a `private` helper placed ABOVE this declaration does NOT
@@ -578,9 +612,20 @@ For every `simp` / `simp only [...]`:
 > "Hypothesis-rich signature line" includes ALL signature lines, not just the
 > first one. A 5-line signature gets 5 table rows.
 
-Fill every signature line to ~100 chars (mathlib's column limit). Do NOT break at 50–80 chars
-when there's room. Lean's pretty-printer at `format.width := 100` produces maximally-packed
-output — your declaration syntax should match what the pretty-printer would emit.
+Fill every signature line to ~100 **codepoints** (mathlib's column limit). Do NOT break at
+50–80 when there's room. Lean's pretty-printer at `format.width := 100` produces
+maximally-packed output — your declaration syntax should match what the pretty-printer
+would emit.
+
+**Codepoints, not bytes.** Lean files are full of `∑ ∈ ⧸ ≤ ↦ ⊥` — 3 bytes each, 1 column
+each. Measure width in characters (`wc -m` semantics, not `wc -c`): a byte-based check
+invents phantom >100 violations on math-heavy lines, and "fixing" them wrongly breaks
+correct lines.
+
+**The conclusion participates in packing.** The `: conclusion :=` is a signature token
+like any other — if it fits on the last hypothesis line within 100 codepoints, it goes
+there. A short conclusion dangling on its own line after packed hypothesis lines is the
+single most common residual defect (flagged ~25 times in one live review).
 
 ```lean
 -- BAD (~40 chars/line)
@@ -589,16 +634,24 @@ theorem foo
     (hS : ∀ p ∈ S, P p) :
     Q := by
 
--- GOOD (~100 chars/line)
-theorem foo (S : Finset α) (hS : ∀ p ∈ S, P p) :
-    Q := by
+-- GOOD — everything fits on one line, so one line it is
+theorem foo (S : Finset α) (hS : ∀ p ∈ S, P p) : Q := by
+
+-- BAD — hypotheses packed but the short conclusion left dangling
+theorem bar (habI : a * b - 1 ∈ I) (haM : a - 1 ∈ M) (hbI : b - 1 ∈ I) :
+    a = b := by
+
+-- GOOD — `: a = b := by` joins the last hypothesis line (fits ≤ 100 codepoints)
+theorem bar (habI : a * b - 1 ∈ I) (haM : a - 1 ∈ M) (hbI : b - 1 ∈ I) : a = b := by
 ```
 
 #### REQUIRED ARTIFACT — per-line width table
 
 Before reporting any LINE PACKING status, produce this table for the declaration's
 **signature** (every line from the declaration keyword up to the `:= by` / `:= term`
-boundary — exclude proof-body lines):
+boundary — exclude proof-body lines; the **conclusion line is included**, and its `:
+conclusion :=` counts as the next-token of the last hypothesis line). All widths are
+**codepoints** (`wc -m`), never bytes:
 
 ```
 ### Line packing — `decl_name`
@@ -1146,6 +1199,9 @@ Gates: [pass / pass with deferred lake_build_file or /decompose-proof flag / FAI
         that gate, never as a pass.)
 Renames-queued: [list of "<old> → <new>" pairs you appended to .mathlib-quality/renames.jsonl,
                  OR "none"]
+Comments-preserved: [N of N re-anchored (M relocated from docstring into the proof body),
+                     OR "none present", OR list each REMOVED comment with its one-line
+                     justification (wrong/stale, or restated-the-next-tactic)]
 Refactoring needed: [or "none"]
 
 Phase checklist (required — main agent re-dispatches on any ✗):
@@ -1165,6 +1221,15 @@ Phase checklist (required — main agent re-dispatches on any ✗):
 If `Gates: FAIL` OR any phase-checklist line is `✗`, the main agent treats this declaration
 as not-yet-cleaned and re-dispatches with the failure as feedback. Don't claim the decl is
 done.
+
+**LSP-unavailable is not a pass (binding).** A worker that could not elaborate its file —
+LSP contention under parallel dispatch, import lockout, server restart — or that returns a
+not-clean / could-not-verify diagnostics status for any reason is **NOT DONE**, no matter
+how reasonable its prose explanation is. The main agent re-dispatches that declaration
+serially once the LSP frees up, and never counts it toward the done tally. A run that
+reports "0 failures" while any worker said it couldn't verify its own edits has laundered
+a failure into a success — in a live run this exact mechanism let a hallucinated lemma
+name (`isUnit_of_mul_eq_one` for `IsUnit.of_mul_eq_one`) ship and break the build.
 
 If `Refactoring needed` is non-empty, list each item explicitly so the main agent can
 collect it for Phase 5a.
@@ -1407,7 +1472,28 @@ Two layers — diagnostic / textual checks first, then the gates on the cumulati
 2. Grep for `-- FIXME` / `-- TODO` markers — they should not exist (the only acceptable
    FIXME is one tagged `[STRUCTURE]` waiting for `/decompose-proof`).
 3. Grep for the file-level rules: no `set_option maxHeartbeats`, no inline `λ`, no `$`, no
-   `/-! ##` dividers, no `push_neg` (only `push Not`).
+   `push_neg` (only `push Not`).
+4. **Comment-preservation check.** Count narrative `--` lines inside proof bodies, before
+   (the Phase-0 file snapshot) vs now. A decrease is a defect unless every removed comment
+   is covered by a one-line justification in some worker's `Comments-preserved:` line
+   (wrong/stale, or restated-the-next-tactic). Otherwise re-run the offending declaration's
+   worker with instructions to restore and re-anchor the comments.
+5. **New-identifier verification (hallucination check).** Extract every identifier the
+   cumulative diff *introduces* — names appearing in added lines that are not declared in
+   this file or elsewhere in the project. Verify each exists: `lean_local_search` first;
+   if not found, grep the `.lake/packages/mathlib` sources; if still unresolved, batch
+   `#check <name>` snippets via `lean_run_code`. Required artifact:
+
+   ```
+   | New identifier          | Verified via      | OK? |
+   |-------------------------|-------------------|-----|
+   | IsUnit.of_mul_eq_one    | lean_local_search | ✓   |
+   ```
+
+   Any name that fails verification is a hallucinated reference — fix it before 6b. This
+   check exists because a worker under LSP contention shipped `isUnit_of_mul_eq_one`
+   (the real lemma is `IsUnit.of_mul_eq_one`) and the run still reported success; prompt
+   lines like "verify every lemma name" are not enforcement — this artifact is.
 
 ### 6b. File-level gates (REQUIRED ARTIFACT — see cleanup-gates.md)
 
@@ -1419,8 +1505,8 @@ the gate-status block:
 
 | Gate                                | Result | Details                                |
 |-------------------------------------|--------|----------------------------------------|
-| lake_build_file                     | ✓ pass | `lake build <module>` ok in 8s         |
-| lake_build                          | ✓ pass | full project build clean               |
+| lake_build_file                     | ✓ pass | Bash `lake build <module>` @ <turn/time> → exit 0, 8s |
+| lake_build                          | ✓ pass | Bash `lake build` @ <turn/time> → exit 0 |
 | definition_protected                | ✓ pass | (or list every accepted def-line change with the audit item that authorised it) |
 | theorem_statement_protected         | ✓ pass | (or list every accepted statement change with its audit item / Phase-5 refactoring source) |
 | cumulative_no_unintended_breakage   | ✓ pass | 7 call-site files re-checked; 0 broken |
@@ -1431,6 +1517,16 @@ Overall: pass (or FAIL — <gate>: <reason>)
 `lake_build` (whole project) is the strongest signal. If the project is small enough that
 `lake build` runs in a reasonable time, run it. For large projects, run `lake_build_file`
 on this module + every call-site module instead.
+
+**The build gates are tool-call gates, not assertions (binding).** The `lake_build_file` /
+`lake_build` rows must cite the actual `Bash` invocation from this session — command and
+exit status, as in the sample rows above. A gate block whose build rows carry no citation
+is invalid: the build didn't happen, and the run may not report success. Phase 6 is where
+every per-worker "deferred `lake_build_file`" comes due, on **every touched module** — the
+worker-level deferral is only legitimate because this phase is unconditional. LSP
+diagnostics are not a substitute (a whole run once reported success on LSP evidence alone
+while the code didn't compile). Any build failure, or any uncited build row, is a hard
+stop into 6c; no success report exists past it.
 
 `definition_protected` and `theorem_statement_protected` are at file level: every diff
 hunk that adds/removes a `def`/`abbrev`/`theorem`/`lemma` line must trace back to either
@@ -1647,7 +1743,7 @@ Single consolidated report:
 
 ### Phase 3 file-level fixes
 - Created module docstring (was missing)
-- Stripped 3 subsection dividers
+- Section headers: 3 preserved (all with content), 0 contentless removed
 - Removed file-level `set_option maxHeartbeats`
 - Reordered imports (4 items)
 - Mechanical: λ→fun ×4, $→<| ×2, push_neg→push Not ×3

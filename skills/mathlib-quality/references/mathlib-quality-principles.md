@@ -43,20 +43,23 @@ theorem foo : P := by exact some_term
 theorem foo : P := some_term
 ```
 
-### 4. No Comments in Proofs
-Proofs should be self-documenting through good naming and structure.
-**Zero inline comments allowed in mathlib proofs.**
+### 4. Preserve Comments in Proofs
+**Rule reversed in v0.58.0** after live maintainer feedback: *"'No comments in proofs' is
+NOT a mathlib style requirement — many maintainers believe there should be MORE comments
+in proofs, it's just that people don't write them."* Mathlib is under-documented; signpost
+comments narrating the mathematical stages of a proof are valuable.
+
+- Golfing a step means **re-anchoring** its comment onto the rewritten step — never deleting.
+- Proof-sketch prose found in a docstring **relocates into the proof body** as `--`
+  comments (docstrings say *what*, proof comments say *how*).
+- Removable only with a one-line justification: factually wrong/stale comments, and
+  comments that literally restate the next tactic.
 
 ```lean
--- Bad
+-- Good: golfed AND still signposted
 theorem foo : P := by
-  -- First we establish the bound
-  have hbound := bound_lemma hf
-  -- Now apply convergence
-  exact convergence_lemma hbound
-
--- Good (one-liner is even better)
-theorem foo : P := convergence_lemma (bound_lemma hf)
+  -- bound from compactness, then the convergence lemma closes it
+  exact convergence_lemma (bound_lemma hf)
 ```
 
 ### 5. Minimal Docstrings
@@ -362,7 +365,7 @@ From analyzing 4,600+ PR comments, these are the top issues:
 
 1. **Brevity** - Shortest proof wins
 2. **Automation** - Let tactics do the work
-3. **Structure** - Decompose, name well, no comments
+3. **Structure** - Decompose, name well, keep the signpost comments
 4. **Consistency** - Follow conventions exactly
 
 When in doubt, ask: "Can this be shorter?"
