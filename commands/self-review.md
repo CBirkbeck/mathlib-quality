@@ -215,8 +215,12 @@ NAMES: `def`→lowerCamelCase, `lemma`/`theorem`→snake_case, `structure`/`indu
 the `C_of_A_of_B` hypothesis-ordering pattern; the symbol dictionary (`add`, `mul`, `mem`, …);
 American English; `private` helpers with the `_aux` suffix; `Is`-prefix Prop-valued classes.
 STYLE: `by` at the END of the preceding line; focusing dots `·`; `fun x ↦` over `λ`; `<|` over
-`$`; NO comments in proofs; 1–2 line docstrings with no proof strategy; every inequality written
-`≤`/`<` (never `≥`/`>`) in Lean code. See `references/style-rules.md`,
+`$`; proof comments are PRESERVED — signpost comments narrating a proof's mathematical stages
+are wanted, not banned (mathlib is under-documented; rule reversed in v0.58.0 per live
+maintainer feedback). Flag a diff that DELETED signposts, and flag a long opaque proof that
+needs them; only wrong/stale or tactic-restating comments are removable. 1–2 line docstrings
+with no proof strategy (strategy prose belongs INSIDE the proof as `--` comments); every
+inequality written `≤`/`<` (never `≥`/`>`) in Lean code. See `references/style-rules.md`,
 `references/naming-conventions.md`. Do NOT nitpick what mathlib's own linters catch
 automatically (over-long lines, unused variables/arguments) — spend your attention on what a
 HUMAN reviewer has to catch.

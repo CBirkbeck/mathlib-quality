@@ -2,7 +2,7 @@
 
 A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skill plugin for developing, proving, cleaning up, and bringing Lean 4 code up to [mathlib](https://github.com/leanprover-community/mathlib4) standards.
 
-Twenty-one commands spanning the whole workflow: **plan → prove → cleanup → assess mathlib-fit → blueprint → self-review → PR**. Every workflow is methodical, phase-numbered, and gated (missing artifacts fail the step); mathematical judgement is enforced through required evidence rather than through post-hoc review.
+Twenty-two commands spanning the whole workflow: **plan → prove → cleanup → assess mathlib-fit → blueprint → self-review → PR**. Every workflow is methodical, phase-numbered, and gated (missing artifacts fail the step); mathematical judgement is enforced through required evidence rather than through post-hoc review.
 
 ## Sibling: [`MQSlim`](https://github.com/CBirkbeck/MQSlim)
 
@@ -534,6 +534,7 @@ mathlib-quality/
 │   ├── overview.md              # Per-declaration project inventory
 │   ├── project-status.md        # Chat-only mathematical status: three-tier progress, on-target / blockers
 │   ├── pre-submit.md            # Final pre-PR checklist
+│   ├── self-review.md           # N rounds of fresh independent review-and-implement (never rubber-stamps)
 │   ├── fix-pr-feedback.md       # 8 phases: fetch → fix → coverage check → STOP → push → watch CI
 │   ├── bump-mathlib.md          # Bump mathlib + fix breakage (cache verification gate)
 │   ├── blueprint.md             # Author/update the project's verso-blueprint
