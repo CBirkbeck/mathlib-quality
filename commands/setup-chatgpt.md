@@ -28,8 +28,10 @@ The `chatgpt-math` MCP server provides a single tool:
 Parameters:
 - `question` (required) - The mathematical question. Must be self-contained
   with all definitions, context, and notation included.
-- `model` (optional) - Model to use. Default: `gpt-5.4`.
-- `reasoning_effort` (optional) - `low`, `medium`, `high` (default), or `xhigh`.
+- `model` (optional) - Model to use. Default: `gpt-5.6-sol`.
+- `reasoning_effort` (optional) - `minimal`, `low`, `medium`, `high`, `xhigh`, or
+  `max` (default). Always use the highest the model supports; the ceiling is
+  model-specific — `gpt-5.4` tops out at `xhigh`, `gpt-5.6-sol` supports `max`.
 
 ## Prerequisites
 
@@ -94,7 +96,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const CODEX_BIN = "<CODEX_BIN_PATH>";
-const DEFAULT_MODEL = "gpt-5.4";
+const DEFAULT_MODEL = "gpt-5.6-sol";
 
 const server = new Server(
   { name: "chatgpt-math", version: "2.0.0" },
@@ -123,13 +125,15 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           model: {
             type: "string",
             description:
-              "Model to use. Default: gpt-5.4. Available: gpt-5.4, gpt-5.4-mini, " +
-              "gpt-5.3-codex, etc.",
+              "Model to use. Default: gpt-5.6-sol. Available: gpt-5.6-sol, gpt-5.4, " +
+              "gpt-5.4-mini, gpt-5.3-codex, etc.",
           },
           reasoning_effort: {
             type: "string",
-            enum: ["low", "medium", "high", "xhigh"],
-            description: "Reasoning effort level. Default: high.",
+            enum: ["minimal", "low", "medium", "high", "xhigh", "max"],
+            description:
+              "Reasoning effort. Default: max — use the highest the model supports " +
+              "(gpt-5.4 tops out at xhigh; gpt-5.6-sol supports max).",
           },
         },
         required: ["question"],
@@ -173,7 +177,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
   const { question, model, reasoning_effort } = request.params.arguments;
   const chosenModel = model || DEFAULT_MODEL;
-  const effort = reasoning_effort || "high";
+  const effort = reasoning_effort || "max";
   const fullPrompt =
     "You are a research-level mathematics assistant. The user is working on " +
     "formal theorem proving in Lean 4 / Mathlib (algebraic geometry, adic spaces, " +
