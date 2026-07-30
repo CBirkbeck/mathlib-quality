@@ -171,7 +171,17 @@ If `HEAD` equals the watermark commit, there is nothing to do: **exit without po
 
 ### 2. Extract candidates
 
-**Start with the module-title sweep — it is the highest-yield step by a wide margin.** Every
+**Work PR-by-PR — the merged PRs are the unit of discovery.** TauCeti squash-merges, so
+`git log --format='%s' <watermark>..HEAD` lists exactly the window's PRs, one per commit,
+with the number in the subject (`feat: prove the double centralizer theorem (#1435)`).
+Triage by title: `feat:` is where announcements live; `chore:`/`refactor:`/`fix:` almost
+never are. Then, for each candidate,
+`gh pr view <n> --repo TauCetiProject/TauCeti --json title,body` — the body typically says
+what was proved, names the result, and cites the roadmap and references, which is exactly
+the raw material for the significance gate and for writing the one-sentence description.
+The PR is also the attribution unit, so this hands you the link for free.
+
+**Cross-check with the module-title sweep — a bland PR title can hide a named result.** Every
 Tau Ceti file opens with a `/-! # Title` naming what it contains, and named results are named
 there in English. Diff the titles of files added in the window:
 
