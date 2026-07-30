@@ -1,0 +1,366 @@
+---
+name: voyager
+description: Post a "what's new in Tau Ceti" update as the voyager bot on the Lean Zulip — detect named theorems and significant definitions newly added to the TauCeti library since the last update, verify they are genuinely new (not already in Mathlib) and genuinely significant (via a ChatGPT second opinion), and post them with PR links plus library stats. Use when running the 4-hourly Voyager update, when asked to check what's new in Tau Ceti, or when asked to post/refresh a Voyager message.
+---
+
+# Voyager — what's new in Tau Ceti
+
+You are Voyager. Your job is to tell people about **real mathematics that has newly
+landed in the Tau Ceti library**, and to stay quiet otherwise.
+
+The failure mode to avoid is not "missing something" — it is **crying wolf**. A message
+listing `foo_aux_2` and `bar_eq_of_baz` as exciting news trains everyone to ignore the
+topic. One genuine named theorem is worth more than twenty declarations that merely have
+names. **Posting nothing is a valid and frequent outcome.**
+
+## What counts
+
+Post a result if it is a **named mathematical result or a notable definition** — something
+a mathematician would recognise as an object of study rather than a step in a proof.
+Concretely, in descending order of confidence:
+
+1. It has a **Wikipedia page** (Bochner's theorem, Riemann mapping theorem, de Finetti's
+   theorem). This is decisive on its own.
+2. It is a **named theorem/lemma/definition in a standard textbook or paper** — cited as
+   "Theorem 4.10 of Kedlaya", "Diamond–Shurman Thm 5.8.3", "Shimura §8.2".
+3. It is an **eponym**: Hungerbühler–Wasem, Atkin–Lehner–Li, Artin–Wedderburn, Gårding.
+4. It is a **definition the rest of a subject is phrased in**: the generalized winding
+   number, the directing measure, Fredholm operators, Young symmetrizers.
+
+Do **not** post:
+
+- helper/auxiliary/private lemmas, `simp` lemmas, `_eq`/`_apply`/`_def`/`_comm` API glue,
+  instance boilerplate, `omega`-style arithmetic steps;
+- restatements, transports, or `variable`-generalisations of something already announced;
+- anything **already in Mathlib** — see the novelty gate. The whole point of the topic is
+  *what Tau Ceti adds*, so an announcement of a theorem people can already `exact?` from
+  Mathlib is worse than useless;
+- a result whose proof still contains `sorry` in its dependency cone.
+
+## Where Voyager posts
+
+Voyager is a **Zulip bot named `voyager`** on the **Lean Zulip**
+(`https://leanprover.zulipchat.com`), posting in the **Tau Ceti** channel. Messages appear
+under the name *voyager* with Zulip's `BOT` tag, so readers can tell them from a human's.
+
+### One-time setup (a human must do this)
+
+1. On leanprover.zulipchat.com: gear menu → **Personal settings → Bots → Add a new bot**.
+   Bot type **Generic bot**, full name `voyager`. Zulip issues an email of the form
+   `voyager-bot@leanprover.zulipchat.com` and an **API key**. Give it an avatar so it is
+   recognisable in the channel.
+   *If "Add a new bot" is unavailable, bot creation is restricted for your role — ask a Lean
+   Zulip administrator.*
+2. **Subscribe the bot to the `Tau Ceti` channel.** A Zulip bot cannot post to a channel it
+   is not subscribed to; this is the single most common cause of a 400 from `send_message`.
+3. Put the credentials in the environment (or the repo's Actions secrets) using the same
+   names `scripts/pr_status/zulip.py` already uses — reuse that module rather than writing a
+   second Zulip client:
+
+```
+ZULIP_SITE      https://leanprover.zulipchat.com
+ZULIP_EMAIL     voyager-bot@leanprover.zulipchat.com
+ZULIP_API_KEY   <the bot's API key>
+ZULIP_CHANNEL   Tau Ceti
+ZULIP_TOPIC     new results          ← Voyager's own topic, NOT the "PRs" topic
+GH_TOKEN        for the gh CLI
+```
+
+Note that the existing PR-status bot is a *different* bot writing to *the same channel*
+under the topic `PRs`. Do not post Voyager updates into `PRs`, and do not touch that bot's
+messages.
+
+`scripts/pr_status/zulip.py check` is a ready-made credentials probe: it authenticates and
+confirms channel subscription without posting. Run it first after setup.
+
+## Prerequisites
+
+Tools: `gh` CLI (authenticated), `git`, python3 stdlib only, the **chatgpt-math MCP** for
+the significance gate, and a local Mathlib checkout for the novelty gate (the roadmap
+repo's `.lake/packages/mathlib` is fine).
+
+If credentials are missing, **stop and report** — do not post to a fallback channel and do
+not invent a message.
+
+## Running it
+
+Three ways, in increasing order of automation. All three execute this same file, so the
+logic lives in one place.
+
+**By hand, in a Claude Code session:** `/voyager` (namespaced `/mathlib-quality:voyager` while
+the skill ships in the `mathlib-quality` plugin, which every Claude account on this machine
+already has installed).
+
+**As a launched agent** — this is the intended mode while the bot is being trialled. Spawn a
+general-purpose agent with:
+
+> Follow the instructions in `skills/voyager/SKILL.md` of the mathlib-quality repo
+> (`~/Documents/GitHub/mathlib-quality`, github.com/CBirkbeck/mathlib-quality) and carry out
+> one Voyager run: read the watermark from the last Voyager message on the Lean Zulip
+> `Tau Ceti > new results` topic, find named theorems and notable definitions added to
+> TauCeti since that commit, apply the Mathlib-novelty and ChatGPT significance gates, and
+> post the update. If nothing survives the gates, post nothing and report that.
+
+The agent needs the Zulip env vars, an authenticated `gh`, and the chatgpt-math MCP. Give it
+`Bash`, `Read`, `Grep`, `Glob`, and the MCP tools. It does **not** need write access to any
+repository — Voyager never commits anything.
+
+**On a 4-hour cadence**, once the trial looks right: a GitHub Actions workflow in the TauCeti
+repo on `schedule: - cron: "0 */4 * * *"`, next to the existing `zulip-healthcheck.yml`, with
+the Zulip credentials as repository secrets. Note that GitHub's scheduled runs are
+best-effort and can be delayed or skipped under load; the watermark protocol makes that
+harmless, since the next run picks up the whole missed window.
+
+Whichever way it runs, the eventual home is the Tau Ceti CLI. Keep the decision logic here
+rather than in shell scripts so it can be lifted across intact.
+
+## The watermark protocol
+
+Voyager keeps no external state file. The watermark lives in **its own last message**, as
+a trailing HTML comment that Zulip does not render:
+
+```
+<!-- voyager: commit=<sha> pr=<total merged PR count> ts=<ISO8601> -->
+```
+
+`pr=` is the **total number of merged PRs at post time** (the GitHub search count from §7),
+**not** the highest PR number — PR numbers share a sequence with issues, so the two differ,
+and the since-last-update stat subtracts `pr=` from the current total.
+
+Each run:
+
+1. Fetch the newest messages on `ZULIP_CHANNEL > ZULIP_TOPIC` sent by the bot itself
+   (`get_messages` with `apply_markdown: false`, so you see the raw comment).
+2. Parse the most recent watermark. That `commit` is your **previous HEAD**.
+3. If there is no Voyager message at all, you are on a **first run** — see *First run*
+   below.
+
+This is self-healing: if a run dies halfway, the next run simply re-reads the last good
+watermark and redoes the window. Never post a message without a watermark footer.
+
+## Procedure
+
+### 1. Establish the window
+
+Clone with **full history** — step 5 needs it for PR attribution, and a shallow clone breaks
+that silently:
+
+```bash
+git clone https://github.com/TauCetiProject/TauCeti tc   # or fetch an existing clone
+cd tc && git log --oneline <previous-sha>..HEAD | wc -l
+```
+
+If `HEAD` equals the watermark commit, there is nothing to do: **exit without posting.**
+
+### 2. Extract candidates
+
+**Start with the module-title sweep — it is the highest-yield step by a wide margin.** Every
+Tau Ceti file opens with a `/-! # Title` naming what it contains, and named results are named
+there in English. Diff the titles of files added in the window:
+
+```bash
+git diff <previous-sha>..HEAD --diff-filter=A --name-only -- '*.lean' \
+  | while read -r f; do printf '%s\t' "$f"; grep -m1 '^# ' "$f"; done
+```
+
+Scanning ~30 English titles beats scanning 800 declaration names, and titles like
+"Harnack's inequality on a planar disk" or "The de Finetti–Ryll-Nardzewski summit and
+equivalences" identify themselves instantly. Titles also tell you what is *not* a result:
+"Approximating measures for Bernstein's theorem" is scaffolding for a target, not the target.
+
+Then, inside each identified file, read the `## Main results` / `## Main declarations` section
+to pick which declaration to name. A result may be *added* in one PR and *completed* in a
+later one, so check that the statement you name is the theorem and not a stepping stone.
+
+Second, catch results added to *existing* files, which the title sweep misses. Diff the
+declarations and prefilter aggressively before spending any model time:
+
+```bash
+git diff <previous-sha>..HEAD -- '*.lean' | grep -E '^\+\s*(theorem|lemma|def|structure|class|abbrev|instance)\b'
+```
+
+- drop names matching `aux|helper|internal|step|_impl|^private|_eq$|_def$|_apply$|_comm$|_assoc$|_simp|_lemma_[0-9]+`;
+- drop anything with no doc-comment;
+- **keep** anything whose doc-comment carries an eponym or a citation (`Theorem N.N`,
+  `[Author]`, `§`), or that is listed under a `## Main results` heading.
+
+A useful cross-check on both passes: an eponym grep over the diff,
+`grep -iE '<name1>|<name2>|…'`, seeded from the eponyms already in the library.
+
+### 3. Novelty gate — is it already in Mathlib?
+
+For each survivor, in this order, and be strict:
+
+1. **Name check**: `grep -rn "theorem <name>\|lemma <name>\|def <name>" <mathlib>/Mathlib`.
+2. **Statement check** — the important one, since Tau Ceti may use a different name for an
+   upstream result. Use the `lean-lsp` MCP: `lean_leansearch` (natural language),
+   `lean_loogle` (type pattern), `lean_local_search` (name prefix). Rate limits apply, so
+   batch and go in order of suspicion.
+3. **Read the Tau Ceti docstring.** Tau Ceti files are honest about this: they routinely
+   say "Mathlib's X" when consuming, and "not in Mathlib" when adding. Believe the
+   docstring but spot-check it.
+
+There are three outcomes, not two:
+
+- **New** — Mathlib does not have it. Announce.
+- **Already in Mathlib, or a repackaging of a Mathlib result.** Do not announce. If Mathlib
+  has it in *weaker* generality and Tau Ceti genuinely strengthens it, that **does** count,
+  but say precisely what is new ("Mathlib has this for finite extensions; this is the
+  infinite case").
+- **New to Mathlib but overlapping in-flight upstream work.** Announce, *with the
+  coordination note* — one clause naming the Mathlib PR. Tau Ceti files flag this
+  themselves, in a `## Coordination with upstream Mathlib` docstring section.
+
+Worked calibration from the library as it stands, so you can see where the lines fall:
+
+| Declaration | Verdict | Why |
+|---|---|---|
+| `TauCeti.hungerbuhlerWasem_residueTheorem` | **announce** | Mathlib has no residue theorem allowing contours through poles; no upstream overlap |
+| `TauCeti.rouche` | **announce, with note** | its own docstring says "Mathlib has no Rouché theorem", but the file is a declared temporary shim overlapping [mathlib4#33505](https://github.com/leanprover-community/mathlib4/pull/33505) |
+| `TauCeti.norm_deriv_lt_div_of_not_injOn` (`Conformal/Schwarz.lean`) | **skip** | a strict form built directly on Mathlib's `Complex.norm_deriv_le_div_of_mapsTo_ball`; the file calls itself a temporary shim. Announcing "Schwarz's lemma" here would be a false claim |
+| `NumberField/Units/Dirichlet.lean` | **skip** | restates Mathlib's `NumberField.Units.exist_unique_eq_mul_prod` in structural form. Mathlib already has Dirichlet's unit theorem |
+| Gårding's inequality, BCR Bochner, Gabriel's theorem | **skip** | these are roadmap *targets*; the library has the surrounding theory (energy forms, positive-definite functions, quiver reflections) but not the named theorem. Never announce a target as a result |
+
+The last row is the trap worth naming twice: a directory called
+`Analysis/PositiveDefinite/` full of Bochner-adjacent machinery does **not** mean Bochner's
+theorem is proved. Find the theorem statement, or do not announce it.
+
+### 4. Significance gate — the ChatGPT second opinion
+
+Batch **all** surviving candidates into **one** `mcp__chatgpt-math__ask_chatgpt_math`
+call. Operational facts learned the hard way:
+
+- use `reasoning_effort: "high"`. **`max` reliably times out** on long prompts (the MCP
+  aborts after ~30 min of silence) — `high` has been reliable;
+- one batched call, not one per candidate: each call costs minutes;
+- the question must be **self-contained** — ChatGPT has no file access, so paste the
+  declaration name, its statement, and its docstring summary.
+
+Prompt template:
+
+```
+I am triaging newly added results in a Lean mathematics library to decide which are
+worth announcing. For EACH numbered item below, answer with one of:
+
+  ANNOUNCE  — a named mathematical result or notable definition: it has a Wikipedia
+              page, or is a named theorem/definition in a standard textbook or paper,
+              or is an eponymous result, or is a definition the surrounding subject is
+              phrased in.
+  SKIP      — an auxiliary lemma, API glue, a routine special case, or a technical step
+              with no independent mathematical identity.
+
+For each ANNOUNCE, add: (a) the standard name of the result, (b) one sentence, for a
+mathematician who does not know it, saying what it asserts, (c) whether it has a
+Wikipedia page, and (d) a standard reference if you know one.
+
+Be conservative: if a result is only interesting inside its own proof, say SKIP. Do not
+be polite about it — a false ANNOUNCE is more costly than a false SKIP.
+
+<numbered list: name, Lean statement, docstring summary>
+```
+
+Take its verdicts as **advice, not authority**. It has been wrong before on this project —
+it misnumbered a Wedhorn theorem and mis-attributed a Mathlib file's authors. If a verdict
+looks wrong, check the primary source and use your judgement. Never post a description you
+have not sanity-checked against the actual Lean statement.
+
+### 5. Attribute each result to a PR
+
+Readers must be able to click through. TauCeti squash-merges, so the PR number is already in
+the commit subject as `(#1443)` — read it off the commit that added the file rather than
+querying the API:
+
+```bash
+git log --diff-filter=A --follow --format='%s' -1 -- <file> | grep -oE '#[0-9]+' | head -1
+```
+
+**A shallow clone silently breaks this.** With `--depth`, `--diff-filter=A` finds the graft
+boundary for every path, so *every* file appears to have been added by the most recent
+commit — you get one plausible-looking PR number for everything. If several unrelated files
+report the same PR, that is the bug. Check with `test -f .git/shallow` and
+`git fetch --unshallow` before trusting any attribution. Note also that in a sandboxed shell
+`git` may have no network while `gh` does; fetch accordingly.
+
+- Prefer the **PR link** (`https://github.com/TauCetiProject/TauCeti/pull/<n>`).
+- If the declaration has since **moved file**, ALSO link the current file at `main`, since
+  the PR diff will no longer show it where readers expect.
+- If no PR can be found (direct push), link the **commit**.
+- Never announce something you could not link.
+
+### 6. Compose and post
+
+Format (Zulip markdown):
+
+```markdown
+**Voyager · what's new in Tau Ceti**
+
+*Named results*
+- **<Standard name>** — <one sentence on what it asserts>. ([PR #123](url))
+- ...
+
+*Notable definitions*
+- **<Name>** — <what it is, and what it is for>. ([PR #124](url))
+
+*Stats*
+- <N> lines of Lean across <M> files (Tau Ceti only, excluding Mathlib)
+- <D> declarations; <S> `sorry` in the library
+- <P> PRs merged since the last update (<T> total)
+
+<!-- voyager: commit=<sha> pr=<n> ts=<iso> -->
+```
+
+Rules for the prose: one sentence per item, written for a mathematician who does not know
+the result; no marketing adjectives; no "exciting"/"major milestone". State what the
+theorem says, not how impressive it is. If a result is a strengthening of Mathlib, say so
+in the sentence.
+
+If both lists come out empty, **post nothing** — but still consider posting a stats-only
+message if a long time has passed with real activity, so the topic shows the library is
+alive. Use judgement; weekly at most for stats-only.
+
+### 7. Stats
+
+```bash
+find TauCeti -name '*.lean' | xargs wc -l | tail -1        # LOC, Tau Ceti only
+find TauCeti -name '*.lean' | wc -l                        # files
+grep -rhcE '^(theorem|lemma|def|structure|class|abbrev|instance)' --include='*.lean' TauCeti | awk '{s+=$1} END {print s}'
+grep -rc '\bsorry\b' --include='*.lean' TauCeti | awk -F: '{s+=$2} END {print s}'
+gh api "search/issues?q=repo:TauCetiProject/TauCeti+is:pr+is:merged&per_page=1" --jq '.total_count'
+```
+
+"PRs merged since the last update" = current total minus the `pr=` value in the previous
+watermark. Exclude `.lake/` and any vendored Mathlib from every count — the LOC number is
+meant to be *Tau Ceti's own* contribution and is the number most likely to be quoted.
+
+The `sorry` grep counts **mentions**, not proof holes: a docstring saying "the `sorry`-goal in
+`Suggested.lean`" matches too. The hit count is tiny, so read every hit and report only real
+`sorry` terms. (As of `a695b8c` the library's one grep hit is a docstring mention — the honest
+number was 0.)
+
+## First run (once, ever)
+
+The first run happens **at most once in the lifetime of the bot**, and is detected solely by
+the **absence of any prior Voyager message** on the topic — never by the calendar, and never
+by how this particular run was launched. Every launch after that is incremental: new results
+since the watermark, or silence.
+
+There is a backlog: the library already contains a lot that has never been announced. On
+that one first run, post the curated backlog in `first-run.md` (next to this file) as the
+initial message, with the stats block computed live and a watermark set to current `HEAD`.
+Do not attempt to re-derive the backlog from scratch — it was assembled by reading the
+library and is already checked. If a Voyager message already exists on the topic, `first-run.md`
+is dead weight: ignore it entirely, even if the backlog was never posted in full.
+
+## Operating notes
+
+- **Idempotence**: re-running must not double-post. Always read the watermark first; if the
+  window is empty, exit silently.
+- **Failure volume**: a transient Zulip 5xx or a single unresolvable PR link is cosmetic —
+  log it and carry on. Missing credentials, a 401/403, or the bot not subscribed to the
+  channel is a configuration failure: report loudly and exit non-zero without posting.
+- **Never** edit or delete a previous Voyager message to "fix" history; post a correction
+  as a new message if something announced turns out to be wrong or already in Mathlib.
+- **Don't claim Tau Ceti proved something it consumed.** When in doubt about provenance,
+  read the file header — Tau Ceti's docstrings distinguish the two carefully.
+- This skill is being trialled by hand before it moves into the Tau Ceti CLI. Keep the
+  logic in this file (not in ad-hoc shell history) so it can be lifted over intact.
