@@ -1,6 +1,6 @@
 ---
 name: voyager
-description: Post a "what's new in Tau Ceti" update as the voyager bot on the Lean Zulip — detect named theorems and significant definitions newly added to the TauCeti library since the last update, verify they are genuinely new (not already in Mathlib) and genuinely significant (via a ChatGPT second opinion), and post them with PR links plus library stats. Use when running the 4-hourly Voyager update, when asked to check what's new in Tau Ceti, or when asked to post/refresh a Voyager message.
+description: Post a "what's new in Tau Ceti" update as the voyager bot on the Lean Zulip — detect named theorems and significant definitions newly added to the TauCeti library since the last update, verify they are genuinely new (not already in Mathlib) and genuinely significant (via a ChatGPT second opinion), and post them with docs and PR links plus library stats. Use when running the daily Voyager update, when asked to check what's new in Tau Ceti, or when asked to post/refresh a Voyager message.
 ---
 
 # Voyager — what's new in Tau Ceti
@@ -122,11 +122,26 @@ The agent needs the Zulip env vars, an authenticated `gh`, and the chatgpt-math 
 `Bash`, `Read`, `Grep`, `Glob`, and the MCP tools. It does **not** need write access to any
 repository — Voyager never commits anything.
 
-**On a 4-hour cadence**, once the trial looks right: a GitHub Actions workflow in the TauCeti
-repo on `schedule: - cron: "0 */4 * * *"`, next to the existing `zulip-healthcheck.yml`, with
-the Zulip credentials as repository secrets. Note that GitHub's scheduled runs are
-best-effort and can be delayed or skipped under load; the watermark protocol makes that
-harmless, since the next run picks up the whole missed window.
+**On the daily schedule** (the intended cadence): once a day, **after the docs build** —
+and the docs are slow, so do not trust the nominal time. `pages.yml` is scheduled at
+06:00 UTC, but GitHub delays scheduled runs by ~2 hours in practice (observed starts
+08:00–08:35 UTC), the docs rebuild takes **60–90 minutes**, and some days it fails outright
+(it failed three days running in late July, leaving the docs stale). Docs therefore
+typically refresh around 10:00 UTC. Voyager runs at `23 11 * * *` local (11:23 UK), and on
+top of that **checks rather than assumes**:
+
+```bash
+gh run list --repo TauCetiProject/TauCeti --workflow pages.yml --event schedule \
+  --limit 1 --json status,conclusion,updatedAt
+```
+
+If that run is `queued`/`in_progress`, wait for it (poll every ~10 minutes, cap 90 minutes)
+before composing, so the day's new results get docs links. If it failed or the cap expires,
+proceed anyway — per-link verification falls back to source links, and say in the run
+report that the docs were stale. As a GitHub Actions workflow the same logic applies with
+`schedule: - cron: "23 10 * * *"` (UTC). GitHub's scheduled runs are best-effort; the
+watermark protocol makes missed days harmless, since the next run picks up the whole
+missed window.
 
 Whichever way it runs, the eventual home is the Tau Ceti CLI. Keep the decision logic here
 rather than in shell scripts so it can be lifted across intact.
@@ -160,9 +175,25 @@ Each run:
 4. **After every successful channel post, send the updated state DM** — post first, DM
    second; if the DM write fails, retry it before ending the run.
 
-Because the channel message carries no machine state, add the cheap idempotence guard:
-before posting, fetch your own recent messages on the topic and drop any candidate whose
-`TauCeti#NNN` already appears — a half-completed previous run then costs nothing.
+## Never double-post
+
+The watermark alone is not enough — a DM write that fails after a successful post, a lost
+state DM, or a second launch would all rescan an already-announced window. Three checks, all
+mandatory, before every post:
+
+1. **Permanent PR-number dedupe.** Fetch the bot's *entire* topic history (`get_messages`
+   with the sender+topic narrow, `num_before=1000`) and extract every `TauCeti#<n>` ever
+   cited. Drop any candidate whose PR number is in that set. PR numbers never recur, so a
+   result announced once can never be announced again — regardless of what the watermark
+   says.
+2. **Name-level repeat rule.** Also collect the previously announced result *names* (the
+   bold link texts). A candidate whose name matches one already announced posts only if it
+   is a genuine strengthening from a *different* PR, and then the sentence must state the
+   delta ("now for arbitrary null-homologous cycles", "extended to countable index types") —
+   otherwise drop it as a restatement.
+3. **Freshness abort.** If the newest Voyager channel message or state DM is less than
+   2 hours old, another run just happened or is still in flight: abort without posting.
+   On the daily cadence, fresher activity is never legitimate.
 
 ## Procedure
 
@@ -359,7 +390,7 @@ Format (Zulip markdown):
 
 *Stats*
 - <N> lines of Lean across <M> files (Tau Ceti only, excluding Mathlib)
-- <D> declarations; <S> `sorry`s in the library
+- <D> declarations
 - <P> PRs merged since the last update (<T> total)
 ```
 
@@ -371,9 +402,17 @@ Zulip-specific rules, each learned from reader feedback on the first message:
   breaks, so hard-wrapped prose renders with ragged mid-sentence breaks. Never wrap.
 - **Use the realm linkifiers**: bare `TauCeti#NNN` for TauCeti PRs, `mathlib4#NNN` for
   Mathlib PRs — not explicit markdown PR links.
-- **Link each bold result name to its source file** at
-  `https://github.com/TauCetiProject/TauCeti/blob/main/<path>`, after checking the path
-  exists at current `main` (a moved file makes a dead link).
+- **Link each bold result name to its declaration in the API docs**, so readers land on the
+  exact statement: `https://taucetiproject.github.io/TauCeti/docs/TauCeti/<Module/Path>.html#<Fully.Qualified.Name>`
+  (doc-gen4 layout; the anchor is the fully qualified declaration name — mind the namespace,
+  e.g. probability results live under `TauCeti.Probability.*` and Lévy downward under
+  `MeasureTheory.*`). **Verify every link before posting**: curl the page (expect 200) and
+  grep the HTML for `id="<FQN>"`. The docs rebuild at most once daily (`pages.yml` — slow,
+  delayed, and occasionally failing; see the schedule notes), so a result merged after the
+  last successful build is not documented yet — for those, fall back to the source file at
+  `https://github.com/TauCetiProject/TauCeti/blob/main/<path>`; a later run can use the docs
+  link when it next mentions the module. Waiting for the day's docs run (see the schedule)
+  keeps these fallbacks rare.
 - **Bold goes OUTSIDE links**: `**[Name](url)**`, never `[**Name**](url)` — Zulip renders
   markup inside link text literally, so the reader sees raw asterisks.
 - **No HTML comments anywhere** — Zulip renders them as visible text.
@@ -416,9 +455,12 @@ zero-change check-ins.
 find TauCeti -name '*.lean' | xargs wc -l | tail -1        # LOC, Tau Ceti only
 find TauCeti -name '*.lean' | wc -l                        # files
 grep -rhcE '^(theorem|lemma|def|structure|class|abbrev|instance)' --include='*.lean' TauCeti | awk '{s+=$1} END {print s}'
-grep -rc '\bsorry\b' --include='*.lean' TauCeti | awk -F: '{s+=$2} END {print s}'
 gh api "search/issues?q=repo:TauCetiProject/TauCeti+is:pr+is:merged&per_page=1" --jq '.total_count'
 ```
+
+Do **not** report `sorry` counts in the stats (owner decision). The no-`sorry` rule remains
+an announcement *gate*: check nothing you announce has a `sorry` in its file, remembering a
+docstring can mention the word without it being a proof hole.
 
 "PRs merged since the last update" = current total minus the `pr=` value in the previous
 watermark. Exclude `.lake/` and any vendored Mathlib from every count — the LOC number is
