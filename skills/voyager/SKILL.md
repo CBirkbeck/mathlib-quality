@@ -189,16 +189,35 @@ A useful cross-check on both passes: an eponym grep over the diff,
 
 ### 3. Novelty gate — is it already in Mathlib?
 
+The comparison target is **current Mathlib master**, not any local checkout. A pinned
+Mathlib (the roadmap repo's `.lake/packages/mathlib`, or whatever TauCeti builds against)
+can lag master by months, and results land upstream continuously. This is not hypothetical:
+a June-pinned checkout said "no Fredholm operators in Mathlib" while master had gained
+`ContinuousLinearMap.IsFredholm` (mathlib4#41189) days earlier — only a master search caught
+it. Releases also lag master; if a result is on master but in no release yet, say so rather
+than rounding to "Mathlib has it" or "Mathlib lacks it".
+
 For each survivor, in this order, and be strict:
 
-1. **Name check**: `grep -rn "theorem <name>\|lemma <name>\|def <name>" <mathlib>/Mathlib`.
-2. **Statement check** — the important one, since Tau Ceti may use a different name for an
-   upstream result. Use the `lean-lsp` MCP: `lean_leansearch` (natural language),
-   `lean_loogle` (type pattern), `lean_local_search` (name prefix). Rate limits apply, so
-   batch and go in order of suspicion.
-3. **Read the Tau Ceti docstring.** Tau Ceti files are honest about this: they routinely
+1. **Fast triage** against a local checkout:
+   `grep -rn "theorem <name>\|lemma <name>\|def <name>" <mathlib>/Mathlib`. A hit here kills
+   the candidate cheaply; a miss decides nothing.
+2. **Master name/file search** — authoritative for presence:
+   `gh search code --repo leanprover-community/mathlib4 "<term>" --json path` (code search
+   runs against the default branch, i.e. master). Ignore hits in `docs/1000.yaml` /
+   `docs/undergrad.yaml` — those are wishlists, not formalisations.
+3. **Statement check** — the important one, since Mathlib may hold the same theorem under a
+   different name. Use the `lean-lsp` MCP: `lean_leansearch` (natural language),
+   `lean_loogle` (type pattern). Rate limits apply, so batch and go in order of suspicion.
+4. **Same eponym ≠ same theorem.** Open the hit and read what it actually states before
+   ruling either way: Mathlib's `LocallyConvex/Montel.lean` is Montel *spaces*, not Montel's
+   selection theorem; its C*-algebra "double centralizer" (multiplier algebra) is not the
+   semisimple-module double centralizer theorem; the Fredholm *alternative* is not the
+   Fredholm *operator* class. A name hit is not a statement hit, in either direction.
+5. **Read the Tau Ceti docstring.** Tau Ceti files are honest about this: they routinely
    say "Mathlib's X" when consuming, and "not in Mathlib" when adding. Believe the
-   docstring but spot-check it.
+   docstring but spot-check it — it states the situation as of the file's writing, and
+   upstream may have moved since.
 
 There are three outcomes, not two:
 
@@ -220,6 +239,7 @@ Worked calibration from the library as it stands, so you can see where the lines
 | `TauCeti.norm_deriv_lt_div_of_not_injOn` (`Conformal/Schwarz.lean`) | **skip** | a strict form built directly on Mathlib's `Complex.norm_deriv_le_div_of_mapsTo_ball`; the file calls itself a temporary shim. Announcing "Schwarz's lemma" here would be a false claim |
 | `NumberField/Units/Dirichlet.lean` | **skip** | restates Mathlib's `NumberField.Units.exist_unique_eq_mul_prod` in structural form. Mathlib already has Dirichlet's unit theorem |
 | Gårding's inequality, BCR Bochner, Gabriel's theorem | **skip** | these are roadmap *targets*; the library has the surrounding theory (energy forms, positive-definite functions, quiver reflections) but not the named theorem. Never announce a target as a result |
+| `TauCeti.IsFredholm` + index (`Analysis/Fredholm/`) | **announce, with note** | the Fredholm *predicate* landed on Mathlib master 2026-07-28 ([mathlib4#41189](https://github.com/leanprover-community/mathlib4/pull/41189), TVS generality, unreleased) ten days after Tau Ceti's #984 — but the index theory and Atkinson did not. Announce the whole with the overlap stated; a June pin missed this entirely |
 
 The last row is the trap worth naming twice: a directory called
 `Analysis/PositiveDefinite/` full of Bochner-adjacent machinery does **not** mean Bochner's
