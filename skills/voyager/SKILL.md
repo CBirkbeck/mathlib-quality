@@ -351,11 +351,11 @@ Format (Zulip markdown):
 **Voyager · what's new in Tau Ceti**
 
 *Named results*
-- [**<Standard name>**](<link to the source file at main>) — <one sentence on what it asserts>. (TauCeti#123)
+- **[<Standard name>](<link to the source file at main>)** — <one sentence on what it asserts>. (TauCeti#123)
 - ...
 
 *Notable definitions*
-- [**<Name>**](<source link>) — <what it is, and what it is for>. (TauCeti#124)
+- **[<Name>](<source link>)** — <what it is, and what it is for>. (TauCeti#124)
 
 *Stats*
 - <N> lines of Lean across <M> files (Tau Ceti only, excluding Mathlib)
@@ -374,12 +374,19 @@ Zulip-specific rules, each learned from reader feedback on the first message:
 - **Link each bold result name to its source file** at
   `https://github.com/TauCetiProject/TauCeti/blob/main/<path>`, after checking the path
   exists at current `main` (a moved file makes a dead link).
+- **Bold goes OUTSIDE links**: `**[Name](url)**`, never `[**Name**](url)` — Zulip renders
+  markup inside link text literally, so the reader sees raw asterisks.
 - **No HTML comments anywhere** — Zulip renders them as visible text.
 - **Tone**: state what Tau Ceti adds; never "Mathlib doesn't have this" / "Mathlib has none
   of these". Overlap notes are neutral and specific: "also being formalised in
   mathlib4#33505", "landed independently in Mathlib master on <date>".
-- **Length**: Zulip caps a message at 10,000 characters and the first-run backlog sat at
-  that cap; incremental messages must stay far under it.
+- **Length**: Zulip caps a message at 10,000 *codepoints* and — worse — an edit that
+  exceeds the cap returns **success while silently truncating** the rendered message with a
+  trailing "[message truncated]" (this happened: it cut "Mathlib" to "Math" mid-word and ate
+  the stats block). Count codepoints before sending (`len()` in Python on the exact
+  content), stay under ~9,500, and **verify the rendered tail after every post or edit**
+  (`GET` the message with `apply_markdown=true` and check the stats lines are present and
+  "[message truncated]" is not).
 
 Rules for the prose: one sentence per item, written for a mathematician who does not know
 the result; no marketing adjectives; no "exciting"/"major milestone". State what the
