@@ -11,7 +11,8 @@ landed in the Tau Ceti library**, and to stay quiet otherwise.
 The failure mode to avoid is not "missing something" — it is **crying wolf**. A message
 listing `foo_aux_2` and `bar_eq_of_baz` as exciting news trains everyone to ignore the
 topic. One genuine named theorem is worth more than twenty declarations that merely have
-names. **Posting nothing is a valid and frequent outcome.**
+names. **"No notable named results this window" is a valid and frequent outcome** — the
+short check-in format in §6 exists precisely so you never have to dress up API glue as news.
 
 ## What counts
 
@@ -69,6 +70,22 @@ GH_TOKEN        for the gh CLI
 Note that the existing PR-status bot is a *different* bot writing to *the same channel*
 under the topic `PRs`. Do not post Voyager updates into `PRs`, and do not touch that bot's
 messages.
+
+For local trial runs, keep the credentials in `~/.zuliprc` (the standard Zulip config format,
+`chmod 600`) and export them into the environment at the start of each run:
+
+```ini
+[api]
+email=voyager-bot@leanprover.zulipchat.com
+key=<the bot's API key>
+site=https://leanprover.zulipchat.com
+```
+
+```bash
+export ZULIP_EMAIL=$(awk -F= '$1=="email"{print $2}' ~/.zuliprc)
+export ZULIP_API_KEY=$(awk -F= '$1=="key"{print $2}' ~/.zuliprc)
+export ZULIP_SITE=$(awk -F= '$1=="site"{print $2}' ~/.zuliprc)
+```
 
 `scripts/pr_status/zulip.py check` is a ready-made credentials probe: it authenticates and
 confirms channel subscription without posting. Run it first after setup.
@@ -334,9 +351,24 @@ the result; no marketing adjectives; no "exciting"/"major milestone". State what
 theorem says, not how impressive it is. If a result is a strengthening of Mathlib, say so
 in the sentence.
 
-If both lists come out empty, **post nothing** — but still consider posting a stats-only
-message if a long time has passed with real activity, so the topic shows the library is
-alive. Use judgement; weekly at most for stats-only.
+**Quiet runs still report.** If the window contains newly merged PRs but nothing survives
+the gates, post this short check-in instead of the full format:
+
+```markdown
+**Voyager · Tau Ceti check-in**
+
+No notable named results landed in this window (as judged by the voyager AI bot).
+
+- <P> PRs merged since the last update (<T> total)
+- <N> lines of Lean across <M> files (Tau Ceti only, excluding Mathlib)
+
+<!-- voyager: commit=<sha> pr=<n> ts=<iso> -->
+```
+
+The check-in carries the watermark like any other Voyager message — it becomes the reference
+point for the next run. Only a genuinely empty window (HEAD equal to the watermark commit,
+nothing merged at all) posts nothing, so a quiet night does not fill the topic with identical
+zero-change check-ins.
 
 ### 7. Stats
 
