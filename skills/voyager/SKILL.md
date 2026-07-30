@@ -127,8 +127,8 @@ and the docs are slow, so do not trust the nominal time. `pages.yml` is schedule
 06:00 UTC, but GitHub delays scheduled runs by ~2 hours in practice (observed starts
 08:00–08:35 UTC), the docs rebuild takes **60–90 minutes**, and some days it fails outright
 (it failed three days running in late July, leaving the docs stale). Docs therefore
-typically refresh around 10:00 UTC. Voyager runs at `23 11 * * *` local (11:23 UK), and on
-top of that **checks rather than assumes**:
+typically refresh around 10:00 UTC. Voyager runs at `3 16 * * *` local (16:03 UK — owner-chosen slot, comfortably after the
+morning docs refresh), and on top of that **checks rather than assumes**:
 
 ```bash
 gh run list --repo TauCetiProject/TauCeti --workflow pages.yml --event schedule \
@@ -139,7 +139,7 @@ If that run is `queued`/`in_progress`, wait for it (poll every ~10 minutes, cap 
 before composing, so the day's new results get docs links. If it failed or the cap expires,
 proceed anyway — per-link verification falls back to source links, and say in the run
 report that the docs were stale. As a GitHub Actions workflow the same logic applies with
-`schedule: - cron: "23 10 * * *"` (UTC). GitHub's scheduled runs are best-effort; the
+`schedule: - cron: "3 15 * * *"` (UTC). GitHub's scheduled runs are best-effort; the
 watermark protocol makes missed days harmless, since the next run picks up the whole
 missed window.
 
