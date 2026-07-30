@@ -46,7 +46,7 @@ clears the backlog.
 
 **Probability**
 
-- **The de Finetti–Ryll-Nardzewski theorem** — an exchangeable sequence is a mixture of i.i.d. sequences, in the general form where contractability suffices: exchangeable ⟺ contractable ⟺ mixed i.i.d., with stationarity of the path law as a one-way consequence. ([PR #891](https://github.com/TauCetiProject/TauCeti/pull/891))
+- **The de Finetti–Ryll-Nardzewski theorem** — an exchangeable sequence is a mixture of i.i.d. sequences, in the general form where contractability suffices: exchangeable ⟺ contractable ⟺ mixed i.i.d., with stationarity of the path law as a one-way consequence. (theorem [PR #891](https://github.com/TauCetiProject/TauCeti/pull/891), uniqueness of the mixing measure [PR #1462](https://github.com/TauCetiProject/TauCeti/pull/1462))
 - **The Hewitt–Savage zero-one law** — an exchangeable event for an i.i.d. sequence has probability 0 or 1. ([PR #1199](https://github.com/TauCetiProject/TauCeti/pull/1199))
 - **Lévy's downward theorem** — for an antitone filtration `𝔽`, the conditional expectations `μ[f | 𝔽 n]` converge almost everywhere to the conditional expectation given the intersection σ-algebra `⨅ n, 𝔽 n`. Mathlib has the upward theorem but no downward counterpart. ([PR #755](https://github.com/TauCetiProject/TauCeti/pull/755))
 - **The directing measure** and the **mixed i.i.d. law** — the random measure an exchangeable sequence is i.i.d. conditionally on, and the mixture identity it satisfies; the vocabulary the de Finetti statement is phrased in. (definition [PR #558](https://github.com/TauCetiProject/TauCeti/pull/558), mixture identity [PR #1222](https://github.com/TauCetiProject/TauCeti/pull/1222))
