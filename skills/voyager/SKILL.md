@@ -133,11 +133,14 @@ rather than in shell scripts so it can be lifted across intact.
 
 ## The watermark protocol
 
-Voyager keeps no external state file. The watermark lives in **its own last message**, as
-a trailing HTML comment that Zulip does not render:
+Voyager keeps no external state file — and, learned in production, **no machine state in the
+channel message either: Zulip renders HTML comments as visible text**, so a `<!-- ... -->`
+footer shows up as literal garbage to every reader. The watermark lives in a **DM the bot
+sends to itself**, which nobody else sees:
 
 ```
-<!-- voyager: commit=<sha> pr=<total merged PR count> ts=<ISO8601> -->
+voyager-state
+`commit=<full sha> pr=<total merged PR count> ts=<ISO8601>`
 ```
 
 `pr=` is the **total number of merged PRs at post time** (the GitHub search count from §7),
@@ -146,14 +149,20 @@ and the since-last-update stat subtracts `pr=` from the current total.
 
 Each run:
 
-1. Fetch the newest messages on `ZULIP_CHANNEL > ZULIP_TOPIC` sent by the bot itself
-   (`get_messages` with `apply_markdown: false`, so you see the raw comment).
-2. Parse the most recent watermark. That `commit` is your **previous HEAD**.
-3. If there is no Voyager message at all, you are on a **first run** — see *First run*
-   below.
+1. Read the newest self-DM: `GET /api/v1/messages` with `anchor=newest`, `num_before=1`,
+   `apply_markdown=false`, narrow `[{"operator":"dm","operand":"<bot email>"}]`, and parse
+   `commit=` / `pr=` out of it.
+2. That `commit` is your **previous HEAD**.
+3. No self-DM *and* no Voyager message on the channel topic → **first run** (see below).
+   Channel messages but no self-DM (state was lost): reconstruct — take the newest Voyager
+   channel message's timestamp, set `commit` to the last TauCeti commit merged before it and
+   `pr=` to the merged-PR count at that time, write the DM, then proceed.
+4. **After every successful channel post, send the updated state DM** — post first, DM
+   second; if the DM write fails, retry it before ending the run.
 
-This is self-healing: if a run dies halfway, the next run simply re-reads the last good
-watermark and redoes the window. Never post a message without a watermark footer.
+Because the channel message carries no machine state, add the cheap idempotence guard:
+before posting, fetch your own recent messages on the topic and drop any candidate whose
+`TauCeti#NNN` already appears — a half-completed previous run then costs nothing.
 
 ## Procedure
 
@@ -328,10 +337,10 @@ report the same PR, that is the bug. Check with `test -f .git/shallow` and
 `git fetch --unshallow` before trusting any attribution. Note also that in a sandboxed shell
 `git` may have no network while `gh` does; fetch accordingly.
 
-- Prefer the **PR link** (`https://github.com/TauCetiProject/TauCeti/pull/<n>`).
-- If the declaration has since **moved file**, ALSO link the current file at `main`, since
-  the PR diff will no longer show it where readers expect.
-- If no PR can be found (direct push), link the **commit**.
+- Cite the PR as bare `TauCeti#<n>` — the Lean Zulip's linkifier turns it into a link.
+- The bold result name links to the **current source file at `main`** (see §6), which also
+  covers the case where the declaration has moved since its PR.
+- If no PR can be found (direct push), cite the commit hash with an explicit link.
 - Never announce something you could not link.
 
 ### 6. Compose and post
@@ -342,19 +351,35 @@ Format (Zulip markdown):
 **Voyager · what's new in Tau Ceti**
 
 *Named results*
-- **<Standard name>** — <one sentence on what it asserts>. ([PR #123](url))
+- [**<Standard name>**](<link to the source file at main>) — <one sentence on what it asserts>. (TauCeti#123)
 - ...
 
 *Notable definitions*
-- **<Name>** — <what it is, and what it is for>. ([PR #124](url))
+- [**<Name>**](<source link>) — <what it is, and what it is for>. (TauCeti#124)
 
 *Stats*
 - <N> lines of Lean across <M> files (Tau Ceti only, excluding Mathlib)
-- <D> declarations; <S> `sorry` in the library
+- <D> declarations; <S> `sorry`s in the library
 - <P> PRs merged since the last update (<T> total)
-
-<!-- voyager: commit=<sha> pr=<n> ts=<iso> -->
 ```
+
+…then send the updated state DM (see the watermark protocol).
+
+Zulip-specific rules, each learned from reader feedback on the first message:
+
+- **One physical line per paragraph and per bullet.** Zulip keeps single newlines as line
+  breaks, so hard-wrapped prose renders with ragged mid-sentence breaks. Never wrap.
+- **Use the realm linkifiers**: bare `TauCeti#NNN` for TauCeti PRs, `mathlib4#NNN` for
+  Mathlib PRs — not explicit markdown PR links.
+- **Link each bold result name to its source file** at
+  `https://github.com/TauCetiProject/TauCeti/blob/main/<path>`, after checking the path
+  exists at current `main` (a moved file makes a dead link).
+- **No HTML comments anywhere** — Zulip renders them as visible text.
+- **Tone**: state what Tau Ceti adds; never "Mathlib doesn't have this" / "Mathlib has none
+  of these". Overlap notes are neutral and specific: "also being formalised in
+  mathlib4#33505", "landed independently in Mathlib master on <date>".
+- **Length**: Zulip caps a message at 10,000 characters and the first-run backlog sat at
+  that cap; incremental messages must stay far under it.
 
 Rules for the prose: one sentence per item, written for a mathematician who does not know
 the result; no marketing adjectives; no "exciting"/"major milestone". State what the
@@ -371,12 +396,10 @@ No notable named results landed in this window (as judged by the voyager AI bot)
 
 - <P> PRs merged since the last update (<T> total)
 - <N> lines of Lean across <M> files (Tau Ceti only, excluding Mathlib)
-
-<!-- voyager: commit=<sha> pr=<n> ts=<iso> -->
 ```
 
-The check-in carries the watermark like any other Voyager message — it becomes the reference
-point for the next run. Only a genuinely empty window (HEAD equal to the watermark commit,
+…followed by the updated state DM, like any other post — the check-in advances the
+watermark and becomes the reference point for the next run. Only a genuinely empty window (HEAD equal to the watermark commit,
 nothing merged at all) posts nothing, so a quiet night does not fill the topic with identical
 zero-change check-ins.
 
@@ -402,8 +425,9 @@ number was 0.)
 ## First run (once, ever)
 
 The first run happens **at most once in the lifetime of the bot**, and is detected solely by
-the **absence of any prior Voyager message** on the topic — never by the calendar, and never
-by how this particular run was launched. Every launch after that is incremental: new results
+the **absence of both a state DM and any prior Voyager message** on the topic — never by the
+calendar, and never by how this particular run was launched. (It already happened:
+2026-07-30, message id 613614529.) Every launch after that is incremental: new results
 since the watermark, or silence.
 
 There is a backlog: the library already contains a lot that has never been announced. On
@@ -420,8 +444,10 @@ is dead weight: ignore it entirely, even if the backlog was never posted in full
 - **Failure volume**: a transient Zulip 5xx or a single unresolvable PR link is cosmetic —
   log it and carry on. Missing credentials, a 401/403, or the bot not subscribed to the
   channel is a configuration failure: report loudly and exit non-zero without posting.
-- **Never** edit or delete a previous Voyager message to "fix" history; post a correction
-  as a new message if something announced turns out to be wrong or already in Mathlib.
+- **Never** edit or delete a previous Voyager message on your own initiative to "fix"
+  history; post a correction as a new message if something announced turns out to be wrong
+  or already in Mathlib. Editing in place is reserved for maintainer-requested fixes
+  (formatting, links, tone), as happened with the first message.
 - **Don't claim Tau Ceti proved something it consumed.** When in doubt about provenance,
   read the file header — Tau Ceti's docstrings distinguish the two carefully.
 - This skill is being trialled by hand before it moves into the Tau Ceti CLI. Keep the

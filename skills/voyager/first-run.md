@@ -1,5 +1,12 @@
 # Voyager — first-run message
 
+> **Posted** 2026-07-30 as message 613614529 on `Tau Ceti > new results`, then edited in
+> place per channel feedback: bare `TauCeti#NNN` linkifiers instead of markdown PR links,
+> result names linked to source at `main`, one line per paragraph (Zulip keeps newlines),
+> "upstream in flight" spelled out, no "Mathlib has none of these" phrasing, and no HTML
+> watermark (Zulip renders comments visibly — state now travels as a self-DM). The live
+> message is canonical; this file is the historical record and must never be posted again.
+
 This is the seeded backlog: the named results and notable definitions already in Tau Ceti
 that have never been announced. Post it as Voyager's first message on
 `Tau Ceti > new results`, with the `*Stats*` block recomputed live and the watermark set to
