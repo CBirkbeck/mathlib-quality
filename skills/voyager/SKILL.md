@@ -122,26 +122,17 @@ The agent needs the Zulip env vars, an authenticated `gh`, and the chatgpt-math 
 `Bash`, `Read`, `Grep`, `Glob`, and the MCP tools. It does **not** need write access to any
 repository — Voyager never commits anything.
 
-**On the daily schedule** (the intended cadence): once a day, **after the docs build** —
-and the docs are slow, so do not trust the nominal time. `pages.yml` is scheduled at
-06:00 UTC, but GitHub delays scheduled runs by ~2 hours in practice (observed starts
-08:00–08:35 UTC), the docs rebuild takes **60–90 minutes**, and some days it fails outright
-(it failed three days running in late July, leaving the docs stale). Docs therefore
-typically refresh around 10:00 UTC. Voyager runs at `3 16 * * *` local (16:03 UK — owner-chosen slot, comfortably after the
-morning docs refresh), and on top of that **checks rather than assumes**:
-
-```bash
-gh run list --repo TauCetiProject/TauCeti --workflow pages.yml --event schedule \
-  --limit 1 --json status,conclusion,updatedAt
-```
-
-If that run is `queued`/`in_progress`, wait for it (poll every ~10 minutes, cap 90 minutes)
-before composing, so the day's new results get docs links. If it failed or the cap expires,
-proceed anyway — per-link verification falls back to source links, and say in the run
-report that the docs were stale. As a GitHub Actions workflow the same logic applies with
-`schedule: - cron: "3 15 * * *"` (UTC). GitHub's scheduled runs are best-effort; the
-watermark protocol makes missed days harmless, since the next run picks up the whole
-missed window.
+**On the daily schedule** (the intended cadence): once a day, at `3 16 * * *` local
+(16:03 UK — owner-chosen slot). Timing is forgiving because the window ends at the
+**`docgen` branch** (see §1), which by construction only advances when a complete docgen
+run is published — so whenever Voyager runs, everything in its window has docs pages, and
+there is nothing to wait for. (Background, in case the branch mechanism ever breaks: the
+docs rebuild is nominally scheduled 06:00 UTC but starts ~08:00–08:35 UTC after GitHub's
+delay, takes 60–90 minutes, and some days fails outright — which is exactly why tracking
+`docgen` beats tracking `main` plus polling `pages.yml`.) As a GitHub Actions workflow the
+same logic applies with `schedule: - cron: "3 15 * * *"` (UTC). GitHub's scheduled runs
+are best-effort; the watermark protocol makes missed days harmless, since the next run
+picks up the whole missed window.
 
 Whichever way it runs, the eventual home is the Tau Ceti CLI. Keep the decision logic here
 rather than in shell scripts so it can be lifted across intact.
@@ -199,15 +190,24 @@ mandatory, before every post:
 
 ### 1. Establish the window
 
+**The window ends at the `docgen` branch, not `main`.** TauCeti's `docgen` branch (set up in
+TauCeti#1539) tracks the most recent commit on main **for which a complete docgen run is
+published** — so everything inside the window is guaranteed to have API-docs pages to link
+to, results merged after the docs point simply wait for the next run (≤ a day), and no
+docs-workflow polling is needed.
+
 Clone with **full history** — step 5 needs it for PR attribution, and a shallow clone breaks
 that silently:
 
 ```bash
 git clone https://github.com/TauCetiProject/TauCeti tc   # or fetch an existing clone
-cd tc && git log --oneline <previous-sha>..HEAD | wc -l
+cd tc && git fetch origin '+refs/heads/docgen:refs/remotes/origin/docgen' && git checkout -q origin/docgen
+git log --oneline <previous-sha>..origin/docgen | wc -l
 ```
 
-If `HEAD` equals the watermark commit, there is nothing to do: **exit without posting.**
+If `origin/docgen` equals the watermark commit, there is nothing to do: **exit without
+posting.** Compute the stats (§7) at the `docgen` commit too, so the numbers describe the
+same tree the window ends at.
 
 ### 2. Extract candidates
 
@@ -462,8 +462,9 @@ Do **not** report `sorry` counts in the stats (owner decision). The no-`sorry` r
 an announcement *gate*: check nothing you announce has a `sorry` in its file, remembering a
 docstring can mention the word without it being a proof hole.
 
-"PRs merged since the last update" = current total minus the `pr=` value in the previous
-watermark. Exclude `.lake/` and any vendored Mathlib from every count — the LOC number is
+"PRs merged since the last update" = the number of squash-merge commits in the window
+(each carries its `(#N)`) — exact, and consistent with what was actually scanned; the total
+comes from the GitHub search count, with the previous `pr=` as a cross-check. Exclude `.lake/` and any vendored Mathlib from every count — the LOC number is
 meant to be *Tau Ceti's own* contribution and is the number most likely to be quoted.
 
 The `sorry` grep counts **mentions**, not proof holes: a docstring saying "the `sorry`-goal in
