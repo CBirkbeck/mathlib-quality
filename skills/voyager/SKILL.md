@@ -14,6 +14,9 @@ topic. One genuine named theorem is worth more than twenty declarations that mer
 names. **"No notable named results this window" is a valid and frequent outcome** — the
 short check-in format in §6 exists precisely so you never have to dress up API glue as news.
 
+Operators taking over the bot: read `HANDOVER.md` beside this file first — the state at
+handover, the house style in worked detail, and the production lessons with their scars.
+
 ## What counts
 
 Post a result if it is a **named mathematical result or a notable definition** — something
@@ -307,10 +310,13 @@ Worked calibration from the library as it stands, so you can see where the lines
 | `NumberField/Units/Dirichlet.lean` | **skip** | restates Mathlib's `NumberField.Units.exist_unique_eq_mul_prod` in structural form. Mathlib already has Dirichlet's unit theorem |
 | Gårding's inequality, BCR Bochner, Gabriel's theorem | **skip** | these are roadmap *targets*; the library has the surrounding theory (energy forms, positive-definite functions, quiver reflections) but not the named theorem. Never announce a target as a result |
 | `TauCeti.IsFredholm` + index (`Analysis/Fredholm/`) | **announce, with note** | the Fredholm *predicate* landed on Mathlib master 2026-07-28 ([mathlib4#41189](https://github.com/leanprover-community/mathlib4/pull/41189), TVS generality, unreleased) ten days after Tau Ceti's #984 — but the index theory and Atkinson did not. Announce the whole with the overlap stated; a June pin missed this entirely |
+| TauCeti#1942, "the Weyl dimension formula for `GL n`" | **skip** | the file builds the formula *as a natural number* (integrality, positivity, Vandermonde identities) and attaches it to no representation. A title is not a theorem |
 
-The last row is the trap worth naming twice: a directory called
-`Analysis/PositiveDefinite/` full of Bochner-adjacent machinery does **not** mean Bochner's
-theorem is proved. Find the theorem statement, or do not announce it.
+Two of these traps deserve naming twice. A directory called `Analysis/PositiveDefinite/`
+full of Bochner-adjacent machinery does **not** mean Bochner's theorem is proved — find the
+theorem statement, or do not announce it. And a file or PR *titled* "the X formula/theorem"
+may contain only scaffolding for it (the #1942 near-miss, 2026-08-04) — read the module
+docstring's *Main results* before believing any title.
 
 ### 4. Significance gate — the ChatGPT second opinion
 
@@ -404,15 +410,30 @@ Zulip-specific rules, each learned from reader feedback on the first message:
   Mathlib PRs — not explicit markdown PR links.
 - **Link each bold result name to its declaration in the API docs**, so readers land on the
   exact statement: `https://taucetiproject.github.io/TauCeti/docs/TauCeti/<Module/Path>.html#<Fully.Qualified.Name>`
-  (doc-gen4 layout; the anchor is the fully qualified declaration name — mind the namespace,
-  e.g. probability results live under `TauCeti.Probability.*` and Lévy downward under
-  `MeasureTheory.*`). **Verify every link before posting**: curl the page (expect 200) and
-  grep the HTML for `id="<FQN>"`. The docs rebuild at most once daily (`pages.yml` — slow,
-  delayed, and occasionally failing; see the schedule notes), so a result merged after the
-  last successful build is not documented yet — for those, fall back to the source file at
+  (doc-gen4 layout). **Extract the anchor from the published page's HTML — never construct
+  it from the declaration name.** Namespaces vary and some files have no `TauCeti` namespace
+  at all (`lieExp`, `pointDerivationEquivTangentSpace`, `ModularForm.lSeries`,
+  `Matrix.SpecialLinearGroup.map_intCast_zmod_surjective` are bare or foreign-namespaced);
+  probability lives under `TauCeti.Probability.*`, Lévy downward under `MeasureTheory.*`.
+  **Verify every link before posting**: curl the page (expect 200) and pull the real
+  `id="…"` out of the HTML. **Link the anchor of the theorem the headline claims, never the
+  containing definition** — a bullet titled "…is finite" links the finiteness statement
+  (`instFinite`), not the group it is about; the maintainer caught exactly this once. The
+  docs rebuild at most once daily (`pages.yml` — slow, delayed, and occasionally failing;
+  see the schedule notes), so a result merged after the last successful build is not
+  documented yet — for those, fall back to the source file at
   `https://github.com/TauCetiProject/TauCeti/blob/main/<path>`; a later run can use the docs
   link when it next mentions the module. Waiting for the day's docs run (see the schedule)
   keeps these fallbacks rare.
+- **Links rot after posting.** The docs site serves only the newest build, so a link that
+  verified at post time dies when a later refactor moves the file or renames the
+  declaration (`Montel.lean` → `Montel/`, `JordanCurve.lean` → `JordanCurve/Basic.lean`,
+  the Fredholm upstreaming that deleted `TauCeti.IsFredholm` and `Parametrix.lean`
+  outright). A full audit of all previously posted links on 2026-08-03 found four dead;
+  re-audit periodically and after any large refactor lands. Retarget to the current anchor;
+  for a file *deleted* from the tree, use a pinned-commit permalink
+  (`blob/<sha>/<path>`), which cannot rot. In-place edits of posted messages remain
+  maintainer-request-only, as below.
 - **Bold goes OUTSIDE links**: `**[Name](url)**`, never `[**Name**](url)` — Zulip renders
   markup inside link text literally, so the reader sees raw asterisks.
 - **No HTML comments anywhere** — Zulip renders them as visible text.
@@ -464,7 +485,10 @@ docstring can mention the word without it being a proof hole.
 
 "PRs merged since the last update" = the number of squash-merge commits in the window
 (each carries its `(#N)`) — exact, and consistent with what was actually scanned; the total
-comes from the GitHub search count, with the previous `pr=` as a cross-check. Exclude `.lake/` and any vendored Mathlib from every count — the LOC number is
+comes from the GitHub search count, with the previous `pr=` as a *loose* cross-check: `P`
+will **not** equal `T` minus the previous `pr=`, because `pr=` is recorded at post time
+while the window is bounded by docgen commits, which lag it — a discrepancy of a dozen PRs
+either way is expected, not a bug. Exclude `.lake/` and any vendored Mathlib from every count — the LOC number is
 meant to be *Tau Ceti's own* contribution and is the number most likely to be quoted.
 
 The `sorry` grep counts **mentions**, not proof holes: a docstring saying "the `sorry`-goal in
