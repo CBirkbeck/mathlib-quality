@@ -24,16 +24,17 @@ again. When in doubt, skip; the result will still be true tomorrow.
 | thing | value |
 |---|---|
 | credentials | `~/.zuliprc` (bot email `Voyager-bot@leanprover.zulipchat.com` — capital V; never echo the key) |
-| watermark | newest self-DM: `commit=02d13f9307fc… pr=1692` (DM id 614590157) |
-| messages posted | 613614529 (first-run backlog, 2026-07-30, edited in place per channel feedback; now 9,473 codepoints — **do not let it grow**), 613886812, 614078696, 614179130, 614350642, 614590153 |
+| watermark | newest self-DM: `commit=54d9297295d9… pr=1770` (DM id 614796848) — always re-read the DM; this row is a snapshot |
+| messages posted | 613614529 (first-run backlog, 2026-07-30, edited in place per channel feedback; now 9,473 codepoints — **do not let it grow**), 613886812, 614078696, 614179130, 614350642, 614590153 (edited 2026-08-05 to note the `ModularForm.L` overlap Thomas Browning raised), 614796841 (seventh, 13 bullets — too many; see the curation rule below) |
 | cadence | daily, 16:03 UK; the window always ends at TauCeti's `docgen` branch |
-| scheduling | a self-renewing session cron job in Chris's Claude session (currently `a22e2578`). Session-only: it dies if that session closes, and it fires late if the machine is asleep or the session busy at 16:03 — this has happened three times and is harmless (the watermark defines the window, not the clock). The sturdier long-term home is a GitHub Actions workflow in the TauCeti repo; Chris knows |
+| scheduling | a self-renewing session cron job in Chris's Claude session (the id changes at every run's upkeep step — `8bc06385` as of the seventh update; `CronList` is the source of truth). Session-only: it dies if that session closes, and it fires late if the machine is asleep or the session busy at 16:03 — this has happened three times and is harmless (the watermark defines the window, not the clock). The sturdier long-term home is a GitHub Actions workflow in the TauCeti repo; Chris knows |
 | first-run.md | dead weight — the backlog was posted once (2026-07-30) and must never be reposted; ignore that file entirely |
 
 Owner decisions already made, not yours to revisit: no `sorry` counts in the stats block
 (the no-`sorry` rule stays as an announcement gate); daily cadence at 16:03 UK; quiet windows
 with merged PRs still get a short check-in; only a genuinely empty window posts nothing; the
-loop keeps running until Chris says otherwise.
+bullet list is curated rather than exhaustive, and short is fine (2026-08-05 — see the
+curation rule under House style); the loop keeps running until Chris says otherwise.
 
 ## The shape of a run
 
@@ -72,6 +73,19 @@ back-reference to the earlier PR.
 
 The messages have earned trust by sounding like a mathematician telling colleagues what is
 now proved, not like release notes. Every rule below came from feedback or a near-miss.
+
+**Curate, don't enumerate — the list is meant to be short.** Chris, 2026-08-05, after the
+seventh update ran to thirteen bullets: *"don't feel obliged to make the list long, it's more
+important to keep it interesting and mention significant results."* Every bullet in that
+message had passed all three gates, which is exactly the trap — the gates decide what is
+*allowed*, and you still have to decide what is *worth reading*. A reader who skims one
+long list learns less than one who reads three good bullets, and the topic's credibility
+rests on the second experience. So: pick the results that matter, lead with the best one,
+and stop; do not pad, and do not treat an eligible result as owed a mention. Nothing is
+lost by leaving one out — the dedupe keys on *cited* PR numbers, so an omitted result can
+still be announced the day it becomes the interesting one. Message 614796841 is the
+calibration point in the wrong direction; the first six updates (three to eight bullets)
+are the right shape.
 
 **The bullet is the unit.** Its anatomy, fixed:
 
