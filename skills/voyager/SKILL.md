@@ -180,6 +180,12 @@ Each run:
    `pr=` to the merged-PR count at that time, write the DM, then proceed.
 4. **After every successful channel post, send the updated state DM** — post first, DM
    second; if the DM write fails, retry it before ending the run.
+5. **Never reconstruct the commit hash.** Put the *full* SHA in the DM exactly as
+   `git rev-parse origin/docgen` prints it. Do not pad an abbreviated hash you had on screen,
+   and do not retype it: a plausible-looking 40-character string that names no object makes
+   the next run's window unresolvable, and nothing downstream will notice. This happened
+   (2026-08-08) — the fix is a second DM superseding the first, since the protocol reads the
+   newest. Cheap check before sending: `git cat-file -t <sha>` prints `commit`.
 
 ## Never double-post
 
@@ -368,6 +374,17 @@ Take its verdicts as **advice, not authority**. It has been wrong before on this
 it misnumbered a Wedhorn theorem and mis-attributed a Mathlib file's authors. If a verdict
 looks wrong, check the primary source and use your judgement. Never post a description you
 have not sanity-checked against the actual Lean statement.
+
+⚠ **The gate can only judge the summary you give it, so a summary that overstates a strand
+gets you an ANNOUNCE for something unproved.** Describe each candidate in the words of the
+file's own `## Main results`, not in the words of the roadmap milestone it serves. Worked
+instance (2026-08-08): a batch of adic-spaces PRs was described to the gate as "the machinery
+establishing that the valuation spectrum is a spectral space"; the gate duly said to announce
+"Spv is spectral", and only extracting the anchor revealed that no `SpectralSpace` conclusion
+exists anywhere in the tree — the patch criterion and the pro-constructible calculus had
+landed, the endpoint had not. This is the Bochner trap arriving through the gate rather than
+through the directory listing, so the same rule applies: find the theorem statement, or do
+not announce it.
 
 ### 5. Attribute each result to a PR
 

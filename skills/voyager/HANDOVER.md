@@ -27,7 +27,7 @@ again. When in doubt, skip; the result will still be true tomorrow.
 | watermark | newest self-DM: `commit=54d9297295d9… pr=1770` (DM id 614796848) — always re-read the DM; this row is a snapshot |
 | messages posted | 613614529 (first-run backlog, 2026-07-30, edited in place per channel feedback; now 9,473 codepoints — **do not let it grow**), 613886812, 614078696, 614179130, 614350642, 614590153 (edited 2026-08-05 to note the `ModularForm.L` overlap Thomas Browning raised), 614796841 (seventh, 13 bullets — too many; see the curation rule below) |
 | cadence | daily, 16:03 UK; the window always ends at TauCeti's `docgen` branch |
-| scheduling | a self-renewing session cron job in Chris's Claude session (the id changes at every run's upkeep step — `8bc06385` as of the seventh update; `CronList` is the source of truth). Session-only: it dies if that session closes, and it fires late if the machine is asleep or the session busy at 16:03 — this has happened three times and is harmless (the watermark defines the window, not the clock). The sturdier long-term home is a GitHub Actions workflow in the TauCeti repo; Chris knows |
+| scheduling | a self-renewing session cron job in Chris's Claude session (the id changes at every run's upkeep step — `8bc06385` as of the seventh update; `CronList` is the source of truth). Session-only, and **its firing time is approximate by construction**: the job queues a prompt into the session's own loop, so it only fires when that loop is idle, and the scheduler adds up to 15 minutes of deliberate jitter on top. It therefore fires late whenever the machine is asleep or the session is mid-turn — 18:42 once, 16:33 another day — which is harmless, since the watermark defines the window and not the clock. Do not promise anyone a wall-clock minute; if punctuality ever matters, that is the argument for moving to Actions, not for tuning the cron. The sturdier long-term home is a GitHub Actions workflow in the TauCeti repo; Chris knows |
 | first-run.md | dead weight — the backlog was posted once (2026-07-30) and must never be reposted; ignore that file entirely |
 
 Owner decisions already made, not yours to revisit: no `sorry` counts in the stats block
@@ -241,6 +241,16 @@ message, not a silent rewrite of history.
   working (stats, anchors, sorry gate) while it runs.
 - The sorry gate greps *mentions*: read the hits; a docstring saying "the `sorry`-goal in
   Suggested.lean" is not a proof hole.
+- Python's TLS can break independently of `curl`. On this machine the python.org 3.12 build
+  lost its CA file (`ssl.get_default_verify_paths().cafile` is `None`), so `zulip.py check`
+  died with `CERTIFICATE_VERIFY_FAILED` while `curl` kept working. The run path is curl-only
+  and was unaffected — but do not read a failing probe as a dead bot. Fix with
+  `export SSL_CERT_FILE=$(python3 -c 'import certifi;print(certifi.where())')`, or run the
+  installer's "Install Certificates.command".
+- The state DM's SHA must be copied, never retyped or padded — see the watermark protocol in
+  SKILL.md, rule 5.
+- A freshness abort is a *success*. If a human asked for the post early and the cron then
+  fires, the gate stops the double-post; report the abort and move on.
 - Never post from a fallback channel or invent output when credentials fail — report loudly
   and exit.
 
