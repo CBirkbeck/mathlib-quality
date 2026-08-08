@@ -453,6 +453,8 @@ For detailed guidance:
 - `references/proof-patterns.md` - Proof golf techniques
 - `references/pr-feedback-examples.md` - Real feedback examples
 - `references/linter-checks.md` - Automated linter rules
+- `references/pr-workflow.md` - Sources-before-code, and never opening a PR that hasn't
+  already passed the review rubric locally (review-gated repos)
 
 **Pattern-specific examples (load based on proof content):**
 - `examples/inline_have.md` - Inline `have` blocks (77 PR examples)

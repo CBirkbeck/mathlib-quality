@@ -1431,8 +1431,10 @@ If the lemma exists with the exact name: use it.
 If the lemma exists with a slightly different name: use the actual name. Update the
 ticket's progress notes with the actual name found.
 
-If the lemma doesn't exist after the **five-method search** (`mathlib-search.md`):
-this is a Tier-A MATHLIB GAP. In beastmode, the default response is spawn
+If the lemma doesn't exist after the **five-method search** (`mathlib-search.md`) **and
+the compiled absence probe** (untruncated full-name grep + an `example ... := by exact?`
+probing the generic typeclass and auto-generated routes — searching alone does not
+establish absence): this is a Tier-A MATHLIB GAP. In beastmode, the default response is spawn
 a sub-ticket and continue (A1). Only escalate to B3 (off-track) if the
 missing fact is genuinely research-scale:
 
@@ -1901,7 +1903,10 @@ with (B4 BROKEN BASELINE). "It's hard" is still not evidence. Neither is
 
 - `commands/develop.md` — the planner that produces the tickets this skill executes
 - `references/cleanup-gates.md` — the gate definitions used in Phase 6
-- `references/mathlib-search.md` — the five-method search used in Phase 4a
+- `references/mathlib-search.md` — the five-method search used in Phase 4a, plus the
+  compiled absence probe required before declaring a MATHLIB GAP
+- `references/pr-workflow.md` — sources-before-code, and the local-review-before-PR gate
+  for projects whose merges are gated behind a scriptable reviewer
 - `references/statement-splitting.md` — one-conclusion-per-declaration rule behind Tier A5
   and the sub-ticket template's single-conclusion requirement
 - `commands/cleanup.md` — invoked directly by Phase 2c when the ticket is a cleanup ticket

@@ -242,6 +242,46 @@ import Mathlib.Tactic.Positivity
 import Mathlib.Tactic.FunProp
 ```
 
+## Proving absence is a compile-checked claim
+
+Searching and failing to find something is **not** evidence it is absent. Mathlib supplies
+a great many facts *generically* — via typeclass inference and auto-generated lemmas — so
+they exist as usable terms while appearing **as text nowhere**. No grep can see them.
+
+The measured cost of getting this wrong: on one file, a full-name grep and a statement
+grep both came back clean, and **three duplicates of Mathlib results still went in**.
+
+So before writing any declaration you believe Mathlib lacks, both of the following must
+pass:
+
+**1. An untruncated full-name grep.** Grep for the full candidate name with no `head`,
+no `-m`, no truncation. A truncated grep that scrolls past its own hit is the most common
+way this check produces a false negative.
+
+**2. A compiled `example` probing the generic routes.** Actually ask the elaborator, since
+it can see what grep cannot:
+
+```lean
+-- Does Mathlib already have this, generically?
+example : Function.Injective (algebraMap R A) := by
+  exact?                                    -- the general-purpose route
+```
+
+Routes worth probing explicitly, because each produces terms that are nowhere in the
+source as text:
+
+| Route | What it supplies invisibly |
+|---|---|
+| Typeclass inference (e.g. `FaithfulSMul.algebraMap_injective`) | facts derived from an instance you already have in scope |
+| Auto-generated constructor lemmas (`.injEq`, `.inj`, `.mk.injEq`) | structure/inductive equations Lean synthesises |
+| `exact?` / `apply?` | anything reachable by one step from the goal |
+
+If `exact?` closes the goal, the lemma **exists** — delete your version and use the term it
+found (Rule 5 below).
+
+This standard is what `/cleanup`'s Phase-4 MATHLIB check and `/beastmode`'s API-gap
+decision mean by "not in mathlib"; a search-only conclusion does not meet it.
+
 ## When Lemmas Are Absent
 
 If you can't find an existing lemma:
@@ -325,6 +365,8 @@ example (f : ℂ → ℂ) (hf : Continuous f) : P f := mathlib_lemma f hf
 - Prove basic facts without searching first
 - Give up after one search strategy
 - Assume a lemma doesn't exist because you can't find it quickly
+- Conclude absence from a clean grep — typeclass-derived and auto-generated results are
+  text nowhere; probe with a compiled `example` before writing your own
 - Import more than you need
 - Rely on transitive imports
 - Define concepts that exist under different names in mathlib
@@ -353,6 +395,11 @@ check.
 If a method genuinely doesn't apply (e.g., grepping mathlib source isn't available in this
 environment), record `n/a: <reason>` — not blank. The audit must be auditable.
 
+**These five methods establish presence, not absence.** If all five come back empty and
+you are about to write the declaration yourself, you still owe the compiled absence probe
+in § "Proving absence is a compile-checked claim" — grep and search cannot see
+typeclass-derived or auto-generated results.
+
 ## Six Strict Rules for Mathlib Replacement
 
 When `/cleanup`'s Phase-4 MATHLIB check finds (or doesn't find) an equivalent, apply these
@@ -371,8 +418,12 @@ theorem main ... := by
   have := hK.finite this
 ```
 
-**Rule 2 — Exhaustive search.** All five methods (A–E above) before concluding "not in
-mathlib".
+**Rule 2 — Exhaustive search, then a compiled absence probe.** All five methods (A–E
+above) before concluding "not in mathlib" — and searching alone is not sufficient to
+conclude it. Absence additionally requires the untruncated full-name grep **and** the
+compiled `example` probe from § "Proving absence is a compile-checked claim". Five clean
+searches plus a clean grep still let three duplicates through in one file, because
+typeclass-derived and auto-generated results are text nowhere.
 
 **Rule 3 — Check auxiliary lemmas.** Often what you need is `Foo.of_subset`,
 `Foo.inter_left`, `foo_of_bar` — search variants, not just the canonical name.
