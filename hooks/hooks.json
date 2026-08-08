@@ -1,5 +1,5 @@
 {
-  "description": "mathlib-quality: keep /beastmode running across turns while a marathon session is active. Sentinel-gated (.mathlib-quality/beastmode_active) and fail-safe — inert for every non-beastmode session.",
+  "description": "mathlib-quality: (1) keep /beastmode running across turns while a marathon session is active — sentinel-gated (.mathlib-quality/beastmode_active), inert for every non-beastmode session; (2) block `gh pr create` until the local review-rubric dry run is green for the current commit — sentinel-gated (.mathlib-quality/pr-session.json), inert for every repo not running the managed PR workflow.",
   "hooks": {
     "Stop": [
       {
@@ -7,6 +7,18 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/beastmode_stop.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/pr_gate.sh",
             "timeout": 15
           }
         ]

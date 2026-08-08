@@ -267,6 +267,10 @@ activate the new tool.
 
 **When all tickets are done**, run `/pre-submit` for the final-review checklist (no `sorry` anywhere, no new axioms, full project build clean, etc.).
 
+**Never opening a PR that hasn't already passed review (the PR gate hook).** On a repo gated behind a scriptable reviewer, `/pre-submit` Step 8 runs the rubric on your **local branch** — a review engine taking `--diff-file` / `--pr-desc-file` / `--no-post` needs no PR to exist — and iterates until green. The observed failure mode is that a worker skips this and opens the PR to wait for the server reviewer instead: it feels like progress, so instruction text alone doesn't hold. The plugin therefore ships a `PreToolUse` hook (`hooks/pr_gate.sh`) that **blocks `gh pr create`** until Step 8 has written a green `.mathlib-quality/review-receipt.json` whose `head_sha` matches the current commit — stale receipts (branch moved since the review) block too, naming both commits. Making the shortcut the blocked path means the cheapest route to a PR runs the dry run first. It is armed by `.mathlib-quality/pr-session.json` (so it's inert in any repo not running the workflow), fails open on infrastructure trouble, and escapes via `PR_GATE_OVERRIDE=1 gh pr create ...` or `touch .mathlib-quality/pr_gate_disabled`. Full workflow in `references/pr-workflow.md`.
+
+**Long PR chains ask you once.** Step 0a's intake — what the chain delivers, which roadmap area, from what source — is **chain-scoped**, persisted to `.mathlib-quality/pr-session.json` and reused by every later PR. Each branch's own one-line description and target marker are derived from its diff, never asked. A twenty-PR chain costs one round of questions; `--reset-intake` re-asks when the provenance genuinely changes.
+
 ### Cleaning Up Code
 
 ```

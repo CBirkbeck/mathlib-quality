@@ -16,19 +16,30 @@ CLI — the same models CI draws.
 
 ## 0. Intake, then sources before code
 
-**Ask the user three things first; do not infer them.** They determine what everything
-downstream is measured against:
+**Ask the user three things — once per chain, not once per PR.** They determine what
+everything downstream is measured against:
 
 | Question | Why it matters |
 |---|---|
-| **What do you want to PR?** | The one-line description that becomes the PR title and the reviewer's frame |
-| **Which roadmap target?** | The exact layer / target marker claimed. "Not on the roadmap" is a valid and *important* answer — it means the reviewer will raise scope, so it should be known now, not in round four |
-| **From what source, if any?** | Upstream repo, sibling project (e.g. FLT), or paper, with revision. Drives the provenance block in step 5. "Original work" is valid |
+| **What is this chain delivering?** | The overall goal the run of PRs serves |
+| **Which roadmap area / target family?** | The layer these PRs land in. "Not on the roadmap" is a valid and *important* answer — it predicts a scope finding, so it should be known now, not in round four |
+| **From what source, if any?** | Upstream repo, sibling project (e.g. FLT), or paper, with revision and license. Drives the provenance block in step 5. "Original work" is valid |
 
 Inferred candidates (branch name, changed files, the roadmap's open targets) make
 reasonable *options* to offer, but the user's answer is the one that counts — a wrong
 guess propagates straight into the PR body's attribution and provenance lines, where the
 reviewer checks it.
+
+**Then persist the answers and stop asking.** They go in
+`.mathlib-quality/pr-session.json`; every later PR in the chain reads that file instead of
+re-prompting. Per branch, the one-line description of *this* PR and its specific target
+marker are **derived** from the diff plus the chain's roadmap area, and merely stated. A
+long chain should cost exactly one round of questions, at the start.
+
+Re-ask only when the chain's provenance actually changes (`--reset-intake`), not per PR.
+
+That same file is the **sentinel arming the PR gate** in step 5 — writing it is what opts
+the chain into mechanical enforcement.
 
 Then, before writing any new Lean, check **every source the roadmap names** for the
 content — upstream research repos, sibling formalisation projects (e.g. FLT) — **and
@@ -113,6 +124,19 @@ round four of the rubric.
 Repeat step 4 until **every rubric is green**. Only then `gh pr create` — at that point the
 PR is known to pass, because it has already passed.
 
+**This is enforced mechanically, not by discipline.** On a green run, step 4 writes
+`.mathlib-quality/review-receipt.json` (`head_sha`, `all_green`, per-rubric verdicts, the
+literal invocation and its exit code). The plugin's `PreToolUse` hook — `hooks/pr_gate.sh`
+— blocks `gh pr create` unless that receipt exists, is green, and matches the current
+`HEAD`. A stale receipt (the branch moved since the review) blocks too, naming both
+commits.
+
+The reason for a hook rather than a firmer rule: opening a PR and waiting for the server
+reviewer is *easier* and *feels like progress*, so under a long chain, attention drifts
+there. Making it the blocked path means the cheapest route to a PR runs the dry run first.
+The gate is armed by the step-0 session file and fails open on infrastructure trouble, so
+it is inert everywhere else and cannot wedge you out of your own repo.
+
 The PR body carries:
 
 - the roadmap attribution line
@@ -143,6 +167,8 @@ Every clause exists because the opposite failed:
 | Clause | The failure it prevents |
 |---|---|
 | 0 — intake first | Guessing the roadmap target, then carrying the guess into the PR body's attribution where the reviewer checks it |
+| 0 — intake persisted | Re-interrogating the user on every branch of a long chain |
+| 5 — receipt + hook | A worker opening the PR and waiting for the server reviewer because that felt like progress |
 | 0 — sources first | Rederiving what the roadmap already names; three Mathlib duplicates in one file |
 | 2 — cleanup unconditional | "It's a port, so it's fine as-is" |
 | 4 — local dry-run | Burning review rounds on findings you could have read locally |

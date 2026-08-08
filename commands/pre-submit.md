@@ -11,6 +11,7 @@ Final verification before submitting a PR to mathlib.
 
 ```
 /pre-submit [file_path or directory]
+/pre-submit --reset-intake        (re-ask the Step 0a chain questions and rewrite the session file)
 ```
 
 ## Checklist
@@ -74,34 +75,98 @@ Skipping a step is detectable in the missing artifact; the per-step status block
 into the final report. Hard-stop on any step means /pre-submit reports `NOT READY FOR
 SUBMISSION` — the user has to fix the issue before re-running.
 
+### Anti-skip discipline (read before dispatching a worker)
+
+The observed failure mode is specific and worth naming, because it does not look like
+skipping from the inside: **a worker runs the early steps, then opens a PR and waits for
+the server reviewer instead of running Step 8 locally.** It feels like progress — the PR
+exists, CI is running, there is something to watch — which is exactly why instruction text
+alone does not prevent it. Three mechanisms, in increasing order of strength:
+
+1. **Required artifacts.** Every one of the 10 steps must appear in the final report with
+   its status block filled in. `n/a: <reason>` is valid for Steps 0 and 8; **blank is
+   not**. A missing block means the step did not run — treat it as FAIL on that step and
+   re-dispatch, exactly as `/cleanup-all` re-dispatches a worker whose phase checklist has
+   holes.
+
+2. **Cited tool-call gates.** Steps 1, 3, 7 and 8 are cited gates: the artifact must carry
+   the **literal invocation and its exit status**, not a summary. "Build passed" is not an
+   artifact; the command and its exit code are. A worker that cannot produce the citation
+   did not run the gate.
+
+3. **The PR gate hook.** `gh pr create` is mechanically blocked until Step 8's receipt is
+   green for the current commit (see Step 8). This is the only mechanism that does not
+   depend on the worker's compliance, and it is why the workflow holds up under a long
+   chain of PRs where attention drifts.
+
+**Forbidden substitutions**, each of which has been observed standing in for Step 8:
+
+| Instead of Step 8, the worker... | Why it doesn't count |
+|---|---|
+| opens the PR and waits for the server review | That *is* the thing the workflow exists to avoid — it spends a review round on findings readable locally |
+| runs `gh pr checks --watch` | Watches CI, not the review rubric; different gate |
+| reasons about what the reviewer will probably say | The engine is cheap to run; a prediction is not a result |
+| reuses a green receipt from the previous PR in the chain | The receipt is bound to one `head_sha`; the hook rejects it |
+
+None of these produce a receipt, so none of them open a PR.
+
 ### Step 0: Intake + Sources Before Code (required artifact — projects with a roadmap)
 
 Only applies to projects whose roadmap names upstream sources (research repos, sibling
 formalisation projects). Skip with `n/a: no roadmap` for a plain mathlib PR.
 
-**Step 0a — Ask the user (do not infer).** Before checking anything, ask the three
-questions that determine what the rest of the run is even measuring. Use
-`AskUserQuestion`, one question per unknown; offer inferred candidates as options (branch
-name, changed files, and the roadmap's open targets are decent guesses) but let the user
-correct them:
+**Step 0a — Chain intake: asked ONCE, then persisted.**
 
-1. **What do you want to PR?** — the result or API being contributed, in one line.
-2. **Which roadmap target?** — the exact layer / target on the project roadmap (e.g. on
-   TauCeti, the machine-readable target marker this PR claims). "None / not on the
-   roadmap" is a valid answer, and a significant one: it means Step 8's reviewer will
-   likely raise scope, so surface that now rather than in round four.
+A PR chain shares its provenance. Re-asking the same three questions on every branch is
+noise, so the intake is **chain-scoped state**, not a per-run prompt.
+
+**First, look for `.mathlib-quality/pr-session.json`.**
+
+**If it exists → ask nothing.** Load it, echo what is being reused, and continue:
+
+```
+[Step 0a] Intake (reused from chain session, started <date>):
+  Chain goal:       <what this run of PRs is collectively delivering>
+  Roadmap area:     <the layer / target family these PRs land in>
+  Source:           <repo + license + pinned revision, or "original work">
+  This PR:          <one-line description — DERIVED from the branch diff, not asked>
+  Target marker:    <specific marker — DERIVED from the roadmap area + this diff>
+
+  (Re-ask with `/pre-submit --reset-intake`.)
+```
+
+**If it is absent → ask the three questions, once, and write the file.** Use
+`AskUserQuestion`, offering inferred candidates as options (branch name, changed files,
+the roadmap's open targets) but letting the user correct them:
+
+1. **What is this chain delivering?** — the overall goal the run of PRs serves, one line.
+2. **Which roadmap area / target family?** — the layer these PRs land in. "Not on the
+   roadmap" is a valid and *significant* answer: it predicts a scope finding from Step 8's
+   reviewer, so it should be known now rather than in round four.
 3. **From what source, if any?** — upstream research repo, sibling formalisation project
-   (e.g. FLT), or paper; with revision if known. "Original work" is a valid answer.
+   (e.g. FLT), or paper; with revision and license if known. "Original work" is valid.
 
-Do not guess these. The roadmap target and the source are what Steps 0b and 8 check
-against, and a wrong guess propagates into the PR body's attribution and provenance lines.
+Then write:
 
+```json
+{
+  "chain_goal":   "<answer 1>",
+  "roadmap_area": "<answer 2>",
+  "source":       {"repo": "<...>", "revision": "<...>", "license": "<...>"},
+  "started":      "<ISO date>"
+}
 ```
-[Step 0a] Intake:
-  Contributing:     <one-line description, from the user>
-  Roadmap target:   <exact layer/target marker, or "none — off-roadmap (flagged)">
-  Source:           <repo/paper + revision, or "original work">
-```
+
+This file is also the **sentinel that arms the PR gate** (see Step 8) — without it the
+`gh pr create` hook is inert, so writing it is what opts the chain into enforcement.
+
+**What is derived, never asked.** Per branch, the one-line description of *this* PR and
+its specific target marker come from the diff plus the chain's roadmap area. State them in
+the artifact; do not prompt. Only the three chain-level facts above ever require the user,
+and only once.
+
+**Re-ask only when the chain changes.** `--reset-intake` re-runs the questions and
+rewrites the file — use it when the source or roadmap area actually changes, not per PR.
 
 **Step 0b — Verify against those answers.** This is a *retrospective* check — the source
 work should have happened before the code was written (`references/pr-workflow.md` § 0).
@@ -282,11 +347,16 @@ is). Nothing touches GitHub:
 | `diff.txt` | **merge-base** diff vs the base branch, not a two-dot diff |
 | `pr_desc.txt` | the PR body you intend to use |
 
+This is a **cited tool-call gate**, in the sense `/cleanup`'s build gates are: the artifact
+is the actual invocation and its exit status, not a claim that it went well.
+
 ```
 [Step 8] Local review-rubric dry run:
-  Engine + invocation:  <command, or "n/a: no scriptable review engine">
+  Engine + invocation:  <the literal command run, or "n/a: no scriptable review engine">
+  Exit status:          <code>
+  Reviewed commit:      <git rev-parse HEAD>
   Round count:          N
-  Rubrics green:        M / total
+  Rubrics:              <name: green|red, one per rubric — every rubric named>
   Remaining findings:   <list, or "(none)">
 
   Result: <PASS — every rubric green> / <FAIL — list non-green rubrics>
@@ -295,6 +365,43 @@ is). Nothing touches GitHub:
 **Hard stop on FAIL. Iterate Step 8 until every rubric is green** — re-running the earlier
 steps as fixes require — and only then `gh pr create`. At that point the PR is known to
 pass, because it already has.
+
+#### The receipt (required — this is what unblocks `gh pr create`)
+
+On a green run, write `.mathlib-quality/review-receipt.json`:
+
+```json
+{
+  "head_sha":   "<git rev-parse HEAD — the exact commit reviewed>",
+  "all_green":  true,
+  "rubrics":    {"<rubric name>": "green", "...": "green"},
+  "invocation": "<the literal engine command>",
+  "exit_code":  0,
+  "rounds":     3,
+  "timestamp":  "<ISO>"
+}
+```
+
+**The plugin ships a `PreToolUse` hook (`hooks/pr_gate.sh`) that blocks `gh pr create`
+unless this receipt exists, reports `all_green: true`, and its `head_sha` matches the
+current `HEAD`.** So:
+
+- **No receipt → the PR cannot be opened.** Opening a PR and waiting for the server
+  reviewer is the shortcut this gate exists to close.
+- **Receipt not green → blocked**, naming the failing rubrics.
+- **Receipt stale** (branch moved since the review) **→ blocked**, naming both commits.
+  Commit *first*, then review, then create — a receipt describes one specific commit.
+
+The hook is armed by `.mathlib-quality/pr-session.json` from Step 0a, so it is inert in
+any repo not running this workflow. Escapes, for when the gate is wrong rather than you:
+`PR_GATE_OVERRIDE=1 gh pr create ...` for one call, or
+`touch .mathlib-quality/pr_gate_disabled` for the repo. It fails open on infrastructure
+trouble (no `python3`, not a git repo, unreadable receipt) — a broken gate must never wedge
+you out of your own repo.
+
+Do not write the receipt by hand to get past the gate. The receipt asserts the rubric ran
+and passed; fabricating it converts a mechanical guarantee back into an honour system, and
+the next thing that happens is a server review round you already paid for locally.
 
 For API-design questions (which shape the reviewer will prefer), ask the same model
 *beforehand* via the `ask_chatgpt_math` MCP rather than discovering the preference in
