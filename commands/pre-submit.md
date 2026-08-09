@@ -17,9 +17,9 @@ Final verification before submitting a PR to mathlib.
 ## Checklist
 
 ### 0. Scope and Provenance (roadmap projects)
-- [ ] User asked what they want to PR, which roadmap target it claims, and from what
-      source — not inferred
+- [ ] Chain intake answered once and persisted — not re-asked per PR
 - [ ] Roadmap-named sources checked before the code was written; ported not rederived
+- [ ] **Open PRs checked for duplication** — before writing, and again before creating
 - [ ] No declaration claims mathlib-absence on a search-only basis (untruncated full-name
       grep **and** a compiled `example` probe)
 
@@ -107,6 +107,7 @@ alone does not prevent it. Three mechanisms, in increasing order of strength:
 | runs `gh pr checks --watch` | Watches CI, not the review rubric; different gate |
 | reasons about what the reviewer will probably say | The engine is cheap to run; a prediction is not a result |
 | reuses a green receipt from the previous PR in the chain | The receipt is bound to one `head_sha`; the hook rejects it |
+| checks open PRs at Step 0b only, hours before creating | The list moves while you work — that's the window the duplicate slips through |
 
 None of these produce a receipt, so none of them open a PR.
 
@@ -173,10 +174,34 @@ work should have happened before the code was written (`references/pr-workflow.m
 What `/pre-submit` verifies is that the named source was actually used and that new
 declarations are genuinely new:
 
+**Open PRs count as sources.** A declaration can be absent from `main`, absent from
+mathlib, and still already written — sitting in someone's open PR, or in your own earlier
+branch from this same chain. Step 6 of the workflow deliberately keeps several branches in
+flight at once, which is exactly what makes this collision likely rather than theoretical.
+
+```bash
+gh pr list --state open --json number,title,headRefName,files,body --limit 100
+```
+
+Compare against what this branch introduces, in descending order of sharpness:
+
+| Signal | Why it matters |
+|---|---|
+| **Same roadmap target marker** | Two PRs claiming one target is a direct duplicate — the sharpest signal, check it first |
+| **Same declaration names** | The same lemma under the same name, written twice |
+| **Same files touched** | Not duplication by itself, but predicts a merge conflict and is worth knowing |
+| **Same source + same section ported** | Two branches porting one chunk of the upstream repo |
+
+An overlap is not automatically fatal — a deliberate follow-up to your own open PR is
+fine — but it must be **resolved before writing more code**: rebase onto the open branch,
+narrow this PR's scope, or close the older one. Record the decision.
+
 ```
 [Step 0b] Sources before code:
   Roadmap sources checked:  <list, or "n/a: no roadmap">
   Named source used:        <yes — ported from <source> / n/a — original work>
+  Open PRs examined:        <#N, #M, ... — or "(none open)">
+  Overlaps found:           <none / #N: <kind> — <resolution>>
   New decls in this branch: N
   Ported (provenance recorded): M — source repo + license + revision + decl names
   Believed absent from mathlib: K
@@ -184,7 +209,11 @@ declarations are genuinely new:
     - compiled `example` absence probe:    <yes / no>
 
   Result: <PASS> / <FAIL — K decls claim mathlib-absence without the compiled probe>
+          <FAIL — unresolved overlap with open PR #N>
 ```
+
+**Hard stop on an unresolved overlap.** "I'll mention it in the PR body" is not a
+resolution; the duplicated work still exists.
 
 **Hard stop if any declaration claims mathlib-absence on a search-only basis.** A name
 grep plus a statement grep, both clean, still let three duplicates of mathlib results
@@ -378,19 +407,44 @@ On a green run, write `.mathlib-quality/review-receipt.json`:
   "invocation": "<the literal engine command>",
   "exit_code":  0,
   "rounds":     3,
-  "timestamp":  "<ISO>"
+  "timestamp":  "<ISO>",
+
+  "duplication_check": {
+    "checked_at":        "<ISO — must be recent; the open-PR list moves while you work>",
+    "open_prs_examined": [12, 13, 14],
+    "overlaps":          []
+  }
 }
 ```
 
+**Re-run the open-PR check here, not just at Step 0b.** Step 0b's check happened before you
+wrote the code; by the time you are ready to create, hours have passed and — because
+step 6 keeps a queue of branches moving — other PRs have opened, including your own. This
+is the check that catches the race.
+
+If an overlap is real but you intend to proceed anyway (a deliberate follow-up to your own
+open PR, say), record it as acknowledged rather than deleting it, and say why in the PR
+body:
+
+```json
+"overlaps": [{"pr": 13, "kind": "same-files", "acknowledged": true,
+              "note": "stacked on #13; rebase once it merges"}]
+```
+
 **The plugin ships a `PreToolUse` hook (`hooks/pr_gate.sh`) that blocks `gh pr create`
-unless this receipt exists, reports `all_green: true`, and its `head_sha` matches the
-current `HEAD`.** So:
+unless this receipt exists, reports `all_green: true`, carries a fresh duplication check
+with no unacknowledged overlaps, and has a `head_sha` matching the current `HEAD`.** So:
 
 - **No receipt → the PR cannot be opened.** Opening a PR and waiting for the server
   reviewer is the shortcut this gate exists to close.
 - **Receipt not green → blocked**, naming the failing rubrics.
 - **Receipt stale** (branch moved since the review) **→ blocked**, naming both commits.
   Commit *first*, then review, then create — a receipt describes one specific commit.
+- **No `duplication_check`, or an unacknowledged overlap → blocked**, naming the colliding
+  PR.
+- **Duplication check older than `PR_GATE_DUP_MAX_AGE_MIN` (default 60) → blocked.** The
+  remedy is one `gh pr list` and a refreshed `checked_at`; the window exists because a
+  duplication check is a claim about *now*, and in a pipelined chain "now" expires fast.
 
 The hook is armed by `.mathlib-quality/pr-session.json` from Step 0a, so it is inert in
 any repo not running this workflow. Escapes, for when the gate is wrong rather than you:

@@ -87,7 +87,7 @@ fi
 
 # --- receipt must be green, and must match the current commit --------------------
 verdict="$(python3 - "$receipt" <<'EOF' 2>/dev/null
-import json,subprocess,sys
+import json,os,subprocess,sys,datetime
 try:
     r = json.load(open(sys.argv[1]))
 except Exception as e:
@@ -96,6 +96,34 @@ if not r.get("all_green") is True:
     bad = [k for k,v in (r.get("rubrics") or {}).items() if v != "green"]
     print("NOTGREEN " + (", ".join(bad) if bad else "all_green is not true"))
     raise SystemExit
+
+# --- duplication check: did we look at the open PRs, recently, and come up clean? ---
+d = r.get("duplication_check")
+if not isinstance(d, dict) or d.get("overlaps") is None:
+    print("NODUP"); raise SystemExit
+unack = [o for o in d["overlaps"]
+         if not (isinstance(o, dict) and o.get("acknowledged") is True)]
+if unack:
+    def lab(o):
+        if isinstance(o, dict):
+            return "#%s (%s)" % (o.get("pr", "?"), o.get("kind", "overlap"))
+        return str(o)
+    print("DUP " + "; ".join(lab(o) for o in unack)); raise SystemExit
+try:
+    maxage = float(os.environ.get("PR_GATE_DUP_MAX_AGE_MIN", "60"))
+except Exception:
+    maxage = 60.0
+ts = d.get("checked_at")
+if maxage > 0 and ts:
+    try:
+        dt = datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        now = datetime.datetime.now(dt.tzinfo) if dt.tzinfo else datetime.datetime.now()
+        age = (now - dt).total_seconds() / 60.0
+    except Exception:
+        age = None            # unparseable timestamp -> do not block on freshness
+    if age is not None and age > maxage:
+        print("DUPSTALE %d %d" % (age, maxage)); raise SystemExit
+
 try:
     head = subprocess.run(["git","rev-parse","HEAD"], capture_output=True, text=True,
                           timeout=10).stdout.strip()
@@ -113,6 +141,42 @@ EOF
 case "$verdict" in
   OK|"") exit 0 ;;                   # green and current, or infra trouble -> allow
   ERR*)  exit 0 ;;                   # unreadable receipt -> fail open
+  NODUP*)
+    cat >&2 <<'EOF'
+BLOCKED: no open-PR duplication check in the review receipt.
+
+A declaration can be absent from main, absent from mathlib, and still already
+written — sitting in an open PR, including one of your own earlier branches in
+this chain. Running several branches in flight is what makes this collide.
+
+  gh pr list --state open --json number,title,headRefName,files,body --limit 100
+
+Compare against what this branch introduces — same roadmap target marker first
+(two PRs claiming one target is a direct duplicate), then same declaration
+names, then same files touched. Record the result in
+.mathlib-quality/review-receipt.json:
+
+  "duplication_check": {
+    "checked_at": "<ISO now>", "open_prs_examined": [12, 13],
+    "overlaps": []
+  }
+
+A real overlap you intend to proceed with is recorded, not deleted:
+  "overlaps": [{"pr": 13, "kind": "same-files", "acknowledged": true,
+                "note": "stacked on #13; rebase once it merges"}]
+EOF
+    exit 2 ;;
+  DUPSTALE*)
+    set -- $verdict
+    printf 'BLOCKED: the open-PR duplication check is stale (%s min old, max %s).\n\n%s\n' \
+      "$2" "$3" \
+      "A duplication check is a claim about now, and in a pipelined chain that expires fast — PRs have likely opened since, including your own. Re-run 'gh pr list --state open' and refresh duplication_check.checked_at. Tune the window with PR_GATE_DUP_MAX_AGE_MIN (0 disables it)." >&2
+    exit 2 ;;
+  DUP*)
+    printf 'BLOCKED: this branch overlaps an open PR.\n\nOverlaps: %s\n\n%s\n' \
+      "${verdict#DUP }" \
+      "Resolve it before opening another PR — rebase onto that branch, narrow this PR'\''s scope, or close the older one. If the overlap is deliberate (a stacked follow-up), mark it acknowledged:true in the receipt with a note saying why, and say the same in the PR body." >&2
+    exit 2 ;;
   NOTGREEN*)
     printf 'BLOCKED: the local review rubric is not green.\n\nNot green: %s\n\n%s\n' \
       "${verdict#NOTGREEN }" \

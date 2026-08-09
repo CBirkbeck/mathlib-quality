@@ -45,6 +45,22 @@ Then, before writing any new Lean, check **every source the roadmap names** for 
 content — upstream research repos, sibling formalisation projects (e.g. FLT) — **and
 pinned Mathlib itself**.
 
+**The repo's own open PRs are one of those sources.** A result can be absent from `main`,
+absent from Mathlib, and still already written — sitting in an open PR, quite possibly one
+of your own earlier branches in this chain. Step 6 deliberately keeps several branches in
+flight, which is what turns this from a theoretical collision into a routine one.
+
+```bash
+gh pr list --state open --json number,title,headRefName,files,body --limit 100
+```
+
+Compare in descending order of sharpness: **same roadmap target marker** (two PRs claiming
+one target is a direct duplicate), then same declaration names, then same files touched,
+then same source section ported. An overlap is not automatically fatal — a deliberate
+stacked follow-up is fine — but it is resolved *before more code is written*: rebase onto
+the open branch, narrow the scope, or close the older PR. Check again at step 5, because
+the list moves while you work.
+
 **Port and adapt; do not rederive.** Rederiving something the roadmap already points at is
 the most expensive way to fail review, because the reviewer will find the source you
 didn't.
@@ -124,12 +140,24 @@ round four of the rubric.
 Repeat step 4 until **every rubric is green**. Only then `gh pr create` — at that point the
 PR is known to pass, because it has already passed.
 
+**Re-check the open PRs here.** Step 0's check happened before the code was written; by now
+hours have passed and, because step 6 keeps a queue moving, other PRs have opened —
+including your own. This is the check that catches the race, and it is the one that keeps
+a pipelined chain from submitting the same work twice.
+
 **This is enforced mechanically, not by discipline.** On a green run, step 4 writes
 `.mathlib-quality/review-receipt.json` (`head_sha`, `all_green`, per-rubric verdicts, the
-literal invocation and its exit code). The plugin's `PreToolUse` hook — `hooks/pr_gate.sh`
-— blocks `gh pr create` unless that receipt exists, is green, and matches the current
-`HEAD`. A stale receipt (the branch moved since the review) blocks too, naming both
-commits.
+literal invocation and its exit code, and a `duplication_check` recording which open PRs
+were examined and what overlapped). The plugin's `PreToolUse` hook — `hooks/pr_gate.sh` —
+blocks `gh pr create` unless that receipt exists, is green, carries a fresh duplication
+check with no unacknowledged overlaps, and matches the current `HEAD`. A stale receipt (the
+branch moved since the review) blocks too, naming both commits; so does a duplication check
+older than `PR_GATE_DUP_MAX_AGE_MIN` (default 60), since a duplication check is a claim
+about *now*.
+
+An overlap you intend to proceed with is recorded rather than deleted —
+`{"pr": 13, "kind": "same-files", "acknowledged": true, "note": "..."}` — and the same
+reasoning goes in the PR body.
 
 The reason for a hook rather than a firmer rule: opening a PR and waiting for the server
 reviewer is *easier* and *feels like progress*, so under a long chain, attention drifts
@@ -168,6 +196,7 @@ Every clause exists because the opposite failed:
 |---|---|
 | 0 — intake first | Guessing the roadmap target, then carrying the guess into the PR body's attribution where the reviewer checks it |
 | 0 — intake persisted | Re-interrogating the user on every branch of a long chain |
+| 0/5 — open PRs as a source | Writing again what is already sitting in an open PR — most often your own earlier branch in the same chain |
 | 5 — receipt + hook | A worker opening the PR and waiting for the server reviewer because that felt like progress |
 | 0 — sources first | Rederiving what the roadmap already names; three Mathlib duplicates in one file |
 | 2 — cleanup unconditional | "It's a port, so it's fine as-is" |
