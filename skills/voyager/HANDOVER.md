@@ -74,18 +74,22 @@ back-reference to the earlier PR.
 The messages have earned trust by sounding like a mathematician telling colleagues what is
 now proved, not like release notes. Every rule below came from feedback or a near-miss.
 
-**Curate, don't enumerate — the list is meant to be short.** Chris, 2026-08-05, after the
+**Curate, don't enumerate — and there is no target length.** Chris, 2026-08-05, after the
 seventh update ran to thirteen bullets: *"don't feel obliged to make the list long, it's more
 important to keep it interesting and mention significant results."* Every bullet in that
 message had passed all three gates, which is exactly the trap — the gates decide what is
-*allowed*, and you still have to decide what is *worth reading*. A reader who skims one
-long list learns less than one who reads three good bullets, and the topic's credibility
-rests on the second experience. So: pick the results that matter, lead with the best one,
-and stop; do not pad, and do not treat an eligible result as owed a mention. Nothing is
-lost by leaving one out — the dedupe keys on *cited* PR numbers, so an omitted result can
-still be announced the day it becomes the interesting one. Message 614796841 is the
-calibration point in the wrong direction; the first six updates (three to eight bullets)
-are the right shape.
+*allowed*, and you still have to decide what is *worth reading*.
+
+Chris sharpened this on 2026-08-09, after a message came in at five bullets and dropped an
+interesting one to stay there: *"there is no rule to cut it to 5. the rule is that there doesn't
+need to be a minimum or maximum, but you just need to make them be interesting."* Both failure
+directions are real and the second is the sneakier: padding a thin window is obvious, whereas
+cutting a good bullet to hit a self-imposed count looks like discipline. It isn't. Judge every
+candidate on its own interest and keep exactly those that pass, whether that is one or ten.
+Nothing is lost by leaving a dull one out — the dedupe keys on *cited* PR numbers, so it stays
+announceable the day it matters. Message 614796841 (thirteen bullets, padded) and message
+615474670 (five bullets, one good one cut for the count) are the two calibration points, one in
+each direction.
 
 **The bullet is the unit.** Its anatomy, fixed:
 

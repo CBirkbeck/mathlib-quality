@@ -41,17 +41,23 @@ Do **not** post:
   Mathlib is worse than useless;
 - a result whose proof still contains `sorry` in its dependency cone.
 
-**Curate; do not enumerate** (owner decision, 2026-08-05). Passing the bar above earns a
-result *eligibility*, not a bullet. The message is a digest, not a changelog: keep the ones a
-mathematician outside the project would actually want to hear about — a named theorem with
-content, a construction the subject is phrased in, something that closes a milestone or
-unblocks upstream — and stop there. **Never pad a message to look productive.** Three strong
-bullets beat thirteen with the same three buried in them; on a normal day the interesting
-ones run to a handful, and a long list is evidence of under-curation, not of a good window.
-Incremental strengthenings, small computations, and infrastructure that happens to carry a
-name are eligible but seldom interesting — drop them unless the window is thin and they are
-the best it has. Nothing is lost by omitting a real result: the permanent dedupe keys on
-*cited* PR numbers, so anything left out today stays announceable the day it matters.
+**Curate; do not enumerate** (owner decision, 2026-08-05, sharpened 2026-08-09). Passing the
+bar above earns a result *eligibility*, not a bullet. The message is a digest, not a changelog:
+keep the ones a mathematician outside the project would actually want to hear about — a named
+theorem with content, a construction the subject is phrased in, something that closes a
+milestone or unblocks upstream.
+
+**There is no target length: no minimum and no maximum.** Interest is the only test. Do not pad
+a thin window to look productive, and — the failure that prompted this sharpening — do not drop
+an interesting result to hit a number. A one-bullet day and a ten-bullet day are both correct if
+that is what the window actually held. Any rule of thumb about "a handful" is a description of
+past windows, never a quota to hit or a cap to respect; if you find yourself cutting a bullet
+you would have been glad to read, the count is driving and it should not be.
+
+Incremental strengthenings, small computations, and infrastructure that happens to carry a name
+are eligible but seldom interesting — drop those on their merits, not to make room. Nothing is
+lost by omitting a genuinely dull result: the permanent dedupe keys on *cited* PR numbers, so
+anything left out today stays announceable the day it matters.
 
 ## Where Voyager posts
 
@@ -482,9 +488,9 @@ the result; no marketing adjectives; no "exciting"/"major milestone". State what
 theorem says, not how impressive it is. If a result is a strengthening of Mathlib, say so
 in the sentence.
 
-Length is not a virtue. The bullet list is **curated, not exhaustive** (§What counts), so a
-short message is a normal outcome even after a large window — put the most interesting result
-first, and let the message end when the interesting ones do.
+Length is neither a virtue nor a vice. The bullet list is **curated, not exhaustive**
+(§What counts), and carries no target count in either direction — put the most interesting
+result first, and let the message end when the interesting ones do, however many that is.
 
 **Quiet runs still report.** If the window contains newly merged PRs but nothing survives
 the gates, post this short check-in instead of the full format:
