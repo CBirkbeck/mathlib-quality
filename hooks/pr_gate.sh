@@ -86,7 +86,7 @@ EOF
 fi
 
 # --- receipt must be green, and must match the current commit --------------------
-verdict="$(python3 - "$receipt" <<'EOF' 2>/dev/null
+verdict="$(python3 - "$receipt" "$session" <<'EOF' 2>/dev/null
 import json,os,subprocess,sys,datetime
 try:
     r = json.load(open(sys.argv[1]))
@@ -123,6 +123,41 @@ if maxage > 0 and ts:
         age = None            # unparseable timestamp -> do not block on freshness
     if age is not None and age > maxage:
         print("DUPSTALE %d %d" % (age, maxage)); raise SystemExit
+
+# --- source sweep: was each named source actually pinned and searched? --------------
+ss = r.get("source_sweep")
+if ss is None:
+    print("NOSWEEP"); raise SystemExit
+if not isinstance(ss, list):
+    print("NOSWEEP"); raise SystemExit
+# An empty sweep is only honest when the chain declared no source. Cross-check the
+# Step-0a intake, so "source_sweep": [] cannot be used to skip a source the user named.
+if not ss:
+    named = ""
+    try:
+        sv = json.load(open(sys.argv[2])).get("source")
+        if isinstance(sv, dict):
+            named = str(sv.get("repo") or "").strip()
+        elif isinstance(sv, str):
+            named = sv.strip()
+    except Exception:
+        named = ""            # unreadable session -> do not block on this
+    if named and named.lower() not in ("original work", "none", "n/a", "-"):
+        print("EMPTYSWEEP " + named); raise SystemExit
+
+bad = []
+for e in ss:
+    if not isinstance(e, dict):
+        bad.append("<malformed entry>"); continue
+    name = e.get("repo") or "<unnamed repo>"
+    rev = str(e.get("revision") or "").strip()
+    qs = e.get("queries") or []
+    if len(rev) < 7:
+        bad.append("%s: no pinned revision" % name)
+    elif not (isinstance(qs, list) and len([q for q in qs if str(q).strip()]) >= 1):
+        bad.append("%s: no recorded queries" % name)
+if bad:
+    print("SWEEP " + "; ".join(bad)); raise SystemExit
 
 try:
     head = subprocess.run(["git","rev-parse","HEAD"], capture_output=True, text=True,
@@ -165,6 +200,45 @@ A real overlap you intend to proceed with is recorded, not deleted:
   "overlaps": [{"pr": 13, "kind": "same-files", "acknowledged": true,
                 "note": "stacked on #13; rebase once it merges"}]
 EOF
+    exit 2 ;;
+  NOSWEEP*)
+    cat >&2 <<'EOF'
+BLOCKED: no source_sweep in the review receipt.
+
+Before new material is written, every source the roadmap names must be swept —
+upstream research repos, sibling formalisation projects (FLT and the like) —
+not just pinned Mathlib. "Checked it" is not a sweep; the six-step method is in
+references/pr-workflow.md section "The source sweep":
+
+  1. Pin and CLONE it (the recorded revision is the artifact — web-UI browsing
+     leaves nothing to cite and no revision you can name afterwards)
+  2. Read the index first: blueprint, dep graph, "## Main results", README
+  3. Search THREE vocabularies: your name, the source's naming convention, and
+     the operator/constant that cannot be renamed away (this one finds things)
+  4. Read the neighbourhood, not the grep hits — results live as unnamed `have`s
+     inside larger proofs, or as a more general statement
+  5. If the source proves something that would NEED your result, read that proof
+  6. Port and adapt; do not rederive
+
+Record in .mathlib-quality/review-receipt.json:
+
+  "source_sweep": [
+    {"repo": "github.com/org/FLT", "revision": "<full sha>",
+     "queries": ["<literal grep 1>", "..."], "verdict": "absent"}
+  ]
+
+Genuinely original work with no roadmap source: "source_sweep": []
+EOF
+    exit 2 ;;
+  EMPTYSWEEP*)
+    printf 'BLOCKED: empty source_sweep, but this chain named a source.\n\nChain source (from .mathlib-quality/pr-session.json): %s\n\n%s\n' \
+      "${verdict#EMPTYSWEEP }" \
+      "An empty sweep asserts there was nothing to search, which contradicts the intake you gave at Step 0a. Sweep that source (references/pr-workflow.md, 'The source sweep') and record repo + full revision + the literal queries. If the chain genuinely has no source, correct it with /pre-submit --reset-intake rather than emptying the sweep." >&2
+    exit 2 ;;
+  SWEEP*)
+    printf 'BLOCKED: the source sweep is not citable.\n\n%s\n\n%s\n' \
+      "${verdict#SWEEP }" \
+      "Each swept source needs a full pinned revision AND the literal queries run. A worker who never cloned the repo cannot produce a revision — which is the point: a sweep you cannot cite did not constrain what you wrote. See references/pr-workflow.md section 'The source sweep'." >&2
     exit 2 ;;
   DUPSTALE*)
     set -- $verdict

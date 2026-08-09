@@ -1431,10 +1431,17 @@ If the lemma exists with the exact name: use it.
 If the lemma exists with a slightly different name: use the actual name. Update the
 ticket's progress notes with the actual name found.
 
-If the lemma doesn't exist after the **five-method search** (`mathlib-search.md`) **and
-the compiled absence probe** (untruncated full-name grep + an `example ... := by exact?`
+If the lemma doesn't exist after the **five-method search** (`mathlib-search.md`), **the
+compiled absence probe** (untruncated full-name grep + an `example ... := by exact?`
 probing the generic typeclass and auto-generated routes — searching alone does not
-establish absence): this is a Tier-A MATHLIB GAP. In beastmode, the default response is spawn
+establish absence), **and the source sweep** of every roadmap-named upstream repo
+(`pr-workflow.md` § "The source sweep": pinned clone, index before grep, three
+vocabularies, read the neighbourhood, check whether it's a step inside a bigger proof —
+port rather than rederive): this is a Tier-A MATHLIB GAP.
+
+The source sweep matters most here, because this is the moment new material gets written.
+A gap that is real against mathlib but already solved in the upstream repo is not a gap —
+it is a port you haven't done yet. In beastmode, the default response is spawn
 a sub-ticket and continue (A1). Only escalate to B3 (off-track) if the
 missing fact is genuinely research-scale:
 

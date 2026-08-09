@@ -45,6 +45,54 @@ Then, before writing any new Lean, check **every source the roadmap names** for 
 content — upstream research repos, sibling formalisation projects (e.g. FLT) — **and
 pinned Mathlib itself**.
 
+### The source sweep
+
+Mathlib-absence has a hard standard (§ below: untruncated grep **and** a compiled probe).
+Source-repo absence needs one too, or "checked FLT ✓" becomes a box a worker ticks on the
+way to writing the thing that was already there. Six steps, per source, per result:
+
+**1. Pin it and clone it.** Record `repo@sha`. Browsing the GitHub web UI does not count:
+you cannot grep it, and you cannot say afterwards which revision you looked at. **The
+recorded revision is the artifact** — a worker who never cloned cannot produce one, which
+is what makes this checkable rather than performative.
+
+**2. Read the index before grepping.** Formalisation projects curate exactly the list you
+need: a blueprint, a dependency graph, `## Main results` in module docstrings, the README's
+status table. This is the highest-yield minute in the whole sweep and it is usually skipped.
+
+**3. Search three vocabularies, not one.** The same result appears under:
+- *your* name for it,
+- the **source's** naming convention (which differs from mathlib's, and from yours),
+- the **operator or constant** that must occur in any statement of it — the one piece of
+  notation that cannot be renamed away.
+
+The third is the one that finds things, because it survives every naming disagreement.
+
+**4. Read the neighbourhood, not the hits.** Open the module where the result *would* live
+and read the section. A grep returns lines; what you need is whether the fact is present in
+any form. Results routinely exist as an unnamed `have` inside a larger proof, or as a
+special case of something stated more generally — neither is greppable by name.
+
+**5. The sub-lemma check.** If the source proves a theorem whose proof would *need* your
+result, read that proof. Your lemma is very likely a step inside it. This is the same
+discipline `/develop` Phase 1e Step 1 requires — read the source's full proof including
+every sub-lemma, page by page, not headline plus summary — applied before writing rather
+than during planning.
+
+**6. Port and adapt; do not rederive.** If it is there, take it, with provenance (repo,
+license, revision, declaration names). Rederiving what the roadmap points at is the most
+expensive way to fail review, because the reviewer will find the source you didn't.
+
+#### What does not count as a sweep
+
+| Claimed check | Why it fails |
+|---|---|
+| "GitHub code search found nothing" | No pinned revision, indexes lag, and it silently misses what is not indexed |
+| "The name isn't in the source" | Naming conventions differ between projects; step 3 exists precisely because of this |
+| "I read the README / the paper's abstract" | Papers don't name their sub-steps, and READMEs describe headline results only |
+| "It's not in the source's blueprint" | The blueprint indexes *stated* results, not the lemmas inside proofs — step 5 |
+| A truncated grep | Same failure as the mathlib check: a `head`-ed grep that scrolls past its own hit |
+
 **The repo's own open PRs are one of those sources.** A result can be absent from `main`,
 absent from Mathlib, and still already written — sitting in an open PR, quite possibly one
 of your own earlier branches in this chain. Step 6 deliberately keeps several branches in

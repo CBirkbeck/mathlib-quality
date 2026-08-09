@@ -196,10 +196,25 @@ An overlap is not automatically fatal — a deliberate follow-up to your own ope
 fine — but it must be **resolved before writing more code**: rebase onto the open branch,
 narrow this PR's scope, or close the older one. Record the decision.
 
+**The source sweep is a cited gate too.** "Checked FLT ✓" is not an artifact — it is a box.
+Per source, the block below must carry the **pinned revision** (a worker who never cloned
+cannot produce one) and the **literal queries run**. The six-step method, and the table of
+things that don't count as a sweep, are in `references/pr-workflow.md` § "The source
+sweep": pin and clone, read the index before grepping, search three vocabularies (yours,
+the source's, and the operator that cannot be renamed away), read the neighbourhood rather
+than the hits, check whether your result is a step inside a bigger proof, then port rather
+than rederive.
+
 ```
 [Step 0b] Sources before code:
   Roadmap sources checked:  <list, or "n/a: no roadmap">
-  Named source used:        <yes — ported from <source> / n/a — original work>
+    per source:
+      <repo>@<sha>          index read: <blueprint/dep-graph/docstrings/README — which>
+                            queries:    <the literal greps, all three vocabularies>
+                            modules read: <paths — the neighbourhood, not just hits>
+                            sub-lemma check: <bigger proof read, or "n/a: none applies">
+                            verdict:    <absent / present → ported / present → adapted>
+  Named source used:        <yes — ported from <source>@<sha> / n/a — original work>
   Open PRs examined:        <#N, #M, ... — or "(none open)">
   Overlaps found:           <none / #N: <kind> — <resolution>>
   New decls in this branch: N
@@ -210,10 +225,14 @@ narrow this PR's scope, or close the older one. Record the decision.
 
   Result: <PASS> / <FAIL — K decls claim mathlib-absence without the compiled probe>
           <FAIL — unresolved overlap with open PR #N>
+          <FAIL — source swept without a pinned revision or without recorded queries>
 ```
 
 **Hard stop on an unresolved overlap.** "I'll mention it in the PR body" is not a
 resolution; the duplicated work still exists.
+
+**Hard stop on a source claimed as swept without `repo@sha` and its queries.** A sweep you
+cannot cite is a sweep that did not constrain what you wrote.
 
 **Hard stop if any declaration claims mathlib-absence on a search-only basis.** A name
 grep plus a statement grep, both clean, still let three duplicates of mathlib results
@@ -413,9 +432,20 @@ On a green run, write `.mathlib-quality/review-receipt.json`:
     "checked_at":        "<ISO — must be recent; the open-PR list moves while you work>",
     "open_prs_examined": [12, 13, 14],
     "overlaps":          []
-  }
+  },
+
+  "source_sweep": [
+    {"repo": "github.com/org/FLT", "revision": "<full sha>",
+     "queries": ["<literal grep 1>", "<literal grep 2>", "<literal grep 3>"],
+     "verdict": "absent"}
+  ]
 }
 ```
+
+`source_sweep` is `[]` only when the chain's source is genuinely "original work". Otherwise
+each roadmap-named source appears with a **full revision sha** and the **literal queries
+run** — the gate rejects an entry missing either, because a sweep that can't be cited did
+not constrain what got written.
 
 **Re-run the open-PR check here, not just at Step 0b.** Step 0b's check happened before you
 wrote the code; by the time you are ready to create, hours have passed and — because
