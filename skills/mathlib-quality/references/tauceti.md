@@ -127,10 +127,13 @@ tauceti-review 42 --rubrics scope,correctness --mode manual
 tauceti-review 42 --post          # publish, under YOUR gh identity
 ```
 
-`--mode commit` (default) re-runs only rubrics not already passing; `--mode manual` runs
-all. `--no-coordinate` gives a private pass that touches the PR at all — otherwise a
-contributing run posts a short-lived `review in progress` marker so a fleet never pays
-twice for one commit.
+`--mode commit` (default) re-runs only unresolved rubrics, carrying prior approvals forward
+as ♻️ stale until the PR is otherwise clean, then sweeping them; `--mode manual` forces a
+full re-review. `--no-coordinate` gives a private read-only pass that touches the PR **not
+at all** — otherwise a contributing run posts a short-lived `review in progress` marker so a
+fleet never pays twice for one commit.
+
+*(Flags above verified by running `tauceti-review --help` on 2026-08-09.)*
 
 **`runner/review.py` — the inner engine.** This is the layer that takes `--diff-file`,
 `--pr-desc-file` and `--no-post`, against a hand-staged workspace (`--tool-cwd` with

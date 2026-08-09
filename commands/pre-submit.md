@@ -14,6 +14,11 @@ Final verification before submitting a PR to mathlib.
 /pre-submit --reset-intake        (re-ask the Step 0a chain questions and rewrite the session file)
 ```
 
+> **On Tau Ceti, use `/taupr` instead.** It is the same discipline specialised to that
+> repo's actual mechanics — `tauceti-review` on your own subscription, contests in the
+> rubric thread, `--force-with-lease` pushes, target markers and author claims, scoreboard
+> polling. `/pre-submit` stays the generic checklist for mathlib and everything else.
+
 ## Checklist
 
 ### 0. Scope and Provenance (roadmap projects)
