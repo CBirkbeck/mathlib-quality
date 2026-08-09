@@ -141,9 +141,13 @@ noise, so the intake is **chain-scoped state**, not a per-run prompt.
 the roadmap's open targets) but letting the user correct them:
 
 1. **What is this chain delivering?** — the overall goal the run of PRs serves, one line.
-2. **Which roadmap area / target family?** — the layer these PRs land in. "Not on the
-   roadmap" is a valid and *significant* answer: it predicts a scope finding from Step 8's
-   reviewer, so it should be known now rather than in round four.
+2. **Which roadmap area / target family?** — the layer these PRs land in, plus whether the
+   chain adds **new mathematics** or **improves existing code**. The distinction decides
+   how much the answer matters: on Tau Ceti the roadmap gates *new* declarations only, and
+   refactoring, proof simplification, modest generalisation, relocation and documentation
+   are **always in scope with no roadmap entry**. So "not on the roadmap" predicts a scope
+   finding for new mathematics, and is unremarkable for improvement work — don't report it
+   as a risk when the chain is refactors. (`references/tauceti.md`.)
 3. **From what source, if any?** — upstream research repo, sibling formalisation project
    (e.g. FLT), or paper; with revision and license if known. "Original work" is valid.
 
@@ -184,6 +188,15 @@ gh pr list --state open --json number,title,headRefName,files,body --limit 100
 ```
 
 Compare against what this branch introduces, in descending order of sharpness:
+
+**Prefer the project's native dedup where one exists.** On Tau Ceti the mechanism is not a
+heuristic: PRs carry `<!--tauceti-target:v1 {"focus":..,"id":..}-->` and authors take a
+`author/<focus>/<target-id>` claim ref *before* writing. Match on that marker `id` and the
+question is settled — the duplicate sweeper itself closes a newer duplicate only when both
+PRs carry the same marker, keeping the lower number. **A PR without the marker is invisible
+to dedup**, so emitting it is part of not-duplicating. See `references/tauceti.md`.
+
+Where no such mechanism exists, fall back to these signals:
 
 | Signal | Why it matters |
 |---|---|
@@ -383,6 +396,20 @@ rubric — record `n/a: no scriptable review engine` there.
 **Never open a PR that has not already passed the review rubric locally.** A review engine
 that accepts a diff on a flag does not need a PR to exist: if it takes `--diff-file` /
 `--pr-desc-file` / `--no-post`, it runs against a local branch with nothing on GitHub.
+
+**Know which layer you are driving — they differ.** On Tau Ceti (verified against
+`TauCetiReview`, see `references/tauceti.md`):
+
+| Layer | Pre-PR? | Notes |
+|---|---|---|
+| `tauceti-review <PR#>` (documented CLI) | **No** — `pr` is a required positional and the head/diff/description are fetched from GitHub | Defaults to a **dry run** already; `--post` is the opt-in. Value is running on your subscription instead of metered API keys |
+| `runner/review.py` (inner engine) | **Yes** | This is the layer with `--diff-file` / `--pr-desc-file` / `--no-post`, against a staged `--tool-cwd` (`code/`, `roadmap/`, `mathlib/`) plus `--store` / `--rubrics-dir`. `--pr` is required but need not name a live PR when the diff and description come from files |
+
+So the pre-PR dry run is real, but it is the **inner engine**, not the documented command.
+A worker that reaches for `tauceti-review` will find it wants a PR number — that is
+expected, not a reason to give up and open the PR. If you deliberately choose the
+post-PR flow instead, `PR_GATE_OVERRIDE=1` lets the PR through and the review happens
+after; you then owe the same iterate-until-green loop on the open PR.
 
 Stage what the engine reads, then invoke it with `--no-post` (and whatever its manual mode
 is). Nothing touches GitHub:

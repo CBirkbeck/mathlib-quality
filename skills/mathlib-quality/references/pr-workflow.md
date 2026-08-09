@@ -22,7 +22,7 @@ everything downstream is measured against:
 | Question | Why it matters |
 |---|---|
 | **What is this chain delivering?** | The overall goal the run of PRs serves |
-| **Which roadmap area / target family?** | The layer these PRs land in. "Not on the roadmap" is a valid and *important* answer — it predicts a scope finding, so it should be known now, not in round four |
+| **Which roadmap area / target family?** | The layer these PRs land in — **and whether the chain adds new mathematics or improves existing code**. Where a roadmap gates *new* declarations only (Tau Ceti does), "not on the roadmap" predicts a scope finding for new material and is unremarkable for refactors |
 | **From what source, if any?** | Upstream repo, sibling project (e.g. FLT), or paper, with revision and license. Drives the provenance block in step 5. "Original work" is valid |
 
 Inferred candidates (branch name, changed files, the roadmap's open targets) make
@@ -253,7 +253,18 @@ Every clause exists because the opposite failed:
 | 5 — green before create | A PR whose first review is its fourth |
 | 6 — cron + pipeline | Idle time that isn't the server's fault |
 
+## Project-specific mechanics
+
+This document is the generic workflow. Wire formats, contest mechanics, coordination rules
+and merge policy for Tau Ceti — where they are verified against the repo rather than
+inferred — live in **`tauceti.md`**. Read it before running this workflow there; several of
+its rules (contest in the rubric thread, `--force-with-lease` pushes, the scoreboard's
+`tauceti-meta` block, the target marker and author claim) are silently wrong if guessed.
+
 ## Source
 
 Contributed 2026-08-08 from TauCeti (`tauceti-pr-workflow-5c917ea4`,
-`data/community_learnings/archived/20260808_tauceti.jsonl`).
+`data/community_learnings/archived/20260808_tauceti.jsonl`), then corrected 2026-08-09
+against the TauCeti/TauCetiReview repos: the contributed clause 4 describes the **inner**
+engine (`runner/review.py`), not the documented `tauceti-review` CLI, which requires an
+existing PR.

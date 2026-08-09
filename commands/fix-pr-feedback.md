@@ -136,6 +136,70 @@ Do not push fixes whose dependencies are unmerged — CI will fail.
 
 ---
 
+## Tau Ceti mode (repo-specific — read before Phase 1)
+
+When the PR is on `TauCetiProject/TauCeti` (or a fork), review is machine-run and has wire
+formats you must honour. Full detail in `references/tauceti.md`; the parts that change this
+command:
+
+**1. Do not drop the reviewers as bots.** Phase 1d's bot filter would discard the entire
+review. On Tau Ceti the verdicts *are* the feedback: one scoreboard issue comment carrying
+`<!--tauceti-scoreboard-->` plus a `<!--tauceti-meta:v1 {...}-->` JSON block, and one review
+thread per rubric rooted on a comment carrying `<!--tauceti-rubric:NAME-->`.
+
+**2. Read state from the scoreboard, never the label.** Take the newest
+`tauceti-scoreboard` comment by `updated_at` and parse its `tauceti-meta` JSON for
+`head_sha` + per-rubric `states`. Never scrape the rendered Markdown; never read the PR
+label. **A review applies only to the `head_sha` it names** — after any push, the previous
+verdicts are stale by definition.
+
+**3. Contesting goes in the thread the finding came from.** This is the part that is
+silently wrong if guessed. A contest is a **reply to the rubric thread root** — a review
+comment whose `in_reply_to_id` is that root:
+
+```bash
+gh api --method POST \
+  "/repos/TauCetiProject/TauCeti/pulls/<PR>/comments/<ROOT_ID>/replies" \
+  -f body="$(cat contest.md)"
+```
+
+A top-level `gh pr comment` is **not** a contest — different endpoint, never read. Nor is a
+fresh review comment that replies to nothing. And a body containing `tauceti-reply:` or
+`tauceti-rubric:` is **dropped as machine output**, so when you quote the conflicting
+thread — which `AGENTS.md` requires — **quote the prose and strip the markers**.
+
+**4. Contest only a genuine contradiction, and show it.** Per `AGENTS.md`: when one finding
+requires X and another requires not-X, or a later round reverses what an earlier round
+required, do not silently satisfy one and let the other re-fire. Contest one thread, link
+the conflicting one, quote its wording (rubric and round), and explain why both cannot
+hold. Disagreeing with a single finding you simply dislike is not what this is for —
+implement it or say why it is wrong on the merits.
+
+**5. A contest does not re-trigger CI.** Contest re-reviews are owned by the local worker,
+so after posting you must run `tauceti-review <PR>` to adjudicate it; otherwise the contest
+just sits there. `/review` on its **own line** re-triggers a full CI review (write access
+or better). Say it once: a re-run picks up a contest only when its comment id exceeds the
+watermark already adjudicated, so re-posting the same argument does nothing.
+
+**6. Push with `--force-with-lease`.** Never a plain `git push` to a PR branch — this is a
+`[HARD]` rule of the coordination contract, since other agents may be working the same
+branch:
+
+```bash
+git push --force-with-lease=<headRefName>:<observed_oid> \
+    https://github.com/<headRepositoryOwner>/<headRepository> HEAD:<headRefName>
+```
+
+A rejection (`stale info`) means someone moved the branch — re-observe and decide afresh,
+never fall back to a plain push.
+
+**7. Do not chase auto-merge.** All rubrics green on the current head + `TauCeti/`-only +
+CI green merges automatically. Never `--admin`-merge, and never strip a PR's human-owned
+changes (`scripts/`, `.github/`, lakefile) to make it auto-mergeable — the gate routes
+those to a human deliberately.
+
+---
+
 ## Phases
 
 ```
@@ -198,7 +262,9 @@ back to. Read it.
 ### 1d. Filter
 
 - **Bot comments**: drop comments from `github-actions[bot]`, `mathlib4-bot`, etc., unless
-  the user specifies they're meaningful.
+  the user specifies they're meaningful. **Exception — Tau Ceti**: the review agents'
+  scoreboard and rubric threads are the feedback, not noise. Never filter a comment
+  carrying `tauceti-scoreboard` or `tauceti-rubric:`. See "Tau Ceti mode" above.
 - **Resolved threads**: review comments have a `position: null` field if the thread is
   outdated/resolved on the current commit. Don't drop these silently — flag them in the
   punch-list as "thread was on outdated code; check whether the underlying issue still

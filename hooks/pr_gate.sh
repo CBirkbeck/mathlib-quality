@@ -75,12 +75,20 @@ Do this instead:
   1. Stage: code/ (git archive of HEAD), a FRESH roadmap clone, mathlib/ (symlink to
      the pinned .lake/packages/mathlib), diff.txt (MERGE-BASE diff vs the base
      branch), pr_desc.txt.
-  2. Run the engine with --no-post --mode manual.
+  2. Run the INNER engine with --no-post --mode manual. On Tau Ceti that is
+     runner/review.py (the layer carrying --diff-file/--pr-desc-file/--no-post),
+     NOT the tauceti-review CLI, which requires an existing PR number.
   3. Fix findings, re-run, until every rubric is green.
   4. Write .mathlib-quality/review-receipt.json (schema in commands/pre-submit.md
      Step 8) recording head_sha, the invocation, exit code, and per-rubric verdicts.
 
-Then `gh pr create` will proceed. See references/pr-workflow.md sections 4-5.
+Then `gh pr create` will proceed. See references/pr-workflow.md sections 4-5 and
+references/tauceti.md.
+
+If you deliberately choose the post-PR flow instead (open the PR, then review it
+with `tauceti-review <PR>`), that is a legitimate choice this gate cannot verify:
+re-run with PR_GATE_OVERRIDE=1. You still owe the iterate-until-green loop, and
+contests go in the rubric thread they came from, never a top-level comment.
 EOF
   exit 2
 fi

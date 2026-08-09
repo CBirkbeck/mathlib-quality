@@ -455,6 +455,9 @@ For detailed guidance:
 - `references/linter-checks.md` - Automated linter rules
 - `references/pr-workflow.md` - Sources-before-code, and never opening a PR that hasn't
   already passed the review rubric locally (review-gated repos)
+- `references/tauceti.md` - Tau Ceti specifics: contesting a review **in the rubric thread
+  it came from**, the scoreboard's `tauceti-meta` block, target markers + author claims,
+  `--force-with-lease` pushes, auto-merge policy
 
 **Pattern-specific examples (load based on proof content):**
 - `examples/inline_have.md` - Inline `have` blocks (77 PR examples)
