@@ -387,13 +387,22 @@ worth announcing. For EACH numbered item below, answer with one of:
 
 For each ANNOUNCE, add: (a) the standard name of the result, (b) one sentence, for a
 mathematician who does not know it, saying what it asserts, (c) whether it has a
-Wikipedia page, and (d) a standard reference if you know one.
+Wikipedia page, and (d) a standard reference if you know one. Finally, rank the
+strongest candidates in order of how noteworthy they are to a general mathematical
+audience — this ranking, not the order of discovery, decides which result leads.
 
 Be conservative: if a result is only interesting inside its own proof, say SKIP. Do not
 be polite about it — a false ANNOUNCE is more costly than a false SKIP.
 
 <numbered list: name, Lean statement, docstring summary>
 ```
+
+**The gate is the second opinion on interest, not only on eligibility** (owner
+instruction, 2026-08-10: get ChatGPT's view on *how interesting or noteworthy* each
+result is, every pass). ANNOUNCE/SKIP feeds the cut; the per-item reasons and the
+ranking feed the curation — which bullets run, in what order, and which eligible
+results wait for a better day. Curation stays the operator's call (§What counts), but
+it is made with the gate's reading in hand, never instead of it.
 
 Take its verdicts as **advice, not authority**. It has been wrong before on this project —
 it misnumbered a Wedhorn theorem and mis-attributed a Mathlib file's authors. If a verdict
