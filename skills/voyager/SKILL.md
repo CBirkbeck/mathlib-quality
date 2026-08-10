@@ -238,15 +238,34 @@ same tree the window ends at.
 
 ### 2. Extract candidates
 
-**Work PR-by-PR — the merged PRs are the unit of discovery.** TauCeti squash-merges, so
+**Work PR-by-PR — the merged PRs are the unit of discovery, and read every one of them**
+(owner instruction, 2026-08-10: *"you can't rely on PR title, don't be lazy — this is meant
+to be a slow, methodical and careful check. You need to look at the contents of each PR and
+from that make your list."*). TauCeti squash-merges, so
 `git log --format='%s' <watermark>..HEAD` lists exactly the window's PRs, one per commit,
-with the number in the subject (`feat: prove the double centralizer theorem (#1435)`).
-Triage by title: `feat:` is where announcements live; `chore:`/`refactor:`/`fix:` almost
-never are. Then, for each candidate,
-`gh pr view <n> --repo TauCetiProject/TauCeti --json title,body` — the body typically says
-what was proved, names the result, and cites the roadmap and references, which is exactly
-the raw material for the significance gate and for writing the one-sentence description.
-The PR is also the attribution unit, so this hands you the link for free.
+with the number in the subject. For **every** PR in the window — `feat:`, `chore:`,
+`refactor:`, `fix:`, all of them — fetch the body and decide from **what it says was proved
+or defined**, never from the title alone. Batch the fetches
+(`gh pr list --repo TauCetiProject/TauCeti --state merged --search "merged:>=<date>" --json
+number,title,body`) rather than skipping any. The body names the result and cites the
+roadmap and references — the raw material for the significance gate and the one-sentence
+description — and the PR is the attribution unit, so this also hands you the link for free.
+
+**Titles are labels, not filters.** Title-tone triage is the lazy shortcut, and it produced
+the worst miss so far: fifteen `feat(EllipticCurve)` PRs across two windows all read as
+bookkeeping by title and none was opened, while 105 bullets went out with zero
+elliptic-curve results among them. Reading the bodies later surfaced the automorphism group
+of an elliptic curve with j ∉ {0, 1728} (TauCeti#2248 — Silverman III.10, uniform in the
+characteristic), the quadratic twist of a Weierstrass curve with its invariant theory
+(TauCeti#2254), and quadratic Galois descent for changes of variables and affine points
+(TauCeti#2268). A `refactor:` body can likewise reveal a completed proof or a newly named
+object. A body costs seconds to read; a miss is invisible until someone asks why a whole
+subject never appeared.
+
+**The window bounds discovery, not eligibility.** The permanent dedupe keys on *cited* PR
+numbers, so a result missed in an earlier window stays announceable the day it is found.
+When a triage lapse comes to light, fold the missed items into the next run's candidates
+and gate them normally.
 
 **Cross-check with the module-title sweep — a bland PR title can hide a named result.** Every
 Tau Ceti file opens with a `/-! # Title` naming what it contains, and named results are named

@@ -91,6 +91,17 @@ announceable the day it matters. Message 614796841 (thirteen bullets, padded) an
 615474670 (five bullets, one good one cut for the count) are the two calibration points, one in
 each direction.
 
+**Read every PR's contents — titles are not a filter.** Chris, 2026-08-10, after asking why
+no elliptic-curve result had ever appeared: *"you can't rely on PR title, don't be lazy, this
+is meant to be a slow methodical and careful check. you need to look at the contents of each
+PR and from that make your list."* The record that prompted it: 105 bullets announced, zero
+elliptic-curve results, while fifteen `feat(EllipticCurve)` PRs landed in two windows —
+Silverman III.10 on Aut(E) for j ∉ {0, 1728} (TauCeti#2248), the quadratic twist and its
+invariants (TauCeti#2254), and quadratic Galois descent (TauCeti#2268) among them, none
+opened because the directory's titles read as bookkeeping. SKILL.md §2 now requires reading
+every body in the window, and adds that the window bounds discovery, not eligibility: a
+result found late is announced late, not never.
+
 **The bullet is the unit.** Its anatomy, fixed:
 
 > - **[Standard name](verified docs anchor)** — one sentence, for a mathematician who does
