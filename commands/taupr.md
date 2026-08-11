@@ -33,14 +33,17 @@ green PRs, close stuck ones, or sweep duplicates from here.
 ## Usage
 
 ```
-/taupr                     run one round
-/taupr --loop [interval]   run rounds continuously (default 10m)
+/taupr                     run ONE round and stop
 /taupr --only <r>[,<r>]    restrict to given steps: rebase,fix-ci,fix,review,author
 /taupr --skip <r>[,<r>]    drop steps from the cascade
 /taupr status              print the board: every open PR, its build + review state, age
 /taupr --review-age <dur>  R4 threshold (default 1h)
 /taupr --reset-intake      re-ask the chain questions
 ```
+
+**`/taupr` itself runs one round and stops.** It has no loop flag of its own — recurrence
+comes from the harness (see "Running it continuously"), which is the same arrangement
+`/beastmode` uses.
 
 `/taupr --only fix,fix-ci` tends existing PRs only; `/taupr --skip author` is the same
 cascade without opening anything new.
@@ -272,16 +275,27 @@ skip:
 If the gate blocks, a step did not happen. Do that step rather than reaching for
 `PR_GATE_OVERRIDE=1`.
 
-## The loop
+## Running it continuously
+
+`/taupr` does one round per invocation. To keep it going, wrap it — the recurrence belongs
+to the harness, not to this command:
 
 ```
-/taupr --loop 10m
+/loop 10m /taupr          in-session: a round every ten minutes while the session lives
 ```
 
-Each tick runs one round. Ten minutes is a reasonable cadence: long enough that a stalled
-PR is not polled pointlessly, short enough that a red build is picked up promptly. R4's
-one-hour threshold is measured from the build status, not from the tick, so a slower loop
-does not delay it.
+For an unattended schedule that survives the session ending, use the `schedule` skill to
+create a cron running `/taupr` on the same cadence.
+
+**What the interval does — and does not do.** It is the polling cadence: how often a round
+runs, and therefore how quickly a red build or a fresh finding is picked up. It does **not**
+move R4's one-hour threshold, which is measured from the `build` status timestamp. A
+ten-minute tick means you act within ten minutes of that hour elapsing; a thirty-minute tick
+means within thirty. Shorter reacts faster and costs more API calls and agent invocations;
+longer is cheaper and lazier.
+
+Ten minutes is the cadence the original working practice used, and it sits sensibly under
+the one-hour review threshold.
 
 Between rounds, report one line:
 
