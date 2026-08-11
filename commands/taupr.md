@@ -209,7 +209,9 @@ four.
 > This is the inner engine, not the documented command. Its flags can move without notice.
 > If the invocation fails, fall back to creating the PR and iterating with
 > `tauceti-review <PR>` (bare, no `--post`) — private in effect, at the cost of a visible
-> half-finished PR.
+> half-finished PR **and of CI reviewing each intermediate head at the project's expense**
+> (`pr-build` fires on every push; see P8). That cost is the reason to prefer getting this
+> phase working: P6 is the only point where iteration is genuinely free.
 
 ## P7 — Push and create
 
@@ -282,8 +284,32 @@ borderline rubric, or a scope rubric that reads the real PR body differently fro
 `pr_desc.txt`. Do not just re-run and hope — a disagreement between P6 and P8 means one of
 them was measuring the wrong thing.
 
-**Reserve the bare dry run for**: a PR you did not create, a rubric you are re-checking out
-of curiosity, or any run you deliberately do not want recorded.
+### On an open PR, a dry run does not save the project anything
+
+The rule is about **whether the PR exists**, not who created it.
+
+`pr-build` fires on `pull_request_target: [opened, synchronize, reopened]` — so **every push
+to an open PR** triggers a build, and a successful build triggers `review.yml`. CI is going
+to review that head whether or not you dry-ran it first.
+
+This inverts the usual instinct:
+
+| Situation | Bare dry run | `--post` |
+|---|---|---|
+| **PR does not exist yet** (P6) | Free. Nothing is watching, iterate as long as you like | n/a |
+| **PR is open** | CI reviews that head anyway — the project pays, and your dry run bought nothing but information | Claims the head, CI skips, **your subscription pays instead** |
+
+So on an open PR, posting is the *cheaper* option for the project, not the riskier one. The
+expensive habit is pushing repeatedly to an open PR and dry-running each time: every one of
+those heads gets a CI review you already paid for locally.
+
+Which is the real argument for P6 — it is the only phase where iteration is genuinely free.
+
+**Bare dry runs remain right for**: a PR you did not create and do not intend to publish a
+verdict on; a rubric you are re-checking out of curiosity; checking state *without* claiming
+the head; and the P6 fallback, where the inner-engine invocation failed and you are
+iterating on an open PR instead. In that fallback, expect CI to review your intermediate
+heads — that is the cost of the fallback, and a reason to prefer getting P6 working.
 
 > **macOS caveat, and it applies to every review you publish from this machine.** The clean
 > room — a throwaway HOME seeded with only the reviewer's own credential — is what stops
