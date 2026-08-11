@@ -1,6 +1,6 @@
 ---
 name: taupr
-description: The complete Tau Ceti PR pipeline — prepare a branch, land it, and review open PRs with tauceti-review on your own subscription. Chain-aware: asks intake once, then runs branch after branch.
+description: The complete Tau Ceti PR pipeline — review a branch against the real rubrics BEFORE any PR exists (via the inner engine, which makes no network calls), then create the PR and post the verdict immediately so CI's metered run skips. Also reviews open PRs on your own subscription. Chain-aware: asks intake once, then runs branch after branch.
 ---
 
 # /taupr — the Tau Ceti PR pipeline
@@ -31,8 +31,8 @@ this file. Getting a wire format wrong here fails *silently*.
 
 ```
 /taupr                        full pipeline for the current branch
-/taupr review                 review every open PR (dry run — prints, posts nothing)
-/taupr review <PR>...         review specific PRs
+/taupr dryrun                 P6 alone — review the LOCAL branch, no PR, nothing posted
+/taupr review [<PR>...]       review open PRs (see P8 on when to --post)
 /taupr review <PR> --post     publish the scoreboard + per-rubric threads, as you
 /taupr contest <PR> <rubric>  post a contest in that rubric's own thread
 /taupr status [<PR>]          read scoreboards (tauceti-meta), no inference
@@ -43,10 +43,12 @@ this file. Getting a wire format wrong here fails *silently*.
 ## Prerequisites (Phase 0 checks these)
 
 - `gh` authenticated — reads PRs, posts as **you**
-- `uvx` (or `uv`) on PATH — how the reviewer is fetched
+- `uvx` (or `uv`) on PATH — how `tauceti-review` is fetched for **P8**
+- **A TauCetiReview checkout** — required for **P6**, which runs `runner/review.py` and
+  reads `rubrics/` directly. `uvx` alone does not give you these
 - `claude` and/or `codex` logged into a subscription — **at least one**. With both, the
   reviewer is drawn per rubric, like CI
-- A TauCeti checkout with its pinned mathlib built
+- A TauCeti checkout with its pinned mathlib built, and a TauCetiRoadmap clone
 
 ---
 
@@ -175,8 +177,13 @@ pre-PR run drives the **inner engine**, `runner/review.py`, which is the layer c
 `--diff-file` / `--pr-desc-file` / `--no-post`:
 
 ```bash
-git clone https://github.com/TauCetiProject/TauCetiReview   # or reuse a checkout
+REVIEW=<a TauCetiReview checkout>     # git clone https://github.com/TauCetiProject/TauCetiReview
+WORK=<a fresh staging dir>
+STORE=<a fresh empty dir>
 ```
+
+`uvx` is not enough for this phase — it installs the `tauceti-review` console script, and
+P6 needs the repo itself for `runner/review.py` **and** `rubrics/`.
 
 Stage a workspace holding what the engine reads:
 
@@ -189,15 +196,37 @@ Stage a workspace holding what the engine reads:
 | `pr_desc.txt` | the PR body you drafted in P5 — the reviewer reads it, so it must be the real one |
 
 ```bash
-python3 runner/review.py --pr 0 --no-post --mode manual \
-    --rubrics-dir <TauCetiReview>/rubrics --tool-cwd <work> \
+python3 "$REVIEW/runner/review.py" \
+    --repo TauCetiProject/TauCeti --pr 0 --mode manual --no-post \
+    --rubrics-dir "$REVIEW/rubrics" --tool-cwd "$WORK" \
     --code-path code --roadmap-path roadmap --mathlib-path mathlib \
-    --diff-file <work>/diff.txt --pr-desc-file <work>/pr_desc.txt \
-    --store <scratch-store>
+    --diff-file "$WORK/diff.txt" --pr-desc-file "$WORK/pr_desc.txt" \
+    --store "$STORE" --head-sha "$(git rev-parse HEAD)" \
+    --auth subscription --providers claude,codex \
+    --daily-budget 1000000 \
+    --scoreboard-file "$WORK/scoreboard.md" --threads-dir "$WORK/threads"
 ```
 
-`--pr` is required by the parser but need not name a live PR: with the diff and description
-supplied from files and `--no-post` set, nothing is fetched and nothing is published.
+Then read `$WORK/scoreboard.md` and `$WORK/threads/` — that is where the verdicts land.
+
+**Why it works with no PR:** `review.py` makes **no GitHub calls and no network calls** —
+it reads the diff, description and code from the paths above. `--pr` is required by the
+parser but is purely a *label*: it names record ids, a ledger key, and an output directory,
+and appears in one line of prompt context. `--pr 0` is fine.
+
+**Four flags whose defaults differ from the wrapper — omit them and this misbehaves
+silently:**
+
+| Flag | Inner-engine default | Why you must set it |
+|---|---|---|
+| `--auth` | **`api`** | The wrapper flips this to `subscription`. Left alone, the engine wants `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` and **bills them** — the opposite of why you are running locally |
+| `--daily-budget` | **`5.0`** | The wrapper passes `1000000`. Left alone, rubrics get deferred once the *notional* spend estimate passes $5 and the scoreboard reads `budget cap reached; deferred N and after` — a truncated review that looks like a finished one |
+| `--scoreboard-file` / `--threads-dir` | unset | Where the output is written. Without them you have run a review you cannot read |
+| `--mode` | `commit` | `manual` forces every rubric to run. `commit` carries prior approvals forward, which is meaningless on a scratch store |
+
+`--store` is **any empty writable directory** — despite its help text saying "checkout of
+the reviews branch". The ledger is created empty if `ledger.json` is absent. Use a fresh
+scratch dir per branch; reusing one carries stale case files across unrelated reviews.
 
 **Fix, re-stage, re-run — until green.** Re-stage properly each round: `code/` and
 `diff.txt` are snapshots, so a fix you made after staging is not in the review you just ran.

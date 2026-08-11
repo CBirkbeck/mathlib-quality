@@ -135,12 +135,30 @@ fleet never pays twice for one commit.
 
 *(Flags above verified by running `tauceti-review --help` on 2026-08-09.)*
 
-**`runner/review.py` — the inner engine.** This is the layer that takes `--diff-file`,
-`--pr-desc-file` and `--no-post`, against a hand-staged workspace (`--tool-cwd` with
-`code/`, `roadmap/`, `mathlib/`, plus `--store`, `--rubrics-dir`). `--pr` is still a
-required argument, but with the diff and description supplied from files and `--no-post`
-set, it need not name a live PR — which is what makes a genuine **pre-PR** dry run
-possible.
+**`runner/review.py` — the inner engine.** Takes `--diff-file`, `--pr-desc-file` and
+`--no-post` against a hand-staged workspace (`--tool-cwd` with `code/`, `roadmap/`,
+`mathlib/`, plus `--store`, `--rubrics-dir`).
+
+**It makes no GitHub calls and no network calls** — it reads the diff, description and code
+from those paths. `--pr` is required by the parser but is purely a *label*: record ids, a
+ledger key, an output directory, and one line of prompt context. So **yes, a real review
+against the real rubrics is possible with nothing on GitHub** — that is what makes the
+pre-PR dry run genuine rather than an approximation.
+
+Four defaults differ from the wrapper, and each fails quietly if left alone:
+
+| Flag | Inner default | Wrapper passes | Consequence of leaving it |
+|---|---|---|---|
+| `--auth` | `api` | `subscription` | Wants `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` and **bills them** |
+| `--daily-budget` | `5.0` | `1000000` | Rubrics deferred once the notional estimate passes $5; scoreboard reads `budget cap reached; deferred N and after` — a truncated review that looks finished |
+| `--scoreboard-file` / `--threads-dir` | unset | set | No readable output |
+| `--mode` | `commit` | as given | `manual` forces all rubrics; `commit` carries approvals forward, meaningless on a scratch store |
+
+`--store` is any **empty writable directory**, despite its help text saying "checkout of the
+reviews branch" — `Ledger` creates an empty ledger when `ledger.json` is absent.
+
+*(Verified 2026-08-11 by reading `runner/cli.py`, `runner/review.py` and `runner/ledger.py`;
+the invocation above mirrors the one `cli.py` builds. Not executed end-to-end.)*
 
 Staging notes that cost real time: clone the roadmap **fresh** (a stale checkout reads as
 out-of-scope and yields a false scope `BLOCK`), symlink the **pinned**
