@@ -122,10 +122,36 @@ logged-in Claude/Codex subscription instead of metered API keys — that, not PR
 is the reason to run it locally.
 
 ```bash
-uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review 42
-tauceti-review 42 --rubrics scope,correctness --mode manual
-tauceti-review 42 --post          # publish, under YOUR gh identity
+uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review 42 --reviewer codex
+tauceti-review 42 --reviewer codex --rubrics scope,correctness --mode manual
+tauceti-review 42 --reviewer codex --post      # publish, under YOUR gh identity
 ```
+
+### Two independent axes — do not conflate them
+
+| Axis | Flag | Meaning |
+|---|---|---|
+| **How it pays** | `--auth api` vs `--auth subscription` | Billed `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`, vs your logged-in CLI. Nothing to do with which model |
+| **Which model reviews** | `--reviewer` (wrapper) / `--providers` (inner engine) | claude, codex, kiro, sonnet, deepseek… Note the **flag name differs between the two layers** |
+
+### Pin the reviewer to codex
+
+Unpinned, the reviewer is drawn at random per rubric from whatever is installed. Two
+reasons to pin:
+
+**Independence** — if Claude wrote the Lean (`/beastmode`), a Claude reviewer is checking
+its own family's work. Codex is an actual second opinion.
+
+**Clean room, on macOS especially.** In `subscription` mode each reviewer runs in a
+throwaway HOME seeded with *only* its own credential, so personal config cannot colour the
+review. Whether that holds depends on where the credential lives:
+
+| Reviewer | Credential | Result |
+|---|---|---|
+| **codex** | `~/.codex/auth.json` — a **file** | Copied into a throwaway `CODEX_HOME`. Real clean room; no personal `AGENTS.md` / `config.toml` |
+| **claude** | `~/.claude/.credentials.json` | On macOS typically **absent** (Keychain login), so `reviewers.py` falls back to `HOME=~` — the reviewer sees your real home, `CLAUDE.md`, skills and plugins |
+
+`--auth api` with a key restores Claude's clean room, at the cost of billing tokens.
 
 `--mode commit` (default) re-runs only unresolved rubrics, carrying prior approvals forward
 as ♻️ stale until the PR is otherwise clean, then sweeping them; `--mode manual` forces a

@@ -46,8 +46,9 @@ this file. Getting a wire format wrong here fails *silently*.
 - `uvx` (or `uv`) on PATH — how `tauceti-review` is fetched for **P8**
 - **A TauCetiReview checkout** — required for **P6**, which runs `runner/review.py` and
   reads `rubrics/` directly. `uvx` alone does not give you these
-- `claude` and/or `codex` logged into a subscription — **at least one**. With both, the
-  reviewer is drawn per rubric, like CI
+- **`codex` logged into a ChatGPT subscription** — this is the reviewer. `claude` may also
+  be installed, but reviews are pinned to codex (see P8: independence, and on macOS only
+  codex gets a real clean room)
 - A TauCeti checkout with its pinned mathlib built, and a TauCetiRoadmap clone
 
 ---
@@ -202,7 +203,7 @@ python3 "$REVIEW/runner/review.py" \
     --code-path code --roadmap-path roadmap --mathlib-path mathlib \
     --diff-file "$WORK/diff.txt" --pr-desc-file "$WORK/pr_desc.txt" \
     --store "$STORE" --head-sha "$(git rev-parse HEAD)" \
-    --auth subscription --providers claude,codex \
+    --auth subscription --providers codex \
     --daily-budget 1000000 \
     --scoreboard-file "$WORK/scoreboard.md" --threads-dir "$WORK/threads"
 ```
@@ -219,7 +220,8 @@ silently:**
 
 | Flag | Inner-engine default | Why you must set it |
 |---|---|---|
-| `--auth` | **`api`** | The wrapper flips this to `subscription`. Left alone, the engine wants `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` and **bills them** — the opposite of why you are running locally |
+| `--auth` | **`api`** | This is the *payment mode*, not the model. The wrapper flips it to `subscription`. Left alone, the engine wants `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` and **bills them** — the opposite of why you are running locally |
+| `--providers` | `claude,codex` | **Pin to `codex`** — see "Reviews are by codex" below. Left alone, the reviewer is drawn per rubric and half your reviews come from the model that wrote the code |
 | `--daily-budget` | **`5.0`** | The wrapper passes `1000000`. Left alone, rubrics get deferred once the *notional* spend estimate passes $5 and the scoreboard reads `budget cap reached; deferred N and after` — a truncated review that looks like a finished one |
 | `--scoreboard-file` / `--threads-dir` | unset | Where the output is written. Without them you have run a review you cannot read |
 | `--mode` | `commit` | `manual` forces every rubric to run. `commit` carries prior approvals forward, which is meaningless on a scratch store |
@@ -278,10 +280,10 @@ subscription, so there is no per-token bill.
 
 ```bash
 # print the verdicts for PR #42, posting nothing:
-uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review 42
+uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review 42 --reviewer codex
 
 # add --post to publish the scoreboard and per-rubric threads, as you:
-uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review 42 --post
+uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review 42 --reviewer codex --post
 ```
 
 **Post immediately on creating the PR — do not dry-run again here, and do not ask.** You
@@ -340,12 +342,41 @@ the head; and the P6 fallback, where the inner-engine invocation failed and you 
 iterating on an open PR instead. In that fallback, expect CI to review your intermediate
 heads — that is the cost of the fallback, and a reason to prefer getting P6 working.
 
-> **macOS caveat, and it applies to every review you publish from this machine.** The clean
-> room — a throwaway HOME seeded with only the reviewer's own credential — is what stops
-> your personal `CLAUDE.md`, skills, plugins and MCP servers from colouring a review. On
-> macOS the login lives in the keychain, so it **falls back to your real HOME** and prints a
-> note. `--auth api` restores the guarantee but bills tokens, defeating the point. Know
-> that the reviews you post here are not clean-room reviews.
+### Reviews are by codex — pin it, in both phases
+
+```
+P6 (runner/review.py)   --providers codex
+P8 (tauceti-review)     --reviewer codex
+```
+
+**Note the flag names differ between the layers.** The inner engine takes `--providers`;
+the wrapper takes `--reviewer`. Passing the wrong one is an argparse error, not a silent
+fallback, so you will notice — but only after staging.
+
+Two reasons this is the right configuration, not just a preference:
+
+**1. Independence.** `/beastmode` writes the Lean with Claude. A Claude reviewer then
+checks its own family's work; codex is an actual second opinion. This is the same reasoning
+that puts ChatGPT behind the `ask_chatgpt_math` second-opinion MCP elsewhere in this plugin.
+
+**2. On macOS, only codex gets a real clean room.** In `subscription` mode each reviewer is
+seeded into a throwaway HOME carrying *only* that provider's credential, so the review
+cannot be coloured by personal config. Whether that works depends on where the credential
+lives:
+
+| Reviewer | Credential | On macOS |
+|---|---|---|
+| **codex** | `~/.codex/auth.json` — a **file** | Copied into a throwaway `CODEX_HOME`. **Clean room**: no personal `AGENTS.md` or `config.toml` |
+| **claude** | `~/.claude/.credentials.json` | Typically **absent** — the login is in the Keychain — so it falls back to `HOME=~`. Your real home, personal `CLAUDE.md`, skills and plugins **all visible to the reviewer** |
+
+Unpinned, roughly half your rubrics would be judged in that degraded mode. Pinning to codex
+removes the caveat rather than working around it.
+
+*(Checked on this machine: `~/.codex/auth.json` exists, `~/.claude/.credentials.json` does
+not — the expected macOS pattern.)*
+
+If you later want Claude reviews to be clean-room too, `--auth api` with a key restores the
+guarantee, at the cost of billing tokens.
 
 Useful flags:
 
@@ -459,7 +490,7 @@ gh pr list --repo TauCetiProject/TauCeti --state open --json number,title,headRe
 ```
 
 ```bash
-uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review <PR> --post
+uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review <PR> --reviewer codex --post
 ```
 
 Print a one-line scoreboard between PRs:
@@ -479,8 +510,9 @@ nothing; de-contention would make you skip it anyway. Read state from the scoreb
 
 Two honesty notes. Nothing stops a local reviewer from rubber-stamping — the safeguard is
 social, so read the verdicts you publish rather than posting a wall you have not looked at.
-And on macOS these are not clean-room reviews (see P8): your personal configuration is
-visible to the reviewer, which matters more when the PR is not yours.
+And keep `--reviewer codex` here too — on macOS an unpinned run judges some rubrics with
+Claude, which falls back to your real HOME and sees your personal config (P8). That matters
+more, not less, when the PR is not yours.
 
 ---
 
