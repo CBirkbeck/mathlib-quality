@@ -13,11 +13,26 @@ R1  REBASE     one of our PRs has a genuine TauCeti/ conflict after a sibling me
 R2  FIX-CI     one of our PRs has `build` red — it cannot be reviewed until it builds
 R3  FIX        one of our PRs has findings: fix the code, or contest a wrong one in-thread
 R4  REVIEW     one of our PRs is green but CI has not reviewed it for ≥ 1h  →  --post
-R5  AUTHOR     otherwise: open a new PR advancing a target
+R5  AUTHOR     otherwise: open a new PR advancing a target — ONLY if fewer than
+               --max-open (default 3) of our PRs are already open, else IDLE
 ```
 
 **Maintenance outranks authoring.** R1–R4 come first so PRs already in flight cannot be
 starved by opening yet more of them. A round that finds work at R2 stops there.
+
+**R5 is capped at 3 of our own PRs open.** This matters more than it looks. A PR that is
+still *building* is not red, has no findings, and is not yet reviewable — so no step
+catches it, the board reads as quiet, and an uncapped round falls through to authoring.
+On a ten-minute loop that is a new PR every tick. Worse, R4's one-hour wait means a green
+PR looks like nothing to do for a whole hour, which is exactly when the loop would be busiest
+authoring.
+
+So: **if 3 or more of our PRs are open, R5 does not run** and the round reports `IDLE`.
+Idle is a correct outcome — it means the work in flight is waiting on someone else. Change
+it with `--max-open <n>`; `--max-open 0` lifts the cap.
+
+Count PRs we authored that are still open, in any state. Merged and closed do not count, so
+the cap self-releases as work lands.
 
 **CI reviews our PRs; we do not race it.** Opening the PR is enough — `pr-build` runs, and
 a green build triggers the review automatically. Self-reviewing costs your subscription and
@@ -38,6 +53,7 @@ green PRs, close stuck ones, or sweep duplicates from here.
 /taupr --skip <r>[,<r>]    drop steps from the cascade
 /taupr status              print the board: every open PR, its build + review state, age
 /taupr --review-age <dur>  R4 threshold (default 1h)
+/taupr --max-open <n>      stop authoring at n of our own open PRs (default 3; 0 = no cap)
 /taupr --reset-intake      re-ask the chain questions
 ```
 
@@ -165,7 +181,16 @@ back to your real `HOME` and sees your personal config.
 
 # R5 — Author a new PR
 
-Only when R1–R4 found nothing.
+Only when R1–R4 found nothing **and** fewer than `--max-open` (default 3) of our PRs are
+open. Otherwise the round ends `IDLE`.
+
+```bash
+gh pr list --repo TauCetiProject/TauCeti --state open --author @me --json number --jq 'length'
+```
+
+If that is at the cap, stop. Do not author "just one more" because the board looks quiet —
+a building PR and a green PR inside its first hour both look like nothing to do, and that
+is precisely when authoring runs away.
 
 ### 5a. Intake — once per chain, not per PR
 
@@ -309,6 +334,7 @@ Between rounds, report one line:
 ## /taupr round <n>
 
 Step:       <REBASE|FIX-CI|FIX|REVIEW|AUTHOR|IDLE>
+Open (ours): <k>/<max-open>   ← R5 disabled at the cap
 PR:         #<N> <title>
 Action:     <what was done>
 Cleanup:    <file: done (phases) | SKIPPED — reason>   ← every skip listed
