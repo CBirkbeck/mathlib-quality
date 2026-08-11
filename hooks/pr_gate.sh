@@ -132,6 +132,58 @@ if maxage > 0 and ts:
     if age is not None and age > maxage:
         print("DUPSTALE %d %d" % (age, maxage)); raise SystemExit
 
+# --- cleanup coverage: every changed .lean file must have been through /cleanup ------
+# Unlike the other checks, this one has independently computable ground truth: the diff
+# says which files changed, so a receipt cannot under-report them.
+cl = r.get("cleanup")
+if cl is None or not isinstance(cl, list):
+    print("NOCLEANUP"); raise SystemExit
+seen = {}
+for e in cl:
+    if isinstance(e, dict) and e.get("file"):
+        seen[str(e["file"]).lstrip("./")] = e
+# Try the base recorded in the receipt first, then the usual suspects. Only exhausting
+# every candidate disables the coverage check, so a bogus base_ref cannot switch it off
+# — it just falls through to origin/main. (Keep this block free of apostrophes: bash
+# scans for the closing paren of the enclosing $(...) and an unpaired quote breaks it.)
+cands = [c for c in [r.get("base_ref"), "origin/main", "main", "origin/HEAD"] if c]
+changed = None
+for cand in cands:
+    try:
+        mb = subprocess.run(["git", "merge-base", "HEAD", str(cand)], capture_output=True,
+                            text=True, timeout=10)
+        if mb.returncode != 0 or not mb.stdout.strip():
+            continue
+        d = subprocess.run(["git", "diff", "--name-only", "--diff-filter=d",
+                            mb.stdout.strip() + "..HEAD"],
+                           capture_output=True, text=True, timeout=15)
+        if d.returncode != 0:
+            continue
+        changed = [p.strip().lstrip("./") for p in d.stdout.splitlines()
+                   if p.strip().endswith(".lean")]
+        break
+    except Exception:
+        continue            # try the next candidate; only exhausting them all skips coverage
+if changed is not None:
+    missing = [f for f in changed if f not in seen]
+    if missing:
+        print("CLEANUPMISS " + "; ".join(missing[:8])
+              + (" (+%d more)" % (len(missing) - 8) if len(missing) > 8 else ""))
+        raise SystemExit
+bad = []
+for f, e in sorted(seen.items()):
+    st = e.get("status")
+    if st == "done":
+        if not str(e.get("phases") or "").strip():
+            bad.append("%s: status done but no /cleanup phase checklist" % f)
+    elif st == "skipped":
+        if not str(e.get("reason") or "").strip():
+            bad.append("%s: skipped with no reason" % f)
+    else:
+        bad.append("%s: status must be done or skipped (got %r)" % (f, st))
+if bad:
+    print("CLEANUPBAD " + "; ".join(bad[:6])); raise SystemExit
+
 # --- source sweep: was each named source actually pinned and searched? --------------
 ss = r.get("source_sweep")
 if ss is None:
@@ -208,6 +260,40 @@ A real overlap you intend to proceed with is recorded, not deleted:
   "overlaps": [{"pr": 13, "kind": "same-files", "acknowledged": true,
                 "note": "stacked on #13; rebase once it merges"}]
 EOF
+    exit 2 ;;
+  NOCLEANUP*)
+    cat >&2 <<'EOF'
+BLOCKED: no cleanup record in the review receipt.
+
+Every .lean file this branch changes goes through the full /cleanup (P3) — ported
+or new, no exceptions. Skipping it is the most commonly skipped phase precisely
+because the code already builds, so nothing complains until review does.
+
+  Skill(mathlib-quality:cleanup) on each changed file
+  then /decompose-proof for any proof over 30 lines (50 is the hard cap)
+
+Record in .mathlib-quality/review-receipt.json:
+
+  "cleanup": [
+    {"file": "TauCeti/Foo/Bar.lean", "status": "done",
+     "phases": "P1-P7 incl 5a, 6.5 simplify, 6.6 buzz"}
+  ]
+
+The phase string is /cleanup's own Phase-7 checklist — paste what it reported, so a
+partial run is visible instead of passing as a whole one. A file that genuinely
+needs no cleanup uses {"status": "skipped", "reason": "..."}, and every skip is
+reported to the user rather than buried.
+EOF
+    exit 2 ;;
+  CLEANUPMISS*)
+    printf 'BLOCKED: changed .lean files never went through /cleanup.\n\nMissing: %s\n\n%s\n' \
+      "${verdict#CLEANUPMISS }" \
+      "This list is computed from the diff (merge-base..HEAD), not from the receipt, so it is what the branch ACTUALLY changed. Run Skill(mathlib-quality:cleanup) on each, then add its Phase-7 checklist to the receipt's cleanup[] entry. If one genuinely needs no cleanup, record it as skipped with a reason — silence is not an option here." >&2
+    exit 2 ;;
+  CLEANUPBAD*)
+    printf 'BLOCKED: the cleanup record is not usable as evidence.\n\n%s\n\n%s\n' \
+      "${verdict#CLEANUPBAD }" \
+      "A 'done' entry needs /cleanup's Phase-7 checklist so a partial run is distinguishable from a full one; a 'skipped' entry needs a reason. See references/cleanup-gates.md." >&2
     exit 2 ;;
   NOSWEEP*)
     cat >&2 <<'EOF'

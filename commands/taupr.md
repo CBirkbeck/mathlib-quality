@@ -62,8 +62,10 @@ P2  BUILD           /develop → /beastmode, if writing new material
 P3  CLEANUP         /cleanup every touched file; /decompose-proof where needed
 P4  LOCAL GATES     lake build + audits + lint + repo rules
 P5  PR BODY         Roadmap: line, target marker, provenance
-P6  DRY RUN         review the LOCAL branch, no PR yet — iterate until green
-P7  CREATE          --force-with-lease push, then gh pr create
+P6  DRY RUN         review the LOCAL branch, no PR yet — iterate until green,
+                    then write the receipt (P1/P3 artifacts + rubric states)
+P7  CREATE          --force-with-lease push, then gh pr create — the gate checks
+                    the receipt, so a skipped phase blocks the PR here
 P8  POST            tauceti-review <PR> --post, immediately — record the verdict
 P9  CONTEST         only genuine contradictions, in-thread
 P10 MONITOR         scoreboard polling; pipeline the next branch meanwhile
@@ -132,6 +134,40 @@ no phase skipping, including the Phase 6.5 `/simplify` and Phase 6.6 `/buzz` han
 faithful port still has to meet this repo's standards.
 
 Then `/decompose-proof` for any proof over **30 lines**; **50 is the hard cap**.
+
+### This is the most-skipped phase, and it is gated
+
+P3 gets dropped more than any other, and not out of laziness: by the time you reach it the
+code **already builds**, so nothing complains. Skipping does not feel like skipping, it
+feels like getting on with the work. The cost lands later, in review rounds you pay for.
+
+So it is enforced the same way P8 is — mechanically, at `gh pr create`. Record each file:
+
+```json
+"cleanup": [
+  {"file": "TauCeti/Foo/Bar.lean", "status": "done",
+   "phases": "P1-P7 incl 5a, 6.5 simplify, 6.6 buzz"},
+  {"file": "TauCeti/Foo/Baz.lean", "status": "skipped",
+   "reason": "import-line change only, no declarations touched"}
+]
+```
+
+**The file list is computed from the diff, not read from the receipt.** The hook runs
+`git diff --name-only merge-base..HEAD`, keeps the `.lean` files, and blocks if any of them
+has no entry — naming the ones you missed. Under-reporting is therefore not available:
+listing one file while changing four fails, and pointing `base_ref` somewhere bogus just
+falls through to `origin/main` and catches everything anyway.
+
+Two further requirements, so a claim is evidence rather than assertion:
+
+- **`done` needs `phases`** — paste `/cleanup`'s own Phase-7 checklist. This is what makes
+  a partial run distinguishable from a complete one; without it, "I ran cleanup" covers
+  both.
+- **`skipped` needs `reason`** — and every skip is **reported to the user** in the P-report,
+  not buried. A skip is a decision someone should see, which is precisely what stops
+  `skipped` becoming the easy path.
+
+Deleted files need no entry (the diff filter drops them). Non-`.lean` files are not demanded.
 
 ## P4 — Local gates (run what CI runs, before CI does)
 
@@ -233,6 +269,44 @@ scratch dir per branch; reusing one carries stale case files across unrelated re
 **Fix, re-stage, re-run — until green.** Re-stage properly each round: `code/` and
 `diff.txt` are snapshots, so a fix you made after staging is not in the review you just ran.
 
+### When green, write the receipt
+
+This is what lets P7 create the PR without an override. Write
+`.mathlib-quality/review-receipt.json`:
+
+```json
+{
+  "head_sha":   "<git rev-parse HEAD>",
+  "all_green":  true,
+  "rubrics":    {"scope": "green", "correctness": "green", "...": "green"},
+  "invocation": "<the literal review.py command you ran>",
+  "exit_code":  0,
+  "rounds":     3,
+  "timestamp":  "<ISO>",
+  "base_ref":   "origin/main",
+
+  "cleanup": [
+    {"file": "TauCeti/Foo/Bar.lean", "status": "done",
+     "phases": "P1-P7 incl 5a, 6.5 simplify, 6.6 buzz"}
+  ],
+  "duplication_check": {
+    "checked_at": "<ISO>", "open_prs_examined": [12, 13], "overlaps": []
+  },
+  "source_sweep": [
+    {"repo": "github.com/org/FLT", "revision": "<full sha>",
+     "queries": ["<literal grep>", "..."], "verdict": "absent"}
+  ]
+}
+```
+
+Each block is the artifact of a phase: `cleanup` from **P3**, `duplication_check` and
+`source_sweep` from **P1**, the rubric states from this phase. The gate checks all of them
+at `gh pr create`, so a phase that did not happen shows up as a blocked PR rather than as a
+review finding three rounds later.
+
+`source_sweep: []` is honest only when the P0 intake recorded no source — the gate
+cross-checks `pr-session.json` and rejects an empty sweep when a source was named.
+
 For **API-design questions** — which shape the reviewer will prefer — ask the same model
 beforehand via the `ask_chatgpt_math` MCP, rather than discovering the preference in round
 four.
@@ -259,12 +333,19 @@ A `! [rejected] (stale info)` is **the system working**: someone moved the branc
 and decide afresh; never fall back to a plain push.
 
 ```bash
-PR_GATE_OVERRIDE=1 gh pr create --repo TauCetiProject/TauCeti --title "..." --body-file pr.md
+gh pr create --repo TauCetiProject/TauCeti --title "..." --body-file pr.md
 ```
 
-The override is correct **here and only here**: the plugin's PR gate exists to stop a PR
-being opened and left to the server reviewer, and `/taupr` does the opposite — P6 already reviewed it privately and P8 records that verdict
-immediately and iterates to green. Creating a PR outside `/taupr` still goes through the gate.
+**No `PR_GATE_OVERRIDE` here.** Earlier versions of this command overrode the plugin's PR
+gate, on the reasoning that `/taupr` reviews properly anyway. That was a mistake: it made
+`/taupr` exempt from the plugin's own enforcement, so a worker that quietly skipped P1 or
+P3 sailed straight past the one mechanism that would have caught it — in the very command
+where those phases matter most.
+
+Instead, P6 writes the receipt, so this `gh pr create` **passes the gate on merit**. If it
+blocks, the gate is telling you a phase did not actually happen; the fix is to do that
+phase, not to override. Keep `PR_GATE_OVERRIDE=1` for genuine emergencies only, and expect
+to explain it.
 
 **Go straight to P8 — do not wait for `pr-build`.** The claim is what saves the project
 money, and it is contested the moment the build goes green.
@@ -524,7 +605,7 @@ more, not less, when the PR is not yours.
 Intake:      <chain goal / roadmap area / source — reused or asked>
 Sources:     <sweep verdicts per source>
 Duplication: <claim taken; target id; open-PR marker matches>
-Cleanup:     <files, /cleanup outcome, decompositions>
+Cleanup:     <file: done (phases) | SKIPPED — reason>   ← every skip listed, never omitted
 Gates:       lake build <PASS/FAIL> · audits <…> · lint <…>
 PR:          #<N> <url>   Roadmap: <area>   target: <id>
 Review:      round <k> — <rubric: state, …>   overall: <approved|changes requested|blocked>
