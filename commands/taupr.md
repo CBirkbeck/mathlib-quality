@@ -1,622 +1,312 @@
 ---
 name: taupr
-description: The complete Tau Ceti PR pipeline — review a branch against the real rubrics BEFORE any PR exists (via the inner engine, which makes no network calls), then create the PR and post the verdict immediately so CI's metered run skips. Also reviews open PRs on your own subscription. Chain-aware: asks intake once, then runs branch after branch.
+description: The Tau Ceti worker loop — one unit of work per round, first that applies: rebase, fix CI, fix findings, review a stalled PR, else author a new one. Authoring checks the source material first, cleans up, and opens the PR; CI reviews it. We only self-review a PR that CI has left unreviewed for an hour.
 ---
 
-# /taupr — the Tau Ceti PR pipeline
+# /taupr — the Tau Ceti worker loop
 
-Everything from branch to merge on [TauCetiProject/TauCeti](https://github.com/TauCetiProject/TauCeti),
-including reviewing the PRs that get made.
+Modelled on the reference worker (`kim-em/TauCetiWorker`): **a round does exactly one unit
+of work — the first of these that applies.**
 
-**The discipline: iterate to green privately, then open the PR, then immediately record the
-verdict.**
+```
+R1  REBASE     one of our PRs has a genuine TauCeti/ conflict after a sibling merged
+R2  FIX-CI     one of our PRs has `build` red — it cannot be reviewed until it builds
+R3  FIX        one of our PRs has findings: fix the code, or contest a wrong one in-thread
+R4  REVIEW     one of our PRs is green but CI has not reviewed it for ≥ 1h  →  --post
+R5  AUTHOR     otherwise: open a new PR advancing a target
+```
 
-- **Before the PR** (P6), review the local branch until every rubric is green. This posts
-  nothing, so the rounds it takes are nobody's business and cost the PR nothing.
-- **After the PR** (P8), `--post` at once. A private run leaves *no review state on GitHub*,
-  and merging requires a GitHub-visible all-green review for the current head — so the PR
-  still needs reviewing, and posting is how you get that in minutes instead of waiting.
-  It also claims the head, so CI's metered run skips: your subscription displaces the
-  project's API bill.
+**Maintenance outranks authoring.** R1–R4 come first so PRs already in flight cannot be
+starved by opening yet more of them. A round that finds work at R2 stops there.
 
-The two phases use **different tools**, because `tauceti-review` takes a PR number and
-reads the head, diff and description from GitHub — it has nothing to work with before the
-PR exists. P6 therefore drives the inner engine (`runner/review.py`, which carries
-`--diff-file` / `--no-post`); P8 uses `tauceti-review`.
+**CI reviews our PRs; we do not race it.** Opening the PR is enough — `pr-build` runs, and
+a green build triggers the review automatically. Self-reviewing costs your subscription and
+your wall-clock, so R4 exists only as a *fallback* for PRs CI has left sitting.
 
-Mechanics this command depends on are in `references/tauceti.md`; read it before editing
-this file. Getting a wire format wrong here fails *silently*.
+**Merging, closing and de-duplicating are the repo's CI, not this loop.** Do not merge
+green PRs, close stuck ones, or sweep duplicates from here.
+
+> **A GitHub API failure aborts the round.** It must never read as "nothing to do" and fall
+> through to R5 — a transient outage would then author duplicate PRs. No data means stop,
+> not proceed.
 
 ## Usage
 
 ```
-/taupr                        full pipeline for the current branch
-/taupr dryrun                 P6 alone — review the LOCAL branch, no PR, nothing posted
-/taupr review [<PR>...]       review open PRs (see P8 on when to --post)
-/taupr review <PR> --post     publish the scoreboard + per-rubric threads, as you
-/taupr contest <PR> <rubric>  post a contest in that rubric's own thread
-/taupr status [<PR>]          read scoreboards (tauceti-meta), no inference
-/taupr watch                  set up / run the open-PR monitoring loop
-/taupr --reset-intake         re-ask the chain questions
+/taupr                     run one round
+/taupr --loop [interval]   run rounds continuously (default 10m)
+/taupr --only <r>[,<r>]    restrict to given steps: rebase,fix-ci,fix,review,author
+/taupr --skip <r>[,<r>]    drop steps from the cascade
+/taupr status              print the board: every open PR, its build + review state, age
+/taupr --review-age <dur>  R4 threshold (default 1h)
+/taupr --reset-intake      re-ask the chain questions
 ```
 
-## Prerequisites (Phase 0 checks these)
+`/taupr --only fix,fix-ci` tends existing PRs only; `/taupr --skip author` is the same
+cascade without opening anything new.
 
-- `gh` authenticated — reads PRs, posts as **you**
-- `uvx` (or `uv`) on PATH — how `tauceti-review` is fetched for **P8**
-- **A TauCetiReview checkout** — required for **P6**, which runs `runner/review.py` and
-  reads `rubrics/` directly. `uvx` alone does not give you these
-- **`codex` logged into a ChatGPT subscription** — this is the reviewer. `claude` may also
-  be installed, but reviews are pinned to codex (see P8: independence, and on macOS only
-  codex gets a real clean room)
-- A TauCeti checkout with its pinned mathlib built, and a TauCetiRoadmap clone
+## Prerequisites
+
+- `gh` authenticated
+- `codex` logged into a ChatGPT subscription — the reviewer for R4 (see "Why codex")
+- `uvx` on PATH — how `tauceti-review` is fetched
+- A TauCeti checkout with pinned mathlib built, plus a TauCetiRoadmap clone
 
 ---
 
-# Full pipeline
+# The board
 
-```
-P0  INTAKE          chain-scoped, asked once
-P1  SOURCES         source sweep + mathlib absence + duplication (target marker + claim)
-P2  BUILD           /develop → /beastmode, if writing new material
-P3  CLEANUP         /cleanup every touched file; /decompose-proof where needed
-P4  LOCAL GATES     lake build + audits + lint + repo rules
-P5  PR BODY         Roadmap: line, target marker, provenance
-P6  DRY RUN         review the LOCAL branch, no PR yet — iterate until green,
-                    then write the receipt (P1/P3 artifacts + rubric states)
-P7  CREATE          --force-with-lease push, then gh pr create — the gate checks
-                    the receipt, so a skipped phase blocks the PR here
-P8  POST            tauceti-review <PR> --post, immediately — record the verdict
-P9  CONTEST         only genuine contradictions, in-thread
-P10 MONITOR         scoreboard polling; pipeline the next branch meanwhile
-P11 MERGE           auto-merge; never --admin
-```
-
-**The two review phases are different things and both are needed.** P6 is *private*: it
-posts nothing, so it costs the PR nothing and nobody sees a half-finished branch — that is
-where you iterate to green. P8 is *the record*: a local dry run leaves no review state on
-GitHub at all, and merging requires a GitHub-visible all-green review for the current head.
-P6 makes P8 a formality that comes back green on the first try.
-
-## P0 — Intake (asked once per chain)
-
-Read `.mathlib-quality/pr-session.json`. **If it exists, ask nothing** — echo what is being
-reused and continue. If absent, ask three questions once, then write it:
-
-1. **What is this chain delivering?**
-2. **Which roadmap area, and is this new mathematics or improving existing code?** The
-   distinction matters: the roadmap gates **new** declarations only. Refactoring, proof
-   simplification, modest generalisation, relocation and documentation are **always in
-   scope with no roadmap entry**. Do not report "off-roadmap" as a risk for improvement work.
-3. **From what source, if any?** — repo + revision + license, or "original work".
-
-Per branch, this PR's one-line description and its target id are **derived** from the diff,
-never asked. `--reset-intake` re-asks when the chain's provenance actually changes.
-
-## P1 — Sources and duplication, before any new Lean
-
-**Source sweep** (`references/pr-workflow.md` § "The source sweep"): pin and clone each
-roadmap-named source, read its index before grepping, search three vocabularies, read the
-neighbourhood rather than the hits, check whether your result is a step inside a bigger
-proof. Port and adapt; do not rederive.
-
-**Mathlib absence** needs the untruncated full-name grep **and** a compiled `example` probe
-(`references/mathlib-search.md`). Typeclass-derived and auto-generated results are text
-nowhere.
-
-**Duplication — use the native mechanism, not a heuristic.** Before authoring a target,
-take the claim and stop if you lose it:
+Every round starts by reading state. **Never infer from labels** — they lag.
 
 ```bash
-git push --force-with-lease=refs/tauceti-claims/author/<focus>/<target-id>: \
-    origin <oid>:refs/tauceti-claims/author/<focus>/<target-id>
+gh pr list --repo TauCetiProject/TauCeti --state open \
+   --json number,headRefName,headRefOid,author,title,body,updatedAt --limit 100
 ```
 
-Then check open PRs for the same target marker id — that, not files-touched, is what the
-duplicate sweeper matches on:
+Per PR, two independent facts:
+
+**Build** — `build` is a commit *status* on the head sha (not a check-run):
 
 ```bash
-gh pr list --repo TauCetiProject/TauCeti --state open --json number,title,body --limit 100
+gh pr view <PR> --repo TauCetiProject/TauCeti --json statusCheckRollup \
+  --jq '.statusCheckRollup[] | select(.context=="build") | {state, createdAt}'
 ```
 
-A PR **without** a `tauceti-target` marker is invisible to dedup, so emitting one (P5) is
-part of not-duplicating.
-
-## P2 — Build (only for genuinely new material)
-
-`/develop` to plan, `/beastmode` to execute, `/mathlibable` on the headline declarations.
-Improving existing code skips straight to P3.
-
-## P3 — Cleanup (unconditional, ported or new)
-
-Run `Skill(mathlib-quality:cleanup)` on **every touched file** — the full 11-phase workflow,
-no phase skipping, including the Phase 6.5 `/simplify` and Phase 6.6 `/buzz` hand-offs. A
-faithful port still has to meet this repo's standards.
-
-Then `/decompose-proof` for any proof over **30 lines**; **50 is the hard cap**.
-
-### This is the most-skipped phase, and it is gated
-
-P3 gets dropped more than any other, and not out of laziness: by the time you reach it the
-code **already builds**, so nothing complains. Skipping does not feel like skipping, it
-feels like getting on with the work. The cost lands later, in review rounds you pay for.
-
-So it is enforced the same way P8 is — mechanically, at `gh pr create`. Record each file:
-
-```json
-"cleanup": [
-  {"file": "TauCeti/Foo/Bar.lean", "status": "done",
-   "phases": "P1-P7 incl 5a, 6.5 simplify, 6.6 buzz"},
-  {"file": "TauCeti/Foo/Baz.lean", "status": "skipped",
-   "reason": "import-line change only, no declarations touched"}
-]
-```
-
-**The file list is computed from the diff, not read from the receipt.** The hook runs
-`git diff --name-only merge-base..HEAD`, keeps the `.lean` files, and blocks if any of them
-has no entry — naming the ones you missed. Under-reporting is therefore not available:
-listing one file while changing four fails, and pointing `base_ref` somewhere bogus just
-falls through to `origin/main` and catches everything anyway.
-
-Two further requirements, so a claim is evidence rather than assertion:
-
-- **`done` needs `phases`** — paste `/cleanup`'s own Phase-7 checklist. This is what makes
-  a partial run distinguishable from a complete one; without it, "I ran cleanup" covers
-  both.
-- **`skipped` needs `reason`** — and every skip is **reported to the user** in the P-report,
-  not buried. A skip is a decision someone should see, which is precisely what stops
-  `skipped` becoming the easy path.
-
-Deleted files need no entry (the diff filter drops them). Non-`.lean` files are not demanded.
-
-## P4 — Local gates (run what CI runs, before CI does)
-
-```bash
-lake build
-```
-
-Plus the repo's audit executables and lint script, and the standing repo rules — these are
-CI-enforced and non-negotiable:
-
-- no `sorry`
-- no axioms beyond `propext`, `Classical.choice`, `Quot.sound` (so **no `native_decide`**)
-- Mathlib's linter set, including **no `maxHeartbeats` overrides** (a proof needing one is
-  slow — `/buzz` it, never raise the limit)
-- one topic per PR; ship a prerequisite refactor separately
-- **no backwards-compatibility surface**: when declarations move, are renamed or deleted,
-  update every in-repo use and remove the old names in the same PR. No aliases, wrappers,
-  forwarding modules, `deprecated_module`, or duplicate theorem names
-
-## P5 — PR body
-
-Three things, kept **in sync with the code** — a drifted body is itself a review finding:
-
-```text
-Roadmap: CanonicalAreaName          ← or `Roadmap: none`; canonical roadmap DIRECTORY name,
-                                       never inferred from a TauCeti/ path
-
-<!--tauceti-target:v1 {"focus":"<area>","id":"<canonical-target-id>"}-->
-
-Provenance: <source repo> @ <pinned revision>, <license>, <file and declaration names>
-```
-
-`Roadmap: none` is correct for genuinely general, cross-cutting, infrastructure or
-dependency work. New mathematics must additionally cite the exact roadmap file and target.
-
-## P6 — Local dry run, before the PR exists
-
-Iterate here until every rubric is green. Nothing touches GitHub, so a branch that needs
-four rounds costs four private runs instead of four public ones.
-
-**This phase cannot use `tauceti-review`** — that CLI takes a PR number and reads the head,
-diff and description from GitHub, so it has nothing to work with before the PR exists. The
-pre-PR run drives the **inner engine**, `runner/review.py`, which is the layer carrying
-`--diff-file` / `--pr-desc-file` / `--no-post`:
-
-```bash
-REVIEW=<a TauCetiReview checkout>     # git clone https://github.com/TauCetiProject/TauCetiReview
-WORK=<a fresh staging dir>
-STORE=<a fresh empty dir>
-```
-
-`uvx` is not enough for this phase — it installs the `tauceti-review` console script, and
-P6 needs the repo itself for `runner/review.py` **and** `rubrics/`.
-
-Stage a workspace holding what the engine reads:
-
-| Item | Contents |
-|---|---|
-| `code/` | `git archive` of the branch head — not the dirty working tree |
-| `roadmap/` | a **fresh** clone of TauCetiRoadmap; a stale checkout reads as out-of-scope and yields a false scope `BLOCK` |
-| `mathlib/` | symlink to the project's **pinned** `.lake/packages/mathlib` |
-| `diff.txt` | **merge-base** diff vs `origin/main`, not a two-dot diff |
-| `pr_desc.txt` | the PR body you drafted in P5 — the reviewer reads it, so it must be the real one |
-
-```bash
-python3 "$REVIEW/runner/review.py" \
-    --repo TauCetiProject/TauCeti --pr 0 --mode manual --no-post \
-    --rubrics-dir "$REVIEW/rubrics" --tool-cwd "$WORK" \
-    --code-path code --roadmap-path roadmap --mathlib-path mathlib \
-    --diff-file "$WORK/diff.txt" --pr-desc-file "$WORK/pr_desc.txt" \
-    --store "$STORE" --head-sha "$(git rev-parse HEAD)" \
-    --auth subscription --providers codex \
-    --daily-budget 1000000 \
-    --scoreboard-file "$WORK/scoreboard.md" --threads-dir "$WORK/threads"
-```
-
-Then read `$WORK/scoreboard.md` and `$WORK/threads/` — that is where the verdicts land.
-
-**Why it works with no PR:** `review.py` makes **no GitHub calls and no network calls** —
-it reads the diff, description and code from the paths above. `--pr` is required by the
-parser but is purely a *label*: it names record ids, a ledger key, and an output directory,
-and appears in one line of prompt context. `--pr 0` is fine.
-
-**Four flags whose defaults differ from the wrapper — omit them and this misbehaves
-silently:**
-
-| Flag | Inner-engine default | Why you must set it |
-|---|---|---|
-| `--auth` | **`api`** | This is the *payment mode*, not the model. The wrapper flips it to `subscription`. Left alone, the engine wants `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` and **bills them** — the opposite of why you are running locally |
-| `--providers` | `claude,codex` | **Pin to `codex`** — see "Reviews are by codex" below. Left alone, the reviewer is drawn per rubric and half your reviews come from the model that wrote the code |
-| `--daily-budget` | **`5.0`** | The wrapper passes `1000000`. Left alone, rubrics get deferred once the *notional* spend estimate passes $5 and the scoreboard reads `budget cap reached; deferred N and after` — a truncated review that looks like a finished one |
-| `--scoreboard-file` / `--threads-dir` | unset | Where the output is written. Without them you have run a review you cannot read |
-| `--mode` | `commit` | `manual` forces every rubric to run. `commit` carries prior approvals forward, which is meaningless on a scratch store |
-
-`--store` is **any empty writable directory** — despite its help text saying "checkout of
-the reviews branch". The ledger is created empty if `ledger.json` is absent. Use a fresh
-scratch dir per branch; reusing one carries stale case files across unrelated reviews.
-
-**Fix, re-stage, re-run — until green.** Re-stage properly each round: `code/` and
-`diff.txt` are snapshots, so a fix you made after staging is not in the review you just ran.
-
-### When green, write the receipt
-
-This is what lets P7 create the PR without an override. Write
-`.mathlib-quality/review-receipt.json`:
-
-```json
-{
-  "head_sha":   "<git rev-parse HEAD>",
-  "all_green":  true,
-  "rubrics":    {"scope": "green", "correctness": "green", "...": "green"},
-  "invocation": "<the literal review.py command you ran>",
-  "exit_code":  0,
-  "rounds":     3,
-  "timestamp":  "<ISO>",
-  "base_ref":   "origin/main",
-
-  "cleanup": [
-    {"file": "TauCeti/Foo/Bar.lean", "status": "done",
-     "phases": "P1-P7 incl 5a, 6.5 simplify, 6.6 buzz"}
-  ],
-  "duplication_check": {
-    "checked_at": "<ISO>", "open_prs_examined": [12, 13], "overlaps": []
-  },
-  "source_sweep": [
-    {"repo": "github.com/org/FLT", "revision": "<full sha>",
-     "queries": ["<literal grep>", "..."], "verdict": "absent"}
-  ]
-}
-```
-
-Each block is the artifact of a phase: `cleanup` from **P3**, `duplication_check` and
-`source_sweep` from **P1**, the rubric states from this phase. The gate checks all of them
-at `gh pr create`, so a phase that did not happen shows up as a blocked PR rather than as a
-review finding three rounds later.
-
-`source_sweep: []` is honest only when the P0 intake recorded no source — the gate
-cross-checks `pr-session.json` and rejects an empty sweep when a source was named.
-
-For **API-design questions** — which shape the reviewer will prefer — ask the same model
-beforehand via the `ask_chatgpt_math` MCP, rather than discovering the preference in round
-four.
-
-> This is the inner engine, not the documented command. Its flags can move without notice.
-> If the invocation fails, fall back to creating the PR and iterating with
-> `tauceti-review <PR>` (bare, no `--post`) — private in effect, at the cost of a visible
-> half-finished PR **and of CI reviewing each intermediate head at the project's expense**
-> (`pr-build` fires on every push; see P8). That cost is the reason to prefer getting this
-> phase working: P6 is the only point where iteration is genuinely free.
-
-## P7 — Push and create
-
-**`--force-with-lease`, always** — a `[HARD]` coordination rule. Other agents may be on
-this branch; a plain push can clobber them.
-
-```bash
-git push --force-with-lease=<headRefName>:<observed_oid> \
-    https://github.com/<owner>/<repo> HEAD:<headRefName>
-# creating a new branch: --force-with-lease=<branch>:   (empty = create-only)
-```
-
-A `! [rejected] (stale info)` is **the system working**: someone moved the branch. Re-observe
-and decide afresh; never fall back to a plain push.
-
-```bash
-gh pr create --repo TauCetiProject/TauCeti --title "..." --body-file pr.md
-```
-
-**No `PR_GATE_OVERRIDE` here.** Earlier versions of this command overrode the plugin's PR
-gate, on the reasoning that `/taupr` reviews properly anyway. That was a mistake: it made
-`/taupr` exempt from the plugin's own enforcement, so a worker that quietly skipped P1 or
-P3 sailed straight past the one mechanism that would have caught it — in the very command
-where those phases matter most.
-
-Instead, P6 writes the receipt, so this `gh pr create` **passes the gate on merit**. If it
-blocks, the gate is telling you a phase did not actually happen; the fix is to do that
-phase, not to override. Keep `PR_GATE_OVERRIDE=1` for genuine emergencies only, and expect
-to explain it.
-
-**Go straight to P8 — do not wait for `pr-build`.** The claim is what saves the project
-money, and it is contested the moment the build goes green.
-
-## P8 — Post the review, immediately
-
-P6 established the branch is green privately. **That leaves no review state on GitHub** —
-and merging requires a GitHub-visible all-green review for the current head. This phase
-puts it there.
-
-Same engine, same rubrics, same scoreboard as CI, but inference runs on your logged-in
-subscription, so there is no per-token bill.
-
-```bash
-# print the verdicts for PR #42, posting nothing:
-uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review 42 --reviewer codex
-
-# add --post to publish the scoreboard and per-rubric threads, as you:
-uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review 42 --reviewer codex --post
-```
-
-**Post immediately on creating the PR — do not dry-run again here, and do not ask.** You
-already did the dry running in P6; repeating it now just delays the record and risks losing
-the head claim. Two verified reasons to be prompt:
-
-1. **It claims the head, so CI's metered run skips.** De-contention is scoped to the
-   commit: first claimer wins, and *a different model is not a distinct unit*. A run that
-   finds the head claimed prints `skipping to avoid duplicate spend`. Posting promptly is
-   how your subscription displaces the project's API bill — which is the entire reason the
-   local path exists.
-2. **Your scoreboard is canonical.** `merge_from_scoreboard.py` takes the newest scoreboard
-   comment by `updated_at` with **no access bar — any author**. A review posted under your
-   identity drives auto-merge exactly as the bot's does.
-
-Waiting is the expensive option. CI's `review.yml` fires the instant `pr-build` succeeds,
-so hesitating here means racing CI and often losing — and then the project pays for a
-review you had already done.
-
-The one thing you give up by posting before the build finishes: the engine passes CI's
-build conclusion into the prompt so the reviewer can assert the code compiles. Post early
-and that is blank, and the engine injects nothing. It is best-effort context, not a gate —
-P4 established locally that the thing builds.
-
-**This should come back green on the first try.** Same engine, same rubrics, same diff as
-P6. If it does not, the interesting question is *why the two runs disagree*: a stale P6
-staging (you fixed something after `git archive`), a different reviewer drawn for a
-borderline rubric, or a scope rubric that reads the real PR body differently from your
-`pr_desc.txt`. Do not just re-run and hope — a disagreement between P6 and P8 means one of
-them was measuring the wrong thing.
-
-### On an open PR, a dry run does not save the project anything
-
-The rule is about **whether the PR exists**, not who created it.
-
-`pr-build` fires on `pull_request_target: [opened, synchronize, reopened]` — so **every push
-to an open PR** triggers a build, and a successful build triggers `review.yml`. CI is going
-to review that head whether or not you dry-ran it first.
-
-This inverts the usual instinct:
-
-| Situation | Bare dry run | `--post` |
-|---|---|---|
-| **PR does not exist yet** (P6) | Free. Nothing is watching, iterate as long as you like | n/a |
-| **PR is open** | CI reviews that head anyway — the project pays, and your dry run bought nothing but information | Claims the head, CI skips, **your subscription pays instead** |
-
-So on an open PR, posting is the *cheaper* option for the project, not the riskier one. The
-expensive habit is pushing repeatedly to an open PR and dry-running each time: every one of
-those heads gets a CI review you already paid for locally.
-
-Which is the real argument for P6 — it is the only phase where iteration is genuinely free.
-
-**Bare dry runs remain right for**: a PR you did not create and do not intend to publish a
-verdict on; a rubric you are re-checking out of curiosity; checking state *without* claiming
-the head; and the P6 fallback, where the inner-engine invocation failed and you are
-iterating on an open PR instead. In that fallback, expect CI to review your intermediate
-heads — that is the cost of the fallback, and a reason to prefer getting P6 working.
-
-### Reviews are by codex — pin it, in both phases
-
-```
-P6 (runner/review.py)   --providers codex
-P8 (tauceti-review)     --reviewer codex
-```
-
-**Note the flag names differ between the layers.** The inner engine takes `--providers`;
-the wrapper takes `--reviewer`. Passing the wrong one is an argparse error, not a silent
-fallback, so you will notice — but only after staging.
-
-Two reasons this is the right configuration, not just a preference:
-
-**1. Independence.** `/beastmode` writes the Lean with Claude. A Claude reviewer then
-checks its own family's work; codex is an actual second opinion. This is the same reasoning
-that puts ChatGPT behind the `ask_chatgpt_math` second-opinion MCP elsewhere in this plugin.
-
-**2. On macOS, only codex gets a real clean room.** In `subscription` mode each reviewer is
-seeded into a throwaway HOME carrying *only* that provider's credential, so the review
-cannot be coloured by personal config. Whether that works depends on where the credential
-lives:
-
-| Reviewer | Credential | On macOS |
-|---|---|---|
-| **codex** | `~/.codex/auth.json` — a **file** | Copied into a throwaway `CODEX_HOME`. **Clean room**: no personal `AGENTS.md` or `config.toml` |
-| **claude** | `~/.claude/.credentials.json` | Typically **absent** — the login is in the Keychain — so it falls back to `HOME=~`. Your real home, personal `CLAUDE.md`, skills and plugins **all visible to the reviewer** |
-
-Unpinned, roughly half your rubrics would be judged in that degraded mode. Pinning to codex
-removes the caveat rather than working around it.
-
-*(Checked on this machine: `~/.codex/auth.json` exists, `~/.claude/.credentials.json` does
-not — the expected macOS pattern.)*
-
-If you later want Claude reviews to be clean-room too, `--auth api` with a key restores the
-guarantee, at the cost of billing tokens.
-
-Useful flags:
-
-| Flag | Effect |
-|---|---|
-| `--rubrics a,b,c` | review a subset |
-| `--mode manual` | force a full re-review of every rubric. Default `commit` re-runs only unresolved ones, carrying prior approvals forward as ♻️ stale until the PR is otherwise clean, then sweeping them |
-| `--reviewer claude` / `codex` | pin the reviewer instead of drawing per rubric |
-| `--no-mathlib` | faster, but `reuse`/`naming` lose their Mathlib grep |
-| `--no-coordinate` | a private read-only pass that touches the PR **not at all** (at the cost of possible duplicate spend) |
-| `--auth api` | bill `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` instead of the subscription — the opposite of why you are here |
-| `--keep` | keep the workspace to inspect |
-
-**Iterate P4 → P6 → P7 until every rubric is green.** After any push the previous verdicts
-are stale by construction: a review binds to the `head_sha` it names.
-
-Two operational notes. A contributing run posts a short-lived `review in progress` marker
-scoped to the head, so a fleet never pays twice for one commit — a *different model is not a
-distinct unit*, only a new push is. And with both CLIs installed the reviewer is drawn
-randomly per rubric, so borderline rubrics can differ between runs; that is CI's behaviour too.
-
-## P9 — Contest, in the thread the finding came from
-
-**Only for a genuine contradiction**: one finding requires X and another requires not-X, or
-a later round reverses what an earlier round required. Do not silently satisfy one and let
-the other re-fire. Disagreeing with a single finding you dislike is not this — implement it,
-or show it is wrong on the merits.
-
-Required shape: contest one thread, **link the conflicting one**, **quote its wording
-(rubric and round)**, explain why both cannot hold. *Show* the contradiction.
-
-```bash
-# find the rubric thread roots
-gh api --paginate --jq '.[]' \
-  "/repos/TauCetiProject/TauCeti/pulls/<PR>/comments?per_page=100" \
-  | python3 -c 'import json,sys,re
-for l in sys.stdin:
-    c=json.loads(l)
-    if c.get("in_reply_to_id") is None:
-        m=re.search(r"tauceti-rubric:([a-z][a-z-]*?)\s*-->", c.get("body",""))
-        if m: print(m.group(1), c["id"])'
-
-# reply IN that thread — this is the contest
-gh api --method POST \
-  "/repos/TauCetiProject/TauCeti/pulls/<PR>/comments/<ROOT_ID>/replies" \
-  -f body="$(cat contest.md)"
-```
-
-**Silent failures to avoid:**
-
-| Mistake | Result |
-|---|---|
-| `gh pr comment` | Ignored — that is the *issue* endpoint, never read for contests |
-| A review comment replying to nothing | Ignored — belongs to no rubric |
-| Wrong rubric's thread | Attributed to that rubric instead |
-| Body containing `tauceti-reply:` / `tauceti-rubric:` | **Dropped as machine output** — when you quote the conflicting thread, quote the prose and **strip the markers** |
-
-**A contest does not re-trigger CI.** Contest re-reviews are owned by the local worker, so
-run `tauceti-review <PR>` afterwards or the contest sits unadjudicated. Say it once: a
-re-run picks it up only when the comment id exceeds the watermark already adjudicated, so
-re-posting the same argument does nothing.
-
-`/review` on its **own line** (not in prose) re-triggers a full CI review, write access or better.
-
-## P10 — Monitor, and never wait around
-
-Read state from the **scoreboard**, never the label:
+**Review** — the newest scoreboard comment, parsed from its machine block:
 
 ```bash
 gh api --paginate /repos/TauCetiProject/TauCeti/issues/<PR>/comments?per_page=100
 ```
 
-Keep comments carrying `<!--tauceti-scoreboard-->`, take the **newest by `updated_at`**, and
-parse the `<!--tauceti-meta:v1 {...}-->` JSON for `head_sha` and per-rubric `states`. Never
-scrape the rendered Markdown; labels lag and lie. No valid comment means unreviewed — behave
-conservatively and do not merge on it.
+Keep comments containing `<!--tauceti-scoreboard-->`, take the newest by `updated_at`, and
+read `<!--tauceti-meta:v1 {...}-->` for `head_sha`, `overall` and per-rubric `states`.
+**A review applies only to the `head_sha` it names** — if that differs from the current
+head, the PR counts as unreviewed.
 
-States: `green` · `stale` (approved at an older sha) · `blocking_request` · `blocking_block`
-· `error` (infrastructure, no parseable verdict — blocks merge, spawns no thread) · `absent`.
-
-**Poll on a ~10-minute cadence** and, between rounds, take the next branch through P1–P7.
-The throughput limit should be your own work, never the review server. A queue of
-locally-green branches should always be ready while earlier ones merge.
-
-For an unattended loop: `/loop 10m /taupr watch`.
-
-## P11 — Merge
-
-All rubrics green **on the current head** + `TauCeti/`-only + CI green → **merges
-automatically**. Also-touching `lake-manifest.json` / `lean-toolchain` can auto-merge once
-`bump-guard` confirms a forward-only bump. Anything touching `scripts/`, `.github/` or the
-lakefile always needs a human.
-
-- **Never `--admin`-merge an AI-authored PR.** Landing is the pipeline's job.
-- **Never strip a PR's human-owned changes** to make it auto-mergeable — if a PR
-  intentionally touches `scripts/`/`.github/`/lakefile, those changes *are* the deliverable
-  and the gate routes it to a human on purpose. Leave such PRs alone.
-- **Never merge or close without visible cause** — close only on GitHub-visible budget
-  evidence (`review-budget-spent`, or stale with changes requested), never a private
-  counter. `keep`/`hold`/`wip`/`human`/`do-not-close` opts a PR out entirely.
+Rubric states: `green` · `stale` · `blocking_request` · `blocking_block` · `error` · `absent`.
 
 ---
 
-# `/taupr review` — reviewing open PRs
+# R1 — Rebase
 
-Reviewing on your subscription instead of CI's metered APIs is the main cost lever the
-project has. Use it on your own PRs and on the fleet's.
+One of our PRs has a genuine content conflict under `TauCeti/` after a sibling merged.
+(Root `TauCeti.lean` is auto-synced on `main` and no longer collides.) Rebase, rebuild,
+push with `--force-with-lease`.
+
+# R2 — Fix CI
+
+One of our PRs has `build` red. **This outranks R3**: a PR that does not build cannot be
+reviewed, so fixing findings on it is wasted work.
+
+Reproduce locally with `lake build`, fix, push. The repo rules are CI-enforced: no `sorry`,
+no axioms beyond `propext`/`Classical.choice`/`Quot.sound` (so no `native_decide`), Mathlib's
+linter set, **no `maxHeartbeats` overrides** (`/buzz` it instead).
+
+# R3 — Fix findings
+
+One of our PRs has an adverse rubric. Read the rubric threads, then either fix the code or
+contest.
+
+**Contesting goes in the thread the finding came from** — a reply whose `in_reply_to_id` is
+that rubric's thread root:
 
 ```bash
-gh pr list --repo TauCetiProject/TauCeti --state open --json number,title,headRefName
+gh api --method POST \
+  "/repos/TauCetiProject/TauCeti/pulls/<PR>/comments/<ROOT_ID>/replies" \
+  -f body="$(cat contest.md)"
 ```
+
+Silent failures: a top-level `gh pr comment` is the *issue* endpoint and is never read as a
+contest; a reply to nothing belongs to no rubric; and a body containing `tauceti-reply:` or
+`tauceti-rubric:` is **dropped as machine output** — so when you quote the conflicting
+thread, quote the prose and strip the markers.
+
+Contest only a **genuine contradiction** (one finding requires X, another not-X; or a later
+round reverses an earlier one). Link the conflicting thread, quote its wording with rubric
+and round, and show why both cannot hold. Disagreeing with a finding you merely dislike is
+not this — implement it, or show it wrong on the merits.
+
+**A contest does not re-trigger CI** — contest re-reviews belong to the local worker, so
+follow it with R4's command on that PR regardless of age.
+
+Push fixes with `--force-with-lease` (see R5).
+
+# R4 — Review a stalled PR
+
+**Only when all three hold:**
+
+1. `build` is **success** at the current head,
+2. there is **no scoreboard for that head sha**, and
+3. it has been **≥ 1h** since the `build` status was posted (`--review-age` to change).
+
+The wait is the point. CI reviews automatically once the build goes green; posting sooner
+just spends your subscription on work the project was about to do for free. An hour without
+a scoreboard means CI is not coming.
 
 ```bash
-uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review <PR> --reviewer codex --post
+uvx --from git+https://github.com/TauCetiProject/TauCetiReview \
+    tauceti-review <PR> --reviewer codex --post
 ```
 
-Print a one-line scoreboard between PRs:
-`**K/N reviewed. G green, C changes-requested, B blocked.** Continuing.`
+Posting also claims the head, so a late CI run skips (`skipping to avoid duplicate spend`),
+and the scoreboard is canonical whoever posts it — `merge_from_scoreboard.py` takes the
+newest by `updated_at` with *no access bar: any author*.
 
-**Your own chain's PRs: post, no dry run, no asking** — P8's reasoning applies unchanged.
+Drop `--post` for a private look that records nothing.
 
-**Someone else's PR is a different act.** You are publishing a verdict under your own name
-on work you did not write, and it can auto-merge on the strength of it. Confirm once at the
-start of a sweep that publishing is wanted, then post for the rest without re-asking. If
-publishing is not wanted, the bare command (no `--post`) reviews privately and touches
-nothing.
+**Why codex.** Claude writes the Lean, so a Claude reviewer checks its own family's work.
+And on macOS only codex gets a real clean room: its credential is a file
+(`~/.codex/auth.json`) copied into a throwaway `CODEX_HOME`, whereas
+`~/.claude/.credentials.json` is absent under a Keychain login, so the Claude reviewer falls
+back to your real `HOME` and sees your personal config.
 
-**Skip a PR already green at its current head.** Re-reviewing an unchanged head buys
-nothing; de-contention would make you skip it anyway. Read state from the scoreboard first
-(P10), not from a fresh review.
+# R5 — Author a new PR
 
-Two honesty notes. Nothing stops a local reviewer from rubber-stamping — the safeguard is
-social, so read the verdicts you publish rather than posting a wall you have not looked at.
-And keep `--reviewer codex` here too — on macOS an unpinned run judges some rubrics with
-Claude, which falls back to your real HOME and sees your personal config (P8). That matters
-more, not less, when the PR is not yours.
+Only when R1–R4 found nothing.
+
+### 5a. Intake — once per chain, not per PR
+
+Read `.mathlib-quality/pr-session.json`; **if it exists, ask nothing**. Otherwise ask once
+and write it: what the chain delivers, which roadmap area (and whether this is new
+mathematics or improving existing code), and from what source. Per-PR description and
+target id are derived from the diff, never asked.
+
+The roadmap gates **new** declarations only. Refactoring, proof simplification, modest
+generalisation, relocation and documentation are always in scope with no roadmap entry — do
+not report "off-roadmap" as a risk on a refactor chain.
+
+### 5b. Check the source material first
+
+**Do not rebuild mathematics that already exists.** In priority order: the roadmap as
+written, then review-quality library code, then adapting the named source.
+
+Per source: pin and **clone** it (record `repo@sha` — a worker that never cloned cannot
+produce one), read its index before grepping (blueprint, dep graph, `## Main results`),
+search **three vocabularies** (your name, the source's convention, and the operator that
+cannot be renamed away — that last one finds things), read the *neighbourhood* rather than
+the grep hits, and check whether your result is a step inside a bigger proof.
+`references/pr-workflow.md` § "The source sweep" has the full method.
+
+Mathlib absence additionally needs an untruncated full-name grep **and** a compiled
+`example` probe — typeclass-derived and auto-generated results are text nowhere.
+
+**Duplication uses the native mechanism.** Claim `author/<focus>/<target-id>` and stop if
+you lose it; check open PRs for the same `tauceti-target` marker id. Roadmap targets others
+have claimed on the [intentions board](https://github.com/leanprover-community/intentions)
+are likewise off-limits.
+
+### 5c. Build, then clean up
+
+`/develop` to plan and `/beastmode` to execute, for genuinely new material.
+
+Then **`/cleanup` on every changed `.lean` file** — ported or new, full workflow, including
+the `/simplify` and `/buzz` hand-offs — and **`/decompose-proof`** for any proof over 30
+lines (50 is the hard cap).
+
+This is the most-skipped step, because by now the code already builds so nothing complains.
+It is gated: see "The pre-PR gate" below.
+
+### 5d. PR body
+
+```text
+Roadmap: CanonicalAreaName        ← or `Roadmap: none`; canonical roadmap DIRECTORY name,
+                                     never inferred from a TauCeti/ path
+<!--tauceti-target:v1 {"focus":"<area>","id":"<canonical-target-id>"}-->
+Provenance: <source repo> @ <revision>, <license>, <files and declarations>
+```
+
+A PR without the target marker is invisible to the duplicate sweeper. Keep the body in sync
+with the code — a drifted body is itself a review finding.
+
+### 5e. Push and create
+
+**`--force-with-lease`, always** — other agents may be on this branch:
+
+```bash
+git push --force-with-lease=<headRefName>:<observed_oid> \
+    https://github.com/<owner>/<repo> HEAD:<headRefName>
+# new branch: --force-with-lease=<branch>:   (empty = create-only)
+gh pr create --repo TauCetiProject/TauCeti --title "..." --body-file pr.md
+```
+
+A `! [rejected] (stale info)` means someone moved the branch — re-observe and decide afresh,
+never fall back to a plain push.
+
+**Then the round ends.** Do not review what you just opened: CI will. It becomes eligible
+for R4 only if still unreviewed an hour after its build goes green.
 
 ---
+
+## The pre-PR gate
+
+`gh pr create` is blocked until `.mathlib-quality/review-receipt.json` records the cheap
+checks that must precede a PR. Write it at the end of 5c:
+
+```json
+{
+  "head_sha": "<git rev-parse HEAD>", "base_ref": "origin/main",
+  "cleanup": [
+    {"file": "TauCeti/Foo/Bar.lean", "status": "done",
+     "phases": "P1-P7 incl 5a, 6.5 simplify, 6.6 buzz"},
+    {"file": "TauCeti/Foo/Baz.lean", "status": "skipped",
+     "reason": "import-line change only"}
+  ],
+  "duplication_check": {"checked_at": "<ISO>", "open_prs_examined": [12,13], "overlaps": []},
+  "source_sweep": [{"repo": "github.com/org/FLT", "revision": "<full sha>",
+                    "queries": ["<literal grep>"], "verdict": "absent"}]
+}
+```
+
+**No review fields are required** — there is no pre-PR review in this design, so nothing
+here waits on inference. The gate only checks work that is cheap to do and expensive to
+skip:
+
+- **`cleanup[]` must cover every changed `.lean` file.** The list is computed from
+  `git diff merge-base..HEAD`, *not* read from the receipt, so under-reporting fails and
+  names the files you missed. `done` needs `/cleanup`'s phase checklist; `skipped` needs a
+  reason, and every skip is reported to the user.
+- **`source_sweep[]`** needs a pinned revision and the literal queries per source; empty is
+  honest only when the intake recorded no source.
+- **`duplication_check`** needs to be fresh and free of unacknowledged overlaps.
+
+If the gate blocks, a step did not happen. Do that step rather than reaching for
+`PR_GATE_OVERRIDE=1`.
+
+## The loop
+
+```
+/taupr --loop 10m
+```
+
+Each tick runs one round. Ten minutes is a reasonable cadence: long enough that a stalled
+PR is not polled pointlessly, short enough that a red build is picked up promptly. R4's
+one-hour threshold is measured from the build status, not from the tick, so a slower loop
+does not delay it.
+
+Between rounds, report one line:
+
+```
+**Round <n>: <STEP> on #<PR>** — <what changed>. Open: <N> (<b> building, <r> awaiting review, <f> awaiting author).
+```
 
 ## Report
 
 ```
-## /taupr — <branch or review sweep>
+## /taupr round <n>
 
-Intake:      <chain goal / roadmap area / source — reused or asked>
-Sources:     <sweep verdicts per source>
-Duplication: <claim taken; target id; open-PR marker matches>
-Cleanup:     <file: done (phases) | SKIPPED — reason>   ← every skip listed, never omitted
-Gates:       lake build <PASS/FAIL> · audits <…> · lint <…>
-PR:          #<N> <url>   Roadmap: <area>   target: <id>
-Review:      round <k> — <rubric: state, …>   overall: <approved|changes requested|blocked>
-Contests:    <rubric ← thread root id, or none>
-Next:        <iterate / monitoring / merged>
+Step:       <REBASE|FIX-CI|FIX|REVIEW|AUTHOR|IDLE>
+PR:         #<N> <title>
+Action:     <what was done>
+Cleanup:    <file: done (phases) | SKIPPED — reason>   ← every skip listed
+Board:      <N> open — <b> building, <r> awaiting review, <f> awaiting author, <g> green
+Next:       <what the next round would pick up>
 ```
 
 ## Reference
 
-- `references/tauceti.md` — the verified mechanics this command depends on
-- `references/pr-workflow.md` — the generic workflow and the source sweep
+- `references/tauceti.md` — verified mechanics: contest wire format, scoreboard block,
+  target markers and claims, `--force-with-lease`, merge policy
+- `references/pr-workflow.md` — the source sweep
 - `references/mathlib-search.md` — proving mathlib-absence
-- `commands/fix-pr-feedback.md` — Tau Ceti mode for working through findings
-- Upstream: `AGENTS.md`, `COORDINATION.md` in TauCeti; `REVIEWING.md` in TauCetiReview
+- Upstream: `AGENTS.md`, `COORDINATION.md` (TauCeti); `REVIEWING.md` (TauCetiReview);
+  `kim-em/TauCetiWorker` (the reference worker this cascade follows)

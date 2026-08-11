@@ -82,6 +82,46 @@ re-posting the same argument twice does nothing. Say it once, in the right threa
 
 ---
 
+## The worker round (what the reference worker does)
+
+`kim-em/TauCetiWorker` is the reference implementation the coordination contract points at.
+A round does **exactly one unit of work — the first that applies**:
+
+| Step | When |
+|---|---|
+| **Rebase** | one of our PRs has a genuine `TauCeti/` conflict after a sibling merged |
+| **Bump** | a red `bump-mathlib/` PR needs adapting (the worker never opens one itself) |
+| **Progress** | the global eight-hour cadence is due for a roadmap `STATUS.md`/`PROGRESS.md` |
+| **Fix CI** | one of our PRs has `build` red — it cannot be reviewed until it builds, so this precedes Fix |
+| **Fix** | one of our PRs has findings: fix the code, or contest a wrong one on its thread |
+| **Review** | an open PR is green but not yet reviewed |
+| **Roadmap** | otherwise, open a new PR advancing a roadmap target |
+
+Three rules that fall out of this shape:
+
+- **Maintenance outranks authoring**, so PRs already in flight are not starved by opening
+  more of them.
+- **Merging green PRs, closing stuck ones and de-duplicating are the repo's CI**, not the
+  worker's job.
+- **A GitHub API failure aborts the round** rather than reading as "nothing to do" — a
+  transient outage must never fall through to authoring and produce duplicate PRs.
+
+Authoring priority for material: the roadmap as written, then review-quality library code,
+then adapting a named `--source`. Targets others have claimed on the
+[intentions board](https://github.com/leanprover-community/intentions) are off-limits.
+
+### Reviewing is a fallback, not a race
+
+CI reviews every PR automatically once `pr-build` goes green (`pr-build` fires on
+`pull_request_target: [opened, synchronize, reopened]`, and `review.yml` on its success).
+Self-reviewing immediately therefore spends your subscription on work the project was about
+to do for free.
+
+`/taupr` waits **one hour** from the `build` status before self-reviewing, and only when
+there is no scoreboard for the current head. Note `build` is a **commit status** (context
+`build`) rather than a check-run, so read it from `statusCheckRollup` by `.context`, and
+take its `createdAt` as the clock.
+
 ## Reading review state — the scoreboard, never the label
 
 The canonical reviewer posts exactly one issue comment carrying `<!--tauceti-scoreboard-->`

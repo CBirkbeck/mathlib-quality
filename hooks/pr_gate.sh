@@ -64,7 +64,18 @@ esac
 # --- receipt must exist ----------------------------------------------------------
 if [ ! -f "$receipt" ]; then
   cat >&2 <<'EOF'
-BLOCKED: /pre-submit Step 8 (local review-rubric dry run) has not been run.
+BLOCKED: no pre-PR checks receipt (.mathlib-quality/review-receipt.json).
+
+On Tau Ceti (/taupr) this records the CHEAP checks that must precede a PR —
+cleanup coverage, the source sweep, and the open-PR duplication check. It does
+NOT require a review: CI reviews the PR once its build is green, and /taupr only
+self-reviews a PR CI has left unreviewed for an hour.
+
+  "cleanup":           one entry per changed .lean file (list computed from the diff)
+  "source_sweep":      per source, a pinned revision + the literal queries run
+  "duplication_check": open PRs examined, overlaps resolved
+
+Elsewhere, this is /pre-submit Step 8 (local review-rubric dry run):
 
 No .mathlib-quality/review-receipt.json exists. Opening a PR and waiting for the
 server reviewer is exactly the shortcut this gate prevents — the rubric runs on a
@@ -100,7 +111,10 @@ try:
     r = json.load(open(sys.argv[1]))
 except Exception as e:
     print("ERR unreadable receipt: %s" % e); raise SystemExit
-if not r.get("all_green") is True:
+# Review fields are OPTIONAL: the Tau Ceti flow lets CI review the PR, so there is no
+# pre-PR review to demand. When a receipt does record one, hold it to being green — a
+# recorded red review is a reason to stop, not a formality to pass.
+if "all_green" in r and r.get("all_green") is not True:
     bad = [k for k,v in (r.get("rubrics") or {}).items() if v != "green"]
     print("NOTGREEN " + (", ".join(bad) if bad else "all_green is not true"))
     raise SystemExit
