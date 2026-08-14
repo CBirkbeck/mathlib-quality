@@ -7,4 +7,12 @@ SMOKE TEST — read-only, post nothing, edit nothing. You are verifying that thi
 5. Confirm the tools mcp__chatgpt-math__ask_chatgpt_math and the lean-lsp MCP tools are available to this session (listed as available or deferred tools — do NOT call them).
 6. `uvx --version`, `node --version`, `python3 --version` all run.
 
-Finish with a final line that is exactly "SMOKE OK" if every check passed, or "SMOKE FAIL: <which>" otherwise. Do not post to Zulip, do not write files, do not run the voyager skill.
+Also report which Claude account is running you: print the value of the CLAUDE_CONFIG_DIR environment variable (or "default (unset)" if it is not set).
+
+Do not post to Zulip, do not write files, do not run the voyager skill.
+
+MANDATORY LAST LINE. End your final message with exactly one line of the form
+
+  VOYAGER_RESULT: <outcome>
+
+where <outcome> is `smoke-ok` if every check passed, or `failed-<one-word reason>` otherwise. The wrapper script reads this line, so it must be the very last line and must appear nowhere else in your output.

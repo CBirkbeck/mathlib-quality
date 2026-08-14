@@ -7,3 +7,9 @@ Chris's standing rules apply regardless of doc state: (1) read the contents/body
 All other decision logic lives in those two files — follow them exactly. The freshness abort is mandatory and is a successful outcome: if the newest Voyager channel message or state DM is under 2 hours old, another run already happened today — end quietly. Quiet check-ins and silent exits are normal successful outcomes. Never echo the Zulip API key. There is no cron-upkeep step in this mode: scheduling is owned by launchd (com.tauceti.voyager), not by session crons.
 
 Any judgment call the docs don't settle: skip the item and state the question clearly in your final output so Chris can pick it up from the log.
+
+MANDATORY LAST LINE. End your final message with exactly one line of the form
+
+  VOYAGER_RESULT: <outcome>
+
+where <outcome> is one of: `posted-<message id>` (a full update went out), `quiet-checkin-<message id>` (the short check-in format went out), `empty-window` (docgen equalled the watermark, so nothing was posted and nothing was due), `freshness-abort` (a run inside the last 2 hours had already covered today), or `failed-<one-word reason>` (anything else). The wrapper script reads this line to decide whether the day's run is done or whether it should retry on a different Claude account, so it must be present on every terminal outcome including the quiet ones — a missing sentinel is read as a failed run and triggers a retry elsewhere. Print it once, as the very last line, and nowhere else in the output.
