@@ -113,12 +113,14 @@ confirms channel subscription without posting. Run it first after setup.
 
 ## Prerequisites
 
-Tools: `gh` CLI (authenticated), `git`, python3 stdlib only, the **chatgpt-math MCP** for
-the significance gate, and a local Mathlib checkout for the novelty gate (the roadmap
-repo's `.lake/packages/mathlib` is fine).
+Tools: `gh` CLI (authenticated), `git`, python3 stdlib only, and a local Mathlib checkout
+for the novelty gate (the roadmap repo's `.lake/packages/mathlib` is fine). The
+**chatgpt-math MCP** drives the significance gate when it is reachable, but is **not**
+required — see §4.
 
-If credentials are missing, **stop and report** — do not post to a fallback channel and do
-not invent a message.
+If Zulip credentials or `gh` are missing, **stop and report** — do not post to a fallback
+channel and do not invent a message. This rule is about *those* credentials: a missing or
+quota-blocked chatgpt-math MCP is not a reason to stop, and never a reason to skip a post.
 
 ## Running it
 
@@ -363,8 +365,26 @@ docstring's *Main results* before believing any title.
 
 ### 4. Significance gate — the ChatGPT second opinion
 
-Batch **all** surviving candidates into **one** `mcp__chatgpt-math__ask_chatgpt_math`
-call. Operational facts learned the hard way:
+**The gate is best-effort, not a precondition for posting.** Probe it with one cheap call
+**before** reading the window: if it is going to be unavailable, that should cost seconds,
+not a full read of every PR body. When it answers, its ranking drives bullet order and it
+serves as the second opinion on how noteworthy each result is. When it does not — codex
+quota exhausted, the account's plan refusing reasoning models, the MCP absent, a timeout —
+**run without it**: select and order on your own judgement, post as normal, and record one
+line in the run's final output naming why it was skipped.
+
+Do not hold the post, do not substitute a different model, and **do not mention the gate or
+its absence in the Zulip message** — that belongs in the log, not in front of readers.
+Holding is the worse failure: it takes a window that plainly contains notable results and
+publishes nothing, which is indistinguishable to readers from a quiet week.
+
+This was learned on 2026-08-15, when both codex accounts were out (`~/.codex` on quota,
+`~/.codex2` on quota *and* refusing `gpt-5.6-sol`/`gpt-5.4`/`gpt-5.3-codex` outright with
+HTTP 400) and two separate runs read all 138 PRs in the window, assembled a slate, and then
+declined to post because the gate was documented as mandatory.
+
+When the MCP *is* reachable: batch **all** surviving candidates into **one**
+`mcp__chatgpt-math__ask_chatgpt_math` call. Operational facts learned the hard way:
 
 - use `reasoning_effort: "high"`. **`max` reliably times out** on long prompts (the MCP
   aborts after ~30 min of silence) — `high` has been reliable;
