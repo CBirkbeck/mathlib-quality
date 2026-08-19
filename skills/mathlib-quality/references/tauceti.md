@@ -268,6 +268,18 @@ The `id` is deterministic (roadmap file plus declaration or label), never a free
 The duplicate sweeper closes a newer duplicate only when **both** PRs carry the same
 marker, keeping the lower number — so a missing marker means your PR is invisible to dedup.
 
+**The marker is scoped to authoring a target; it is not a universal PR requirement.**
+`AGENTS.md` mandates the `Roadmap:` line on **every** PR. `COORDINATION.md` §4 mandates the
+marker only "before authoring a roadmap target", and only as `[COOP]`. So a **refactor**
+carries the `Roadmap:` line but **no marker**: it advances no target, so it has no
+deterministic `id`, and inventing one is precisely the free-form slug the contract forbids.
+A fabricated id that ever collides with another PR's would let the sweeper close a
+legitimate PR.
+
+For a refactor, invisibility to dedup is the **right** outcome — two refactors of one file
+are not target-duplicates, they are a merge conflict (a rebase job). Do not "fix" a
+marker-less refactor PR by adding a marker.
+
 ---
 
 ## Pushing — `--force-with-lease`, always

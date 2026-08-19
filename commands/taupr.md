@@ -243,8 +243,24 @@ Roadmap: CanonicalAreaName        ← or `Roadmap: none`; canonical roadmap DIRE
 Provenance: <source repo> @ <revision>, <license>, <files and declarations>
 ```
 
-A PR without the target marker is invisible to the duplicate sweeper. Keep the body in sync
-with the code — a drifted body is itself a review finding.
+**The two lines are not the same requirement, and only one is universal.**
+
+| | `Roadmap:` line | `tauceti-target:v1` marker |
+|---|---|---|
+| Required on | **every PR** (`AGENTS.md`) | a PR **authoring a roadmap target** (`COORDINATION.md` §4, `[COOP]`) |
+| A refactor | needs it — name the roadmap chiefly motivating the work, or `none` | **must not have one** |
+
+A refactor advances no target, so it has no legitimate `id`: the contract requires "a
+deterministic identifier for the target, such as a roadmap file plus declaration or label,
+**not a free-form slug**". Inventing one to "fix" a marker-less refactor is the failure
+mode, not the fix — a fabricated id that ever collides with another PR's lets the duplicate
+sweeper close a legitimate PR, since it closes a newer duplicate precisely when *both* carry
+the same marker.
+
+Being invisible to the sweeper is therefore **correct** for a refactor. Two refactors
+touching one file are not target-duplicates; they collide at merge, which is R1's job.
+
+Keep the body in sync with the code — a drifted body is itself a review finding.
 
 ### 5e. Push and create
 
