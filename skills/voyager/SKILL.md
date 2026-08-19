@@ -468,7 +468,7 @@ report the same PR, that is the bug. Check with `test -f .git/shallow` and
 Format (Zulip markdown):
 
 ```markdown
-**Voyager · what's new in Tau Ceti**
+**Voyager · what's new in Tau Ceti** *(AI-generated summary)*
 
 *Named results*
 - **[<Standard name>](<link to the source file at main>)** — <one sentence on what it asserts>. (TauCeti#123)
@@ -485,8 +485,11 @@ Format (Zulip markdown):
 
 …then send the updated state DM (see the watermark protocol).
 
-Zulip-specific rules, each learned from reader feedback on the first message:
+Zulip-specific rules, most learned from reader feedback on the first message:
 
+- **The header carries the disclosure suffix `*(AI-generated summary)*`** (owner request,
+  2026-08-19): every channel message — full update and quiet check-in alike — states in its
+  top line that an AI wrote it. The suffix survives any trimming done for the codepoint cap.
 - **One physical line per paragraph and per bullet.** Zulip keeps single newlines as line
   breaks, so hard-wrapped prose renders with ragged mid-sentence breaks. Never wrap.
 - **Use the realm linkifiers**: bare `TauCeti#NNN` for TauCeti PRs, `mathlib4#NNN` for
@@ -544,7 +547,7 @@ result first, and let the message end when the interesting ones do, however many
 the gates, post this short check-in instead of the full format:
 
 ```markdown
-**Voyager · Tau Ceti check-in**
+**Voyager · Tau Ceti check-in** *(AI-generated summary)*
 
 No notable named results landed in this window (as judged by the voyager AI bot).
 

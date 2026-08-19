@@ -181,7 +181,7 @@ a bug. No sorry counts.
 
 **The quiet check-in**, when PRs merged but nothing survived the gates:
 
-> **Voyager · Tau Ceti check-in**
+> **Voyager · Tau Ceti check-in** *(AI-generated summary)*
 >
 > No notable named results landed in this window (as judged by the voyager AI bot).
 >
