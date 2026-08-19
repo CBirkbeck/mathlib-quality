@@ -16,8 +16,9 @@ Installed on the operator machine as:
 | `smoke.txt` | `~/.claude3/voyager/smoke.txt` (read-only environment test: `run.sh smoke.txt`) |
 | `freshness.py` | `~/.claude3/voyager/freshness.py` (read-only "has today's post landed?" check) |
 
-Each firing runs a **fresh headless Claude Code session** (`claude -p`, claude3 account via
-`CLAUDE_CONFIG_DIR`, `--dangerously-skip-permissions`) with `prompt.txt` — the same daily
+Each firing runs a **fresh headless Claude Code session** (`claude -p` on the preferred
+model/account pair — see §Model preference and account fallback —
+`--dangerously-skip-permissions`) with `prompt.txt` — the same daily
 prompt the session cron carried, minus the cron-upkeep step (launchd has no 7-day expiry)
 and with ask-Chris rerouted to the run log. All bot state stays in the Zulip self-DM, so
 fresh sessions are the designed mode. Logs: `~/Library/Logs/voyager.log`.
@@ -36,17 +37,28 @@ The wrapper pins PATH by hand (launchd's environment is minimal): `claude` and `
 If node is upgraded via nvm, update the path in `run.sh`. The 2h freshness abort makes a
 double-fire against any leftover session cron harmless — whichever runs second exits quietly.
 
-## Account fallback
+## Model preference and account fallback
 
-`run.sh` walks an ordered chain of Claude accounts and stops at the first that completes the
-run: **`.claude3` → `.claude2` → `.claude4` → default** (`CLAUDE_CONFIG_DIR` unset,
-`~/.claude.json`). `.claude5` is deliberately excluded — its organisation has Claude Code
-subscription access disabled, so it can never serve; re-add it if that changes.
+`run.sh` walks a two-level chain — **models × accounts** — and stops at the first pair that
+completes the run. Models: **`claude-fable-5` → `claude-opus-5`** (owner request, 2026-08-19:
+prefer Fable wherever it has credits; only when no account can run Fable does any attempt fall
+back to Opus 5). Accounts: **`.claude3` → `.claude2` → `.claude4` → default**
+(`CLAUDE_CONFIG_DIR` unset, `~/.claude.json`). `.claude5` is deliberately excluded — its
+organisation has Claude Code subscription access disabled, so it can never serve; re-add it if
+that changes.
+
+Before each attempt the pair is **probed**: one trivial `claude -p` completion on the exact
+model. There is no headless credits query, so a one-line turn is the only true test of "this
+account can run this model right now"; a missing Fable entitlement, an exhausted limit, and a
+broken login all fail it identically and the chain moves on in seconds instead of burning a
+full run (first live probe sweep, 2026-08-19: `.claude3` and `.claude2` passed on Fable,
+`.claude4` was weekly-limited, the default account was out of Fable usage credits). On a
+normal day the whole run spends exactly one probe.
 
 **Exit status cannot drive the fallback.** `claude -p` exits **0** even when it never ran a
 turn: an exhausted weekly limit and an org-disabled subscription each print one line and exit
-cleanly (both observed on this machine, 2026-08-14). The chain therefore keys off two positive
-signals instead:
+cleanly (both observed on this machine, 2026-08-14). Past the probe, the chain therefore keys
+off two positive signals:
 
 1. **The `VOYAGER_RESULT:` sentinel**, required by `prompt.txt` as the last line of every
    terminal outcome — `posted-<id>`, `quiet-checkin-<id>`, `empty-window`, `freshness-abort`, or
@@ -66,6 +78,8 @@ Test the chain without spending a real run by overriding it and using the read-o
 ```bash
 VOYAGER_ACCOUNTS="$HOME/.claude5 $HOME/.claude2" ~/.claude3/voyager/run.sh \
   ~/.claude3/voyager/smoke.txt      # .claude5 fails fast, .claude2 answers: proves the fallback
+VOYAGER_MODELS="claude-opus-5" ~/.claude3/voyager/run.sh \
+  ~/.claude3/voyager/smoke.txt      # pin a single model tier the same way
 ```
 
 Every account in the chain needs the chatgpt-math MCP for the significance gate; all four have
