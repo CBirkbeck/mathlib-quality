@@ -41,6 +41,24 @@ Do **not** post:
   Mathlib is worse than useless;
 - a result whose proof still contains `sorry` in its dependency cone.
 
+**Curate; do not enumerate** (owner decision, 2026-08-05, sharpened 2026-08-09). Passing the
+bar above earns a result *eligibility*, not a bullet. The message is a digest, not a changelog:
+keep the ones a mathematician outside the project would actually want to hear about — a named
+theorem with content, a construction the subject is phrased in, something that closes a
+milestone or unblocks upstream.
+
+**There is no target length: no minimum and no maximum.** Interest is the only test. Do not pad
+a thin window to look productive, and — the failure that prompted this sharpening — do not drop
+an interesting result to hit a number. A one-bullet day and a ten-bullet day are both correct if
+that is what the window actually held. Any rule of thumb about "a handful" is a description of
+past windows, never a quota to hit or a cap to respect; if you find yourself cutting a bullet
+you would have been glad to read, the count is driving and it should not be.
+
+Incremental strengthenings, small computations, and infrastructure that happens to carry a name
+are eligible but seldom interesting — drop those on their merits, not to make room. Nothing is
+lost by omitting a genuinely dull result: the permanent dedupe keys on *cited* PR numbers, so
+anything left out today stays announceable the day it matters.
+
 ## Where Voyager posts
 
 Voyager is a **Zulip bot named `voyager`** on the **Lean Zulip**
@@ -95,12 +113,14 @@ confirms channel subscription without posting. Run it first after setup.
 
 ## Prerequisites
 
-Tools: `gh` CLI (authenticated), `git`, python3 stdlib only, the **chatgpt-math MCP** for
-the significance gate, and a local Mathlib checkout for the novelty gate (the roadmap
-repo's `.lake/packages/mathlib` is fine).
+Tools: `gh` CLI (authenticated), `git`, python3 stdlib only, and a local Mathlib checkout
+for the novelty gate (the roadmap repo's `.lake/packages/mathlib` is fine). The
+**chatgpt-math MCP** drives the significance gate when it is reachable, but is **not**
+required — see §4.
 
-If credentials are missing, **stop and report** — do not post to a fallback channel and do
-not invent a message.
+If Zulip credentials or `gh` are missing, **stop and report** — do not post to a fallback
+channel and do not invent a message. This rule is about *those* credentials: a missing or
+quota-blocked chatgpt-math MCP is not a reason to stop, and never a reason to skip a post.
 
 ## Running it
 
@@ -168,6 +188,12 @@ Each run:
    `pr=` to the merged-PR count at that time, write the DM, then proceed.
 4. **After every successful channel post, send the updated state DM** — post first, DM
    second; if the DM write fails, retry it before ending the run.
+5. **Never reconstruct the commit hash.** Put the *full* SHA in the DM exactly as
+   `git rev-parse origin/docgen` prints it. Do not pad an abbreviated hash you had on screen,
+   and do not retype it: a plausible-looking 40-character string that names no object makes
+   the next run's window unresolvable, and nothing downstream will notice. This happened
+   (2026-08-08) — the fix is a second DM superseding the first, since the protocol reads the
+   newest. Cheap check before sending: `git cat-file -t <sha>` prints `commit`.
 
 ## Never double-post
 
@@ -214,15 +240,34 @@ same tree the window ends at.
 
 ### 2. Extract candidates
 
-**Work PR-by-PR — the merged PRs are the unit of discovery.** TauCeti squash-merges, so
+**Work PR-by-PR — the merged PRs are the unit of discovery, and read every one of them**
+(owner instruction, 2026-08-10: *"you can't rely on PR title, don't be lazy — this is meant
+to be a slow, methodical and careful check. You need to look at the contents of each PR and
+from that make your list."*). TauCeti squash-merges, so
 `git log --format='%s' <watermark>..HEAD` lists exactly the window's PRs, one per commit,
-with the number in the subject (`feat: prove the double centralizer theorem (#1435)`).
-Triage by title: `feat:` is where announcements live; `chore:`/`refactor:`/`fix:` almost
-never are. Then, for each candidate,
-`gh pr view <n> --repo TauCetiProject/TauCeti --json title,body` — the body typically says
-what was proved, names the result, and cites the roadmap and references, which is exactly
-the raw material for the significance gate and for writing the one-sentence description.
-The PR is also the attribution unit, so this hands you the link for free.
+with the number in the subject. For **every** PR in the window — `feat:`, `chore:`,
+`refactor:`, `fix:`, all of them — fetch the body and decide from **what it says was proved
+or defined**, never from the title alone. Batch the fetches
+(`gh pr list --repo TauCetiProject/TauCeti --state merged --search "merged:>=<date>" --json
+number,title,body`) rather than skipping any. The body names the result and cites the
+roadmap and references — the raw material for the significance gate and the one-sentence
+description — and the PR is the attribution unit, so this also hands you the link for free.
+
+**Titles are labels, not filters.** Title-tone triage is the lazy shortcut, and it produced
+the worst miss so far: fifteen `feat(EllipticCurve)` PRs across two windows all read as
+bookkeeping by title and none was opened, while 105 bullets went out with zero
+elliptic-curve results among them. Reading the bodies later surfaced the automorphism group
+of an elliptic curve with j ∉ {0, 1728} (TauCeti#2248 — Silverman III.10, uniform in the
+characteristic), the quadratic twist of a Weierstrass curve with its invariant theory
+(TauCeti#2254), and quadratic Galois descent for changes of variables and affine points
+(TauCeti#2268). A `refactor:` body can likewise reveal a completed proof or a newly named
+object. A body costs seconds to read; a miss is invisible until someone asks why a whole
+subject never appeared.
+
+**The window bounds discovery, not eligibility.** The permanent dedupe keys on *cited* PR
+numbers, so a result missed in an earlier window stays announceable the day it is found.
+When a triage lapse comes to light, fold the missed items into the next run's candidates
+and gate them normally.
 
 **Cross-check with the module-title sweep — a bland PR title can hide a named result.** Every
 Tau Ceti file opens with a `/-! # Title` naming what it contains, and named results are named
@@ -320,8 +365,26 @@ docstring's *Main results* before believing any title.
 
 ### 4. Significance gate — the ChatGPT second opinion
 
-Batch **all** surviving candidates into **one** `mcp__chatgpt-math__ask_chatgpt_math`
-call. Operational facts learned the hard way:
+**The gate is best-effort, not a precondition for posting.** Probe it with one cheap call
+**before** reading the window: if it is going to be unavailable, that should cost seconds,
+not a full read of every PR body. When it answers, its ranking drives bullet order and it
+serves as the second opinion on how noteworthy each result is. When it does not — codex
+quota exhausted, the account's plan refusing reasoning models, the MCP absent, a timeout —
+**run without it**: select and order on your own judgement, post as normal, and record one
+line in the run's final output naming why it was skipped.
+
+Do not hold the post, do not substitute a different model, and **do not mention the gate or
+its absence in the Zulip message** — that belongs in the log, not in front of readers.
+Holding is the worse failure: it takes a window that plainly contains notable results and
+publishes nothing, which is indistinguishable to readers from a quiet week.
+
+This was learned on 2026-08-15, when both codex accounts were out (`~/.codex` on quota,
+`~/.codex2` on quota *and* refusing `gpt-5.6-sol`/`gpt-5.4`/`gpt-5.3-codex` outright with
+HTTP 400) and two separate runs read all 138 PRs in the window, assembled a slate, and then
+declined to post because the gate was documented as mandatory.
+
+When the MCP *is* reachable: batch **all** surviving candidates into **one**
+`mcp__chatgpt-math__ask_chatgpt_math` call. Operational facts learned the hard way:
 
 - use `reasoning_effort: "high"`. **`max` reliably times out** on long prompts (the MCP
   aborts after ~30 min of silence) — `high` has been reliable;
@@ -344,7 +407,9 @@ worth announcing. For EACH numbered item below, answer with one of:
 
 For each ANNOUNCE, add: (a) the standard name of the result, (b) one sentence, for a
 mathematician who does not know it, saying what it asserts, (c) whether it has a
-Wikipedia page, and (d) a standard reference if you know one.
+Wikipedia page, and (d) a standard reference if you know one. Finally, rank the
+strongest candidates in order of how noteworthy they are to a general mathematical
+audience — this ranking, not the order of discovery, decides which result leads.
 
 Be conservative: if a result is only interesting inside its own proof, say SKIP. Do not
 be polite about it — a false ANNOUNCE is more costly than a false SKIP.
@@ -352,10 +417,28 @@ be polite about it — a false ANNOUNCE is more costly than a false SKIP.
 <numbered list: name, Lean statement, docstring summary>
 ```
 
+**The gate is the second opinion on interest, not only on eligibility** (owner
+instruction, 2026-08-10: get ChatGPT's view on *how interesting or noteworthy* each
+result is, every pass). ANNOUNCE/SKIP feeds the cut; the per-item reasons and the
+ranking feed the curation — which bullets run, in what order, and which eligible
+results wait for a better day. Curation stays the operator's call (§What counts), but
+it is made with the gate's reading in hand, never instead of it.
+
 Take its verdicts as **advice, not authority**. It has been wrong before on this project —
 it misnumbered a Wedhorn theorem and mis-attributed a Mathlib file's authors. If a verdict
 looks wrong, check the primary source and use your judgement. Never post a description you
 have not sanity-checked against the actual Lean statement.
+
+⚠ **The gate can only judge the summary you give it, so a summary that overstates a strand
+gets you an ANNOUNCE for something unproved.** Describe each candidate in the words of the
+file's own `## Main results`, not in the words of the roadmap milestone it serves. Worked
+instance (2026-08-08): a batch of adic-spaces PRs was described to the gate as "the machinery
+establishing that the valuation spectrum is a spectral space"; the gate duly said to announce
+"Spv is spectral", and only extracting the anchor revealed that no `SpectralSpace` conclusion
+exists anywhere in the tree — the patch criterion and the pro-constructible calculus had
+landed, the endpoint had not. This is the Bochner trap arriving through the gate rather than
+through the directory listing, so the same rule applies: find the theorem statement, or do
+not announce it.
 
 ### 5. Attribute each result to a PR
 
@@ -385,7 +468,7 @@ report the same PR, that is the bug. Check with `test -f .git/shallow` and
 Format (Zulip markdown):
 
 ```markdown
-**Voyager · what's new in Tau Ceti**
+**Voyager · what's new in Tau Ceti** *(AI-generated summary)*
 
 *Named results*
 - **[<Standard name>](<link to the source file at main>)** — <one sentence on what it asserts>. (TauCeti#123)
@@ -402,8 +485,11 @@ Format (Zulip markdown):
 
 …then send the updated state DM (see the watermark protocol).
 
-Zulip-specific rules, each learned from reader feedback on the first message:
+Zulip-specific rules, most learned from reader feedback on the first message:
 
+- **The header carries the disclosure suffix `*(AI-generated summary)*`** (owner request,
+  2026-08-19): every channel message — full update and quiet check-in alike — states in its
+  top line that an AI wrote it. The suffix survives any trimming done for the codepoint cap.
 - **One physical line per paragraph and per bullet.** Zulip keeps single newlines as line
   breaks, so hard-wrapped prose renders with ragged mid-sentence breaks. Never wrap.
 - **Use the realm linkifiers**: bare `TauCeti#NNN` for TauCeti PRs, `mathlib4#NNN` for
@@ -453,11 +539,15 @@ the result; no marketing adjectives; no "exciting"/"major milestone". State what
 theorem says, not how impressive it is. If a result is a strengthening of Mathlib, say so
 in the sentence.
 
+Length is neither a virtue nor a vice. The bullet list is **curated, not exhaustive**
+(§What counts), and carries no target count in either direction — put the most interesting
+result first, and let the message end when the interesting ones do, however many that is.
+
 **Quiet runs still report.** If the window contains newly merged PRs but nothing survives
 the gates, post this short check-in instead of the full format:
 
 ```markdown
-**Voyager · Tau Ceti check-in**
+**Voyager · Tau Ceti check-in** *(AI-generated summary)*
 
 No notable named results landed in this window (as judged by the voyager AI bot).
 

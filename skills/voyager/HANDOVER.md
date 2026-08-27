@@ -24,16 +24,17 @@ again. When in doubt, skip; the result will still be true tomorrow.
 | thing | value |
 |---|---|
 | credentials | `~/.zuliprc` (bot email `Voyager-bot@leanprover.zulipchat.com` — capital V; never echo the key) |
-| watermark | newest self-DM: `commit=02d13f9307fc… pr=1692` (DM id 614590157) |
-| messages posted | 613614529 (first-run backlog, 2026-07-30, edited in place per channel feedback; now 9,473 codepoints — **do not let it grow**), 613886812, 614078696, 614179130, 614350642, 614590153 |
+| watermark | newest self-DM: `commit=54d9297295d9… pr=1770` (DM id 614796848) — always re-read the DM; this row is a snapshot |
+| messages posted | 613614529 (first-run backlog, 2026-07-30, edited in place per channel feedback; now 9,473 codepoints — **do not let it grow**), 613886812, 614078696, 614179130, 614350642, 614590153 (edited 2026-08-05 to note the `ModularForm.L` overlap Thomas Browning raised), 614796841 (seventh, 13 bullets — too many; see the curation rule below) |
 | cadence | daily, 16:03 UK; the window always ends at TauCeti's `docgen` branch |
-| scheduling | a self-renewing session cron job in Chris's Claude session (currently `a22e2578`). Session-only: it dies if that session closes, and it fires late if the machine is asleep or the session busy at 16:03 — this has happened three times and is harmless (the watermark defines the window, not the clock). The sturdier long-term home is a GitHub Actions workflow in the TauCeti repo; Chris knows |
+| scheduling | a macOS launchd agent, `com.tauceti.voyager`, fires a fresh **headless** run (`claude -p`, claude3 account) daily at 16:03 — see `launchd/README.md` beside this file. It replaced the self-renewing session cron on 2026-08-12 after two production lessons: a session cron dies with its session (the 2026-08-11 credits incident forced a takeover), and macOS App Nap delayed every idle-session firing by 20–40 minutes. launchd fires on the wall clock and logs to `~/Library/Logs/voyager.log`; a machine asleep at 16:03 runs once on wake. Any leftover session cron is a harmless backup — the freshness abort resolves double-fires |
 | first-run.md | dead weight — the backlog was posted once (2026-07-30) and must never be reposted; ignore that file entirely |
 
 Owner decisions already made, not yours to revisit: no `sorry` counts in the stats block
 (the no-`sorry` rule stays as an announcement gate); daily cadence at 16:03 UK; quiet windows
 with merged PRs still get a short check-in; only a genuinely empty window posts nothing; the
-loop keeps running until Chris says otherwise.
+bullet list is curated rather than exhaustive, and short is fine (2026-08-05 — see the
+curation rule under House style); the loop keeps running until Chris says otherwise.
 
 ## The shape of a run
 
@@ -72,6 +73,34 @@ back-reference to the earlier PR.
 
 The messages have earned trust by sounding like a mathematician telling colleagues what is
 now proved, not like release notes. Every rule below came from feedback or a near-miss.
+
+**Curate, don't enumerate — and there is no target length.** Chris, 2026-08-05, after the
+seventh update ran to thirteen bullets: *"don't feel obliged to make the list long, it's more
+important to keep it interesting and mention significant results."* Every bullet in that
+message had passed all three gates, which is exactly the trap — the gates decide what is
+*allowed*, and you still have to decide what is *worth reading*.
+
+Chris sharpened this on 2026-08-09, after a message came in at five bullets and dropped an
+interesting one to stay there: *"there is no rule to cut it to 5. the rule is that there doesn't
+need to be a minimum or maximum, but you just need to make them be interesting."* Both failure
+directions are real and the second is the sneakier: padding a thin window is obvious, whereas
+cutting a good bullet to hit a self-imposed count looks like discipline. It isn't. Judge every
+candidate on its own interest and keep exactly those that pass, whether that is one or ten.
+Nothing is lost by leaving a dull one out — the dedupe keys on *cited* PR numbers, so it stays
+announceable the day it matters. Message 614796841 (thirteen bullets, padded) and message
+615474670 (five bullets, one good one cut for the count) are the two calibration points, one in
+each direction.
+
+**Read every PR's contents — titles are not a filter.** Chris, 2026-08-10, after asking why
+no elliptic-curve result had ever appeared: *"you can't rely on PR title, don't be lazy, this
+is meant to be a slow methodical and careful check. you need to look at the contents of each
+PR and from that make your list."* The record that prompted it: 105 bullets announced, zero
+elliptic-curve results, while fifteen `feat(EllipticCurve)` PRs landed in two windows —
+Silverman III.10 on Aut(E) for j ∉ {0, 1728} (TauCeti#2248), the quadratic twist and its
+invariants (TauCeti#2254), and quadratic Galois descent (TauCeti#2268) among them, none
+opened because the directory's titles read as bookkeeping. SKILL.md §2 now requires reading
+every body in the window, and adds that the window bounds discovery, not eligibility: a
+result found late is announced late, not never.
 
 **The bullet is the unit.** Its anatomy, fixed:
 
@@ -152,7 +181,7 @@ a bug. No sorry counts.
 
 **The quiet check-in**, when PRs merged but nothing survived the gates:
 
-> **Voyager · Tau Ceti check-in**
+> **Voyager · Tau Ceti check-in** *(AI-generated summary)*
 >
 > No notable named results landed in this window (as judged by the voyager AI bot).
 >
@@ -227,6 +256,16 @@ message, not a silent rewrite of history.
   working (stats, anchors, sorry gate) while it runs.
 - The sorry gate greps *mentions*: read the hits; a docstring saying "the `sorry`-goal in
   Suggested.lean" is not a proof hole.
+- Python's TLS can break independently of `curl`. On this machine the python.org 3.12 build
+  lost its CA file (`ssl.get_default_verify_paths().cafile` is `None`), so `zulip.py check`
+  died with `CERTIFICATE_VERIFY_FAILED` while `curl` kept working. The run path is curl-only
+  and was unaffected — but do not read a failing probe as a dead bot. Fix with
+  `export SSL_CERT_FILE=$(python3 -c 'import certifi;print(certifi.where())')`, or run the
+  installer's "Install Certificates.command".
+- The state DM's SHA must be copied, never retyped or padded — see the watermark protocol in
+  SKILL.md, rule 5.
+- A freshness abort is a *success*. If a human asked for the post early and the cron then
+  fires, the gate stops the double-post; report the abort and move on.
 - Never post from a fallback channel or invent output when credentials fail — report loudly
   and exit.
 
