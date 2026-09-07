@@ -50,9 +50,12 @@ SKILL.md has the details; the skeleton, in order, with no step optional:
    `gh search code` on master **with a positive control** (e.g. `IsFredholm`) before trusting
    any empty result, then `lean_leansearch` for statement-level checks on high-risk items,
    then *read the hit* — a name hit is not a statement hit, in either direction.
-6. **Significance gate** — one batched chatgpt-math call, `reasoning_effort: "high"` (never
-   `"max"`, which times out). Verdicts are advice, not authority; sanity-check every sentence
-   you adopt against the actual Lean statement.
+6. **Significance gate** — one batched call to `gpt-6-astra` through the npm `codex` CLI
+   (`CODEX_HOME=~/.codex`, exact command in SKILL.md §4), reasoning effort `high` (never
+   `ultra`/`max`, which time out); best-effort, never a precondition for posting. Model
+   policy: always the newest top OpenAI model — bump the name when one ships. Verdicts are
+   advice, not authority; sanity-check every sentence you adopt against the actual Lean
+   statement.
 7. **Compose** (see the style section — this is the part Chris singled out as good).
 8. **Verify every link**, count codepoints (< 9,500), post, **re-fetch rendered** and check
    the stats lines are present and `[message truncated]` is absent.
@@ -223,8 +226,9 @@ message, not a silent rewrite of history.
 - Dirty scratch tree blocks checkout: `git checkout -- <file>`, then re-detach; stats must
   be computed at the docgen commit.
 - Python f-strings eat literal braces — double them, or build messages with concatenation.
-- The chatgpt-math MCP call can take minutes and may be backgrounded by the harness; keep
-  working (stats, anchors, sorry gate) while it runs.
+- The codex gate call can take minutes: give it a generous timeout (or run it in the
+  background) and keep working (stats, anchors, sorry gate) while it runs; `< /dev/null` is
+  mandatory or codex blocks on stdin.
 - The sorry gate greps *mentions*: read the hits; a docstring saying "the `sorry`-goal in
   Suggested.lean" is not a proof hole.
 - Never post from a fallback channel or invent output when credentials fail — report loudly
@@ -234,6 +238,12 @@ message, not a silent rewrite of history.
 
 - Canonical skill: `~/Documents/GitHub/mathlib-quality/skills/voyager/SKILL.md` (this repo
   is the single source; a copy that once lived in TauCetiRoadmap was deleted to stop drift).
+- The daily scheduler lives in `~/.claude3/voyager/` (`run.sh` launched by launchd
+  `com.tauceti.voyager` at 16:03 local, `prompt.txt`, `smoke.txt`, `freshness.py`,
+  `status.py`). Its Claude model chain is `claude-fable-5-1` (Fable 5.1) on every account
+  before `claude-opus-5` on any; the OpenAI gate model is `gpt-6-astra`. Owner policy
+  (2026-09-07): always the most capable current model of each vendor — bump both names when
+  newer ones ship.
 - The five Claude accounts on this machine all see it via the `mathlib-quality` plugin.
 - Session-to-session operational memory (watermark history, lessons, current cron id) has
   been kept in Chris's Claude memory as `voyager-bot-state`; if you are not that Claude,

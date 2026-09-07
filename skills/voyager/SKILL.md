@@ -95,9 +95,9 @@ confirms channel subscription without posting. Run it first after setup.
 
 ## Prerequisites
 
-Tools: `gh` CLI (authenticated), `git`, python3 stdlib only, the **chatgpt-math MCP** for
-the significance gate, and a local Mathlib checkout for the novelty gate (the roadmap
-repo's `.lake/packages/mathlib` is fine).
+Tools: `gh` CLI (authenticated), `git`, python3 stdlib only, the npm **`codex` CLI** (OpenAI,
+`CODEX_HOME=~/.codex`) for the significance gate, and a local Mathlib checkout for the
+novelty gate (the roadmap repo's `.lake/packages/mathlib` is fine).
 
 If credentials are missing, **stop and report** — do not post to a fallback channel and do
 not invent a message.
@@ -121,9 +121,10 @@ general-purpose agent with:
 > TauCeti since that commit, apply the Mathlib-novelty and ChatGPT significance gates, and
 > post the update. If nothing survives the gates, post nothing and report that.
 
-The agent needs the Zulip env vars, an authenticated `gh`, and the chatgpt-math MCP. Give it
-`Bash`, `Read`, `Grep`, `Glob`, and the MCP tools. It does **not** need write access to any
-repository — Voyager never commits anything.
+The agent needs the Zulip env vars, an authenticated `gh`, and the npm `codex` CLI on PATH
+(the significance gate runs through it, not through an MCP — see §4). Give it `Bash`, `Read`,
+`Grep`, `Glob`. It does **not** need write access to any repository — Voyager never commits
+anything.
 
 **On the daily schedule** (the intended cadence): once a day, at `3 16 * * *` local
 (16:03 UK — owner-chosen slot). Timing is forgiving because the window ends at the
@@ -320,14 +321,36 @@ docstring's *Main results* before believing any title.
 
 ### 4. Significance gate — the ChatGPT second opinion
 
-Batch **all** surviving candidates into **one** `mcp__chatgpt-math__ask_chatgpt_math`
-call. Operational facts learned the hard way:
+**Model policy (owner request, 2026-09-07): always the most capable current OpenAI reasoning
+model — today `gpt-6-astra`, which replaced `gpt-5.6-sol`. When OpenAI ships a newer top
+model, bump the name here, in HANDOVER.md, and in the scheduler's `prompt.txt`/`smoke.txt`
+(`~/.claude3/voyager`).** The gate runs through the npm `codex` CLI
+(`npm i -g @openai/codex@latest`, ≥ 0.153) on the primary account `CODEX_HOME=~/.codex`; the
+old `chatgpt-math` MCP wrapper rejects every model on a ChatGPT account and is no longer used.
 
-- use `reasoning_effort: "high"`. **`max` reliably times out** on long prompts (the MCP
-  aborts after ~30 min of silence) — `high` has been reliable;
+Batch **all** surviving candidates into **one** call:
+
+```bash
+cd ~ && CODEX_HOME=$HOME/.codex codex exec --ephemeral --skip-git-repo-check -s read-only \
+  -m gpt-6-astra -c model_reasoning_effort="high" -o /tmp/voyager-gate-answer.md \
+  "$(cat /tmp/voyager-gate-question.txt)" < /dev/null
+```
+
+Operational facts learned the hard way:
+
+- reasoning effort `high`. **`ultra`/`max` reliably time out** on long prompts — `high` has
+  been reliable;
+- `< /dev/null` is mandatory (codex otherwise blocks waiting on stdin); read the verdicts
+  from the `-o` file and give the call a generous timeout — it can take minutes;
+- probe the route with a one-word question at effort `low` **before** reading the window, so
+  an unavailable gate costs seconds instead of a 138-PR read;
 - one batched call, not one per candidate: each call costs minutes;
-- the question must be **self-contained** — ChatGPT has no file access, so paste the
-  declaration name, its statement, and its docstring summary.
+- the question must be **self-contained** — the model has no file access, so paste the
+  declaration name, its statement, and its docstring summary;
+- the gate is **best-effort, never a precondition for posting**: if it is unavailable (quota,
+  the plan rejects the model, codex missing, timeout), select and order on your own
+  judgement, post as normal, and say so — with the model name — in the run log, never in the
+  Zulip message, and never by substituting a different model.
 
 Prompt template:
 
