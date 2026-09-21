@@ -229,9 +229,11 @@ message, not a silent rewrite of history.
 - Dirty scratch tree blocks checkout: `git checkout -- <file>`, then re-detach; stats must
   be computed at the docgen commit.
 - Python f-strings eat literal braces — double them, or build messages with concatenation.
-- The codex gate call (`gate.sh ask`) can take minutes: give it a generous timeout (or run
-  it in the background) and keep working (stats, anchors, sorry gate) while it runs; the
-  helper handles `< /dev/null` and the account fallback — don't call `codex exec` directly.
+- The codex gate call (`gate.sh ask`) takes minutes and runs in its own systemd unit: call it
+  in the foreground (Bash timeout 600000) and rerun the same command on `GATE_PENDING`; to keep
+  working meanwhile, start it with `GATE_WAIT=0` and collect with a second `ask`. Never detach
+  it yourself and never end the turn while it is pending (SKILL.md §4). The helper handles
+  `< /dev/null` and the account fallback — don't call `codex exec` directly.
 - The sorry gate greps *mentions*: read the hits; a docstring saying "the `sorry`-goal in
   Suggested.lean" is not a proof hole.
 - Never post from a fallback channel or invent output when credentials fail — report loudly

@@ -341,8 +341,19 @@ Probe first, then batch **all** surviving candidates into **one** call:
 ```bash
 ~/.claude3/voyager/gate.sh probe            # prints GATE_ACCOUNT=<CODEX_HOME> or GATE_UNAVAILABLE
 ~/.claude3/voyager/gate.sh ask /tmp/voyager-gate-question.txt /tmp/voyager-gate-answer.md
-                                            # prints GATE_SERVED_BY=.codex|.codex2; effort high
+                                            # prints GATE_SERVED_BY=.codex|.codex2, GATE_PENDING
+                                            # or GATE_UNAVAILABLE; effort high
 ```
+
+The call takes 4–10 minutes. `gate.sh ask` runs it in its own systemd user unit
+(`voyager-gate.service`) and blocks for at most 9 minutes. **Run it in the foreground with the
+Bash timeout at 600000.** On `GATE_PENDING`, run the *same* command again: it re-attaches to the
+running call rather than starting a second one. To work in parallel, start it with
+`GATE_WAIT=0 … ask …` (returns `GATE_PENDING` at once), do the stats, anchors and `sorry` gate,
+then run the plain `ask` again to collect. **Never detach it yourself** (`run_in_background`,
+`&`, `nohup`, `setsid`): Claude Code kills detached children when the tool call ends, which
+lost the gate call on 2026-09-21. **Never end your turn while it is pending**: a headless run
+ends with its turn, which lost the whole run on 2026-09-20.
 
 (Underneath, `gate.sh ask` runs `codex exec --ephemeral --skip-git-repo-check -s read-only
 -m gpt-6-astra -c model_reasoning_effort="high" -o <answer> "$(cat <question>)" < /dev/null`
@@ -352,8 +363,8 @@ Operational facts learned the hard way:
 
 - reasoning effort `high`. **`ultra`/`max` reliably time out** on long prompts — `high` has
   been reliable;
-- read the verdicts from the answer file and give `gate.sh ask` a generous timeout — it can
-  take minutes (the helper already passes `< /dev/null`, without which codex blocks on stdin);
+- read the verdicts from the answer file (the helper already passes `< /dev/null`, without
+  which codex blocks on stdin);
 - run `gate.sh probe` **before** reading the window, so an unavailable gate costs seconds
   instead of a 138-PR read; a usage-limited primary account is a normal condition — the
   helper falls through to `~/.codex2` (2026-09-10: primary limited until 2026-09-15);
