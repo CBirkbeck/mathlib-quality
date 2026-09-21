@@ -510,11 +510,26 @@ zero-change check-ins.
 ### 7. Stats
 
 ```bash
-find TauCeti -name '*.lean' | xargs wc -l | tail -1        # LOC, Tau Ceti only
+# LOC, Tau Ceti only. Do NOT "simplify" this to `xargs wc -l | tail -1`: xargs splits
+# 5,000+ files into several batches, wc prints a `total` per batch, and tail -1 then
+# reports only the LAST batch. That shipped a wrong number twice: 2026-09-17 (224,676
+# against a true 1,280,610) and 2026-09-21 (365,766 against 1,443,324) — the fix for
+# the first sat uncommitted, so the second run read the old recipe. cat into one
+# stream and count once.
+find TauCeti -name '*.lean' -print0 | xargs -0 cat | wc -l
 find TauCeti -name '*.lean' | wc -l                        # files
 grep -rhcE '^(theorem|lemma|def|structure|class|abbrev|instance)' --include='*.lean' TauCeti | awk '{s+=$1} END {print s}'
 gh api "search/issues?q=repo:TauCetiProject/TauCeti+is:pr+is:merged&per_page=1" --jq '.total_count'
 ```
+
+**Sanity-check every stat against the previous post before you publish.** The library is
+append-mostly, so LOC, files and declarations should each be *slightly up* on the last
+update — a few tens of thousands of lines per day at the current rate. Any figure that
+falls, or jumps by a factor, is a broken recipe and not a real measurement: read the
+previous post's stats block and compare all three. On 2026-09-17 a LOC figure of 224,676
+went out against the previous day's 1,246,270 — an 82% overnight "drop" that this one
+comparison would have caught before posting. If a figure fails the check, fix the recipe
+and recompute; never post it.
 
 Do **not** report `sorry` counts in the stats (owner decision). The no-`sorry` rule remains
 an announcement *gate*: check nothing you announce has a `sorry` in its file, remembering a
