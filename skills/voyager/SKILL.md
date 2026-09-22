@@ -436,11 +436,11 @@ Format (Zulip markdown):
 **Voyager · what's new in Tau Ceti**
 
 *Named results*
-- **[<Standard name>](<link to the source file at main>)** — <one sentence on what it asserts>. (TauCeti#123)
+- **[<Standard name>](<link to the source file at main>)** — <one sentence on what it asserts>. (TauCeti#123) · [review it](https://cbirkbeck.github.io/tauceti-reviewed-by-test/#d=<Fully.Qualified.Name>)
 - ...
 
 *Notable definitions*
-- **[<Name>](<source link>)** — <what it is, and what it is for>. (TauCeti#124)
+- **[<Name>](<source link>)** — <what it is, and what it is for>. (TauCeti#124) · [review it](https://cbirkbeck.github.io/tauceti-reviewed-by-test/#d=<Fully.Qualified.Name>)
 
 *Stats*
 - <N> lines of Lean across <M> files (Tau Ceti only, excluding Mathlib)
@@ -448,10 +448,18 @@ Format (Zulip markdown):
 - <P> PRs merged since the last update (<T> total)
 ```
 
-…then send the updated state DM (see the watermark protocol).
+…then send the updated state DM (see the watermark protocol), and add what you announced
+to the review page's named list (§8).
 
 Zulip-specific rules, each learned from reader feedback on the first message:
 
+- **End every bullet with a review link**: ` · [review it](<review page>#d=<Fully.Qualified.Name>)`,
+  the same fully qualified name the docs anchor uses. It takes a reader from the announcement
+  to the declaration's page on the review site, where they can say it is the intended notion,
+  suggest a test or report that it is wrong. The review page is
+  `https://cbirkbeck.github.io/tauceti-reviewed-by-test/` while the system is a trial in that
+  repository; when it moves, change the base here, in §8, and in HANDOVER.md, and leave the
+  older messages alone.
 - **One physical line per paragraph and per bullet.** Zulip keeps single newlines as line
   breaks, so hard-wrapped prose renders with ragged mid-sentence breaks. Never wrap.
 - **Use the realm linkifiers**: bare `TauCeti#NNN` for TauCeti PRs, `mathlib4#NNN` for
@@ -558,6 +566,25 @@ The `sorry` grep counts **mentions**, not proof holes: a docstring saying "the `
 `Suggested.lean`" matches too. The hit count is tiny, so read every hit and report only real
 `sorry` terms. (As of `a695b8c` the library's one grep hit is a docstring mention — the honest
 number was 0.)
+
+### 8. Tell the review page what you announced
+
+The review page keeps a list of Tau Ceti's **named results and notable definitions** — the
+declarations worth reading first — and Voyager is one of its two sources (the other is the
+roadmaps' status files). After the channel post and the state DM, add what you announced: one
+comment on issue #1 of `CBirkbeck/tauceti-reviewed-by-test`, carrying the agent marker and one
+line per bullet, in the order posted:
+
+    <!--reviewed-by:v1 {"agent": "Voyager, <model>, run <YYYY-MM-DD>"}-->
+    Named: <Fully.Qualified.Name> — <the bold name, as announced> — <the sentence, without the PR numbers>
+    Named: ...
+
+Send it with `gh issue comment 1 --repo CBirkbeck/tauceti-reviewed-by-test --body-file <file>`,
+using the same fully qualified names as the review links. A bot answers on the issue; a
+declaration already on the list is left alone, so a repost or a second run costs nothing. This
+is the only thing Voyager writes outside Zulip, and it writes no code: if `gh` cannot comment,
+say so in the final output and carry on — the post has already gone out, and a later run can
+add the lines.
 
 ## First run (once, ever)
 
