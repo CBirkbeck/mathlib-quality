@@ -239,16 +239,6 @@ message, not a silent rewrite of history.
 - Never post from a fallback channel or invent output when credentials fail — report loudly
   and exit.
 
-## The review page
-
-Since 2026-09-22 each bullet ends in ` · [review it](…#d=<name>)`, and after the post and the
-state DM the run adds its announcements to the review page's named list with `Named:` lines
-on issue #1 of CBirkbeck/tauceti-reviewed-by-test (SKILL.md §8). That page is a trial of
-review marks, tests and problem reports on Tau Ceti declarations, in its own repository —
-nothing Voyager does there touches Tau Ceti. Voyager is one of the two sources of its named
-list; the roadmaps' STATUS.md files are the other. If the page moves, change the base URL in
-SKILL.md §6 and §8 and here; older Zulip messages keep the old links and are left alone.
-
 ## Where things live
 
 - Canonical skill: `~/Documents/GitHub/mathlib-quality/skills/voyager/SKILL.md` (this repo
