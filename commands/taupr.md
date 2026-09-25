@@ -5,7 +5,7 @@ description: The Tau Ceti worker loop — one unit of work per round, first that
 
 # /taupr — the Tau Ceti worker loop
 
-Modelled on the reference worker (`kim-em/TauCetiWorker`): **a round does exactly one unit
+Modelled on the reference worker (`TauCetiProject/TauCetiWorker`): **a round does exactly one unit
 of work — the first of these that applies.**
 
 ```
@@ -365,4 +365,4 @@ Next:       <what the next round would pick up>
 - `references/pr-workflow.md` — the source sweep
 - `references/mathlib-search.md` — proving mathlib-absence
 - Upstream: `AGENTS.md`, `COORDINATION.md` (TauCeti); `REVIEWING.md` (TauCetiReview);
-  `kim-em/TauCetiWorker` (the reference worker this cascade follows)
+  `TauCetiProject/TauCetiWorker` (the reference worker this cascade follows)
