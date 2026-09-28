@@ -31,8 +31,8 @@ R1  REBASE   a red-team PR has a genuine TauCeti/ conflict
 R2  FIX-CI   a red-team PR has `build` red
 R3  FIX      a red-team PR has review findings: fix them, or contest in the rubric thread
 R4  REVIEW   a red-team PR is green, and unreviewed ≥ 1h after its build → tauceti-review --post
-R5  SHIP     fewer than --max-open (default 3) red-team PRs are open, and the ledger holds a
-             confirmed finding with no PR: fix the worst one and open its PR
+R5  SHIP     fewer than --max-open (default 3) of this agent's PRs are open, and the ledger
+             holds a confirmed finding with no PR: fix the worst one and open its PR
 R6  HUNT     otherwise — unless --max-queue (default 10) topics of confirmed findings already
              wait for a PR — claim the next file and audit it down to the last declaration
     IDLE     none of the above
@@ -61,7 +61,7 @@ R6  HUNT     otherwise — unless --max-queue (default 10) topics of confirmed f
 /redteam --under <prefix>     hunt only files under this path, e.g. TauCeti/NumberTheory/
 /redteam --only <r>[,<r>]     restrict to steps: rebase,fix-ci,fix,review,ship,hunt
 /redteam --skip <r>[,<r>]     drop steps from the cascade
-/redteam --max-open <n>       red-team PRs open before SHIP stops (default 3; 0 = no cap)
+/redteam --max-open <n>       this agent's open PRs before SHIP stops (default 3; 0 = no cap)
 /redteam --max-queue <n>      queued topics (future PRs) before HUNT stops (default 10)
 /redteam --review-age <dur>   R4 threshold (default 1h)
 ```
@@ -85,12 +85,17 @@ as a finding, status `needs-human`, and it reaches the user through the report.
 ## Prerequisites
 
 - `gh` authenticated; `uvx` on PATH; `codex` logged in (R4's reviewer).
-- The `chatgpt-math` MCP server (`/setup-chatgpt`). **Every call uses
-  `model: "gpt-6-astra"` and `reasoning_effort: "max"`.** If it is down, hunt anyway: the
-  findings stay `suspected`, because a win cannot be recorded without Astra.
+- **Astra: gpt-6-astra at `max` effort, every call.** Through the `chatgpt-math` MCP tool
+  (`/setup-chatgpt`) when this session has it; otherwise through the Codex CLI, which needs
+  only a `codex` login: write the question to a file and run `python3 "$RT" astra <file>`.
+  Set `REDTEAM_CODEX_HOMES` (e.g. `~/.codex:~/.codex2`) to fall through to another login
+  when one hits its usage limit. If neither works, hunt anyway: the findings stay `suspected`, because a win cannot be
+  recorded without Astra.
 - The `lean-lsp` MCP server.
-- **A TauCeti checkout of this agent's own** (rounds switch branches), with Mathlib's cache
-  fetched and the modules you touch built. Several agents need several checkouts.
+- **A TauCeti checkout of this agent's own** (rounds switch branches). Fetch both caches,
+  `lake exe cache get` (Mathlib) and `bash scripts/lake-cache-get.sh .` (Tau Ceti's own
+  oleans; without it `lake build` compiles the library for hours), then `lake build`.
+  Several agents need several checkouts.
 - The helper, resolved once per round:
   ```bash
   RT="${CLAUDE_PLUGIN_ROOT:-$(ls -d ~/.claude/plugins/cache/*/mathlib-quality/*/ 2>/dev/null | sort -V | tail -1)}/scripts/redteam.py"
@@ -117,7 +122,10 @@ gh pr list --repo TauCetiProject/TauCeti --state open --author @me \
    --json number,headRefName,headRefOid,title,body,updatedAt,labels --limit 100
 ```
 
-**Ours** = those whose body contains `<!--redteam:v1`. For each, read the `build` status and
+**Ours** = those whose `<!--redteam:v1 {...}-->` block names this agent as `owner`
+(`python3 "$RT" whoami`). Each agent tends and counts only its own PRs, so every agent has
+its own `--max-open`. The id lives in the checkout (`.mathlib-quality/redteam-owner`): an
+agent restarted in the same checkout picks its PRs back up. For each, read the `build` status and
 the newest scoreboard exactly as `/taupr` does (`statusCheckRollup` context `build`; the
 `<!--tauceti-meta:v1 {...}-->` block of the newest `<!--tauceti-scoreboard-->` comment — a
 review binds only to the `head_sha` it names; never trust labels).
@@ -163,7 +171,7 @@ A `[rejected] (stale info)` means someone moved it: re-observe, never plain-push
 
 # R5 — Ship a confirmed finding
 
-Only when fewer than `--max-open` of our red-team PRs are open (parked ones excluded).
+Only when fewer than `--max-open` of this agent's PRs are open (parked ones excluded).
 
 1. **Pick.** `python3 "$RT" tally` lists the queue worst first, each with its topic. Take
    the first, then gather the rest of its topic (below).
@@ -215,7 +223,7 @@ Never mix categories to save a review cycle; only an inseparable change joins th
 <type>(<scope>): <what the fix does>          type: fix for CRITICAL, refactor or chore otherwise
 
 Roadmap: <canonical roadmap directory of the code, or none>
-<!--redteam:v1 {"findings":["<id>",...],"patterns":["<slug>",...],"severity":"<worst>"}-->
+<!--redteam:v1 {"owner":"<whoami>","findings":["<id>",...],"patterns":["<slug>",...],"severity":"<worst>"}-->
 
 ## What was wrong
 <per finding: the declaration, the claim, and why it matters downstream>
@@ -312,8 +320,8 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
 
 For an unattended schedule, use the `schedule` skill to create a cron running `/redteam`.
 Several agents can run at once — each in its own checkout, sharing the ledger; claims keep
-them off each other's files and PRs. `--max-open` counts the account's red-team PRs, so
-raise it when several agents share one account.
+them off each other's files, and each tends only the PRs carrying its own id, with its own
+`--max-open`.
 
 Between rounds, one line:
 

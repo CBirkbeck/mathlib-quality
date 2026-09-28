@@ -8,6 +8,8 @@
   audit     record a finished file audit (validated; every declaration needs a verdict
             in every category)
   sync      mark findings landed or rejected once their PRs merge or close
+  whoami    this agent's id: its PRs carry it, so each agent tends and counts only its own
+  astra     ask gpt-6-astra through the Codex CLI, for machines without the chatgpt-math MCP
   tally     the scoreboard: wins, losses, landed fixes, coverage, recurring patterns
 
 The ledger is a directory: $REDTEAM_LEDGER, else ~/.tauceti-redteam. Each agent appends
@@ -468,6 +470,44 @@ def cmd_sync(a):
     print("synced: %d changed" % changed)
 
 
+# --- whoami / astra ----------------------------------------------------------------------
+
+def cmd_whoami(a):
+    print(owner_id(a.repo))
+
+
+def cmd_astra(a):
+    """The same model and effort the chatgpt-math MCP uses, through `codex exec`. The question is
+    read from stdin, so its size is not limited by the command line; the answer is printed."""
+    q = a.question[1:] if a.question.startswith("@") else a.question
+    if not os.path.isfile(q):
+        die("the question must be a file (write it to one first): %s" % q)
+    # $REDTEAM_CODEX_HOMES lists Codex logins to try in order (colon-separated), so one that
+    # has hit its usage limit falls through to the next; unset means the default login.
+    homes = [os.path.expanduser(h) for h in os.environ.get("REDTEAM_CODEX_HOMES", "").split(":") if h] or [None]
+    errors = []
+    for home in homes:
+        out = os.path.join(ledger_dir(), "astra-%d-%d.txt" % (os.getpid(), now()))
+        env = dict(os.environ, CODEX_HOME=home) if home else None
+        with open(q) as stdin:
+            try:
+                r = subprocess.run(["codex", "exec", "-m", a.model, "-c", 'model_reasoning_effort="%s"' % a.effort,
+                                    "--ephemeral", "--skip-git-repo-check", "-s", "read-only", "-o", out, "-"],
+                                   stdin=stdin, capture_output=True, text=True, timeout=2400, env=env)
+            except (OSError, subprocess.TimeoutExpired) as e:
+                errors.append("%s: %s" % (home or "default login", e))
+                continue
+        answer = open(out).read() if os.path.exists(out) else ""
+        if os.path.exists(out):
+            os.remove(out)
+        if r.returncode == 0 and answer.strip():
+            print(answer)
+            return
+        tail = [ln for ln in r.stderr.splitlines() if ln.startswith("ERROR")][-1:] or r.stderr.splitlines()[-1:]
+        errors.append("%s: exit %d %s" % (home or "default login", r.returncode, " ".join(tail)))
+    die("Astra is unavailable this round:\n  " + "\n  ".join(errors))
+
+
 # --- tally ------------------------------------------------------------------------------
 
 def cmd_tally(a):
@@ -539,13 +579,18 @@ def main():
     au.add_argument("json", help="the audit as JSON, or @path to a JSON file")
     au.add_argument("--ref", default="origin/main")
     sub.add_parser("sync", help="mark findings landed or rejected once their PRs merge or close")
+    sub.add_parser("whoami", help="print this agent's id (kept in <checkout>/.mathlib-quality/redteam-owner)")
+    q = sub.add_parser("astra", help="ask gpt-6-astra through the Codex CLI; prints the answer")
+    q.add_argument("question", help="a file holding the question (or @file)")
+    q.add_argument("--model", default="gpt-6-astra")
+    q.add_argument("--effort", default="max")
     t = sub.add_parser("tally", help="the scoreboard")
     t.add_argument("--json", action="store_true")
     t.add_argument("--limit", type=int, default=10)
     a = ap.parse_args()
     a.repo = os.path.abspath(os.path.expanduser(a.repo))
     {"next": cmd_next, "claim": cmd_claim, "finding": cmd_finding, "audit": cmd_audit, "sync": cmd_sync,
-     "tally": cmd_tally}[a.cmd](a)
+     "whoami": cmd_whoami, "astra": cmd_astra, "tally": cmd_tally}[a.cmd](a)
 
 
 if __name__ == "__main__":

@@ -189,10 +189,14 @@ reuse and generality findings need a probe; the others may cite a measurement.
 ## 3. Astra
 
 Every call: `mcp__chatgpt-math__ask_chatgpt_math` with `model: "gpt-6-astra"` and
-`reasoning_effort: "max"`. Astra cannot see files, so each question carries everything it
-needs. The server passes the question as a single command-line argument, so keep each call
-under ~100 KB. Split a larger file at declaration boundaries, repeating the header and
-imports in each part.
+`reasoning_effort: "max"`. Where that MCP server is not installed (a machine without Node),
+write the question to a file and run `python3 "$RT" astra <file>`: the same model and effort
+through the Codex CLI, reading the question on stdin (`REDTEAM_CODEX_HOMES` lists logins
+to fall through when one is at its usage limit). Astra cannot see files, so each
+question carries everything it needs. The MCP server passes the question as a single
+command-line argument, so keep an MCP call under ~100 KB, splitting a larger file at
+declaration boundaries with the header and imports repeated in each part; the CLI route has
+no such limit.
 
 ### A1 — blind pass (one per file, in a background Agent)
 
