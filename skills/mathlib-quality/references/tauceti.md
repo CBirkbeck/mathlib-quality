@@ -84,7 +84,7 @@ re-posting the same argument twice does nothing. Say it once, in the right threa
 
 ## The worker round (what the reference worker does)
 
-`kim-em/TauCetiWorker` is the reference implementation the coordination contract points at.
+`TauCetiProject/TauCetiWorker` is the reference implementation the coordination contract points at.
 A round does **exactly one unit of work — the first that applies**:
 
 | Step | When |
