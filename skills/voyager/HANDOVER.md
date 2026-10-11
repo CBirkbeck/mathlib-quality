@@ -1,10 +1,10 @@
 # Voyager — operator handover
 
-Written 2026-08-04, after the sixth update. The authority on procedure is `SKILL.md` in this
-directory: read it in full before your first run, and treat it as the contract — the logic
-deliberately lives there, not in shell scripts or anyone's memory. This document is the
-briefing on top of it: the current state, the editorial taste the skill can't fully encode,
-and the production lessons with the scars still attached.
+Written 2026-08-04, after the sixth update; updated 2026-10-11. The authority on procedure
+is `SKILL.md` in this directory: read it in full before your first run, and treat it as the
+contract — the logic deliberately lives there, not in shell scripts or anyone's memory. This
+document is the briefing on top of it: the current state, the editorial taste the skill
+can't fully encode, and the production lessons with the scars still attached.
 
 ## What you are operating
 
@@ -26,12 +26,14 @@ again. When in doubt, skip; the result will still be true tomorrow.
 | credentials | `~/.zuliprc` (bot email `Voyager-bot@leanprover.zulipchat.com` — capital V; never echo the key) |
 | watermark | newest self-DM: `commit=02d13f9307fc… pr=1692` (DM id 614590157) |
 | messages posted | 613614529 (first-run backlog, 2026-07-30, edited in place per channel feedback; now 9,473 codepoints — **do not let it grow**), 613886812, 614078696, 614179130, 614350642, 614590153 |
-| cadence | daily, 16:03 UK; the window always ends at TauCeti's `docgen` branch |
+| cadence | twice daily, 04:03 and 16:03 UK (since 2026-10-10); the window always ends at TauCeti's `docgen` branch |
 | scheduling | a self-renewing session cron job in Chris's Claude session (currently `a22e2578`). Session-only: it dies if that session closes, and it fires late if the machine is asleep or the session busy at 16:03 — this has happened three times and is harmless (the watermark defines the window, not the clock). The sturdier long-term home is a GitHub Actions workflow in the TauCeti repo; Chris knows |
 | first-run.md | dead weight — the backlog was posted once (2026-07-30) and must never be reposted; ignore that file entirely |
 
 Owner decisions already made, not yours to revisit: no `sorry` counts in the stats block
-(the no-`sorry` rule stays as an announcement gate); daily cadence at 16:03 UK; quiet windows
+(the no-`sorry` rule stays as an announcement gate); twice-daily cadence at 04:03 and 16:03
+UK (since 2026-10-10); every post made with Fable and Astra, so no gate means no post (since
+2026-10-10); short bullets, at most 40 words with one link (since 2026-10-11); quiet windows
 with merged PRs still get a short check-in; only a genuinely empty window posts nothing; the
 loop keeps running until Chris says otherwise.
 
@@ -53,18 +55,20 @@ SKILL.md has the details; the skeleton, in order, with no step optional:
 6. **Significance gate** — one batched call to `gpt-6-astra` through the npm `codex` CLI
    via `~/.claude3/voyager/gate.sh` (primary account `~/.codex`, fallback `~/.codex2`, same
    model on both; exact commands in SKILL.md §4), reasoning effort `high` (never
-   `ultra`/`max`, which time out); best-effort, never a precondition for posting. Model
+   `ultra`/`max`, which time out). It is required since 2026-10-10: if neither account can
+   serve, post nothing and end the run as failed, so the scheduler retries. Model
    policy: always the newest top OpenAI model — bump the name in `gate.sh` when one ships.
    Account policy (2026-09-10): a usage-limited primary is normal; the helper falls through,
    the run records which account served. Verdicts are
    advice, not authority; sanity-check every sentence you adopt against the actual Lean
    statement.
-7. **Compose** (see the style section — this is the part Chris singled out as good).
+7. **Compose** (see the style section — this is the part Chris singled out as good). Since
+   2026-10-11 bullets are capped at 40 words: Chris found them getting wordy.
 8. **Verify every link**, count codepoints (< 9,500), post, **re-fetch rendered** and check
    the stats lines are present and `[message truncated]` is absent.
 9. **State DM** — post first, DM second; retry the DM if it fails.
-10. **Cron upkeep** — delete and recreate the daily job so the 7-day session-cron expiry
-    never lapses.
+10. **No cron upkeep.** Since 2026-09-12 the schedule is the server's systemd timers, not a
+    session cron.
 
 The three **never-double-post** checks (freshness; permanent `TauCeti#NNN` dedupe over the
 entire topic history, `num_before=1000`; name-level repeat rule) are mandatory before every
@@ -81,8 +85,8 @@ now proved, not like release notes. Every rule below came from feedback or a nea
 
 **The bullet is the unit.** Its anatomy, fixed:
 
-> - **[Standard name](verified docs anchor)** — one sentence, for a mathematician who does
->   not know the result, saying what it *asserts*; then any honest scope note; then a real
+> - **[Standard name](verified docs anchor)** — one sentence of at most 40 words, for a
+>   mathematician who does not know the result, saying what it *asserts*; then one short
 >   reference. (TauCeti#NNN)
 
 A dissected specimen from the sixth update:
@@ -94,7 +98,9 @@ A dissected specimen from the sixth update:
 - the bold text is the **standard mathematical name**, never the Lean identifier;
 - the sentence states the assertion in symbols a working mathematician reads, present tense,
   no hype;
-- the optional trailing clause says what it is *for* in the library, when that helps;
+- a trailing clause on what it is *for* only when it fits inside the 40 words; never proof
+  inputs, side results or plans;
+- one link per bullet, the bold name; no inline links inside the sentence;
 - the reference is a real book or paper (Serre, Shimura, Milne, Kallenberg, Humphreys,
   Fulton–Harris…), **never a Lean file**;
 - the PR citation is the bare realm linkifier, in parentheses, last.
@@ -113,7 +119,9 @@ recognises instantly; both were used in preference to Lean names or vague labels
 convergence bounds are proved *and* that analytic continuation is a separate later milestone.
 The Sturm bullet says Mathlib master has the level-one case and this is the finite-index
 case. This in-sentence honesty is the single most load-bearing style rule: it is what lets a
-reader act on a bullet without opening the file.
+reader act on a bullet without opening the file. Keep it to one clause. If the honest scope
+note would say the named theorem is only partly proved, the bullet should not exist yet
+(SKILL.md, the full-statement test).
 
 **Overlap notes are neutral and specific — never competitive.** Banned outright: "Mathlib
 doesn't have this", "Mathlib has none of these", "first ever". The house forms:
@@ -213,6 +221,11 @@ message, not a silent rewrite of history.
 - **Steps toward a named target stay silent.** Krull–Schmidt *existence* half, Cesàro/Koopman
   lemmas on the way to de Finetti, cusp-width infrastructure under the Sturm bound: all
   skipped, correctly. Announce the summit when it exists; the approach ridge is not news.
+- **Half a theorem is not the theorem.** Schensted's theorem went out on 2026-10-11 with
+  "the decreasing-subsequence half is still to come". It should have waited for both halves.
+- **Side results do not ride along.** A bullet growing "with it…", "on the way…" or "the
+  input is…" is carrying candidates that must be judged on their own, and usually skipped.
+  This is why the bullets of 2026-10-11 ran to a median of 90 words.
 - **Restatements and packagings of already-announced results stay silent**, even when the
   new form is the textbook one (Montel-as-compactness after the selection theorem was
   announced; the hyperbolic-length Schwarz–Pick after Schwarz–Pick-with-rigidity).
@@ -243,13 +256,16 @@ message, not a silent rewrite of history.
 
 - Canonical skill: `~/Documents/GitHub/mathlib-quality/skills/voyager/SKILL.md` (this repo
   is the single source; a copy that once lived in TauCetiRoadmap was deleted to stop drift).
-- The daily scheduler lives in `~/.claude3/voyager/` (`run.sh` launched by launchd
-  `com.tauceti.voyager` at 16:03 local, `prompt.txt`, `smoke.txt`, `gate.sh`, `freshness.py`,
-  `status.py`). Its Claude model chain is `claude-fable-5-1` (Fable 5.1) on every account
-  before `claude-opus-5` on any; the OpenAI gate model is `gpt-6-astra`, served from
-  `~/.codex` with `~/.codex2` as the fallback account (`gate.sh`). Owner policy
-  (2026-09-07): always the most capable current model of each vendor — bump both names when
-  newer ones ship.
+- The scheduler has lived on the OVH server since 2026-09-12, in `~/voyager` (also
+  reachable as `~/.claude3/voyager`).
+  - Systemd user timers fire `run.sh` at 04:03 and 16:03 UK. Beside it are `prompt.txt`,
+    `smoke.txt`, `gate.sh`, `freshness.py`, `retry.sh` and `status.py`.
+  - Its Claude model is `claude-fable-5-1` (Fable 5.1) only: the six subscription accounts
+    first, then the Anthropic API key as a last resort (since 2026-10-10).
+  - The OpenAI gate model is `gpt-6-astra`, served from `~/.codex`, with `~/.codex2` as the
+    fallback account (`gate.sh`).
+  - Owner policy (2026-09-07): always the most capable current model of each vendor. Bump
+    both names when newer ones ship.
 - The five Claude accounts on this machine all see it via the `mathlib-quality` plugin.
 - Session-to-session operational memory (watermark history, lessons, current cron id) has
   been kept in Chris's Claude memory as `voyager-bot-state`; if you are not that Claude,

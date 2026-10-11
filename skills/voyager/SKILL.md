@@ -31,6 +31,22 @@ Concretely, in descending order of confidence:
 4. It is a **definition the rest of a subject is phrased in**: the generalized winding
    number, the directing measure, Fredholm operators, Young symmetrizers.
 
+A candidate that qualifies by name must also pass two tests before it goes in a post:
+
+- **The full-statement test.** The Lean statement proves the result *as the literature
+  states it*: not a special case, not one direction or one part, not a version under a
+  hypothesis the standard statement does not have. A partial version waits until the full
+  theorem lands, unless the part carries a standard name of its own, in which case it is
+  announced under that name. (2026-10-11: Schensted's theorem went out with "the
+  decreasing-subsequence half is still to come". That bullet should have waited.)
+- **The importance test.** A mathematician working in the area would recognise the name
+  without looking it up. A lemma named after its author in one paper, a named step inside a
+  single textbook proof, or a name only the formaliser uses fails it.
+
+Check both against a source, not memory: find where the name is used (the Wikipedia page,
+the textbook theorem, the paper), and compare that statement with the Lean statement before
+the candidate goes to the gate.
+
 Do **not** post:
 
 - helper/auxiliary/private lemmas, `simp` lemmas, `_eq`/`_apply`/`_def`/`_comm` API glue,
@@ -39,7 +55,11 @@ Do **not** post:
 - anything **already in Mathlib** — see the novelty gate. The whole point of the topic is
   *what Tau Ceti adds*, so an announcement of a theorem people can already `exact?` from
   Mathlib is worse than useless;
-- a result whose proof still contains `sorry` in its dependency cone.
+- a result whose proof still contains `sorry` in its dependency cone;
+- a special case, one half, or a conditional version of a named theorem, under the
+  theorem's name;
+- side results that landed with a headline result. They do not ride along in its bullet;
+  each gets a bullet of its own only if it passes the tests by itself.
 
 ## Where Voyager posts
 
@@ -127,17 +147,17 @@ The agent needs the Zulip env vars, an authenticated `gh`, and the npm `codex` C
 `Grep`, `Glob`. It does **not** need write access to any repository — Voyager never commits
 anything.
 
-**On the daily schedule** (the intended cadence): once a day, at `3 16 * * *` local
-(16:03 UK — owner-chosen slot). Timing is forgiving because the window ends at the
-**`docgen` branch** (see §1), which by construction only advances when a complete docgen
-run is published — so whenever Voyager runs, everything in its window has docs pages, and
-there is nothing to wait for. (Background, in case the branch mechanism ever breaks: the
-docs rebuild is nominally scheduled 06:00 UTC but starts ~08:00–08:35 UTC after GitHub's
-delay, takes 60–90 minutes, and some days fails outright — which is exactly why tracking
-`docgen` beats tracking `main` plus polling `pages.yml`.) As a GitHub Actions workflow the
-same logic applies with `schedule: - cron: "3 15 * * *"` (UTC). GitHub's scheduled runs
-are best-effort; the watermark protocol makes missed days harmless, since the next run
-picks up the whole missed window.
+**On the schedule** (the intended cadence): twice a day, at 04:03 and 16:03 UK (owner-chosen
+slots; twice daily since 2026-10-10, once at 16:03 before that). Timing is forgiving because
+the window ends at the **`docgen` branch** (see §1), which by construction only advances
+when a complete docgen run is published — so whenever Voyager runs, everything in its window
+has docs pages, and there is nothing to wait for. (Background, in case the branch mechanism
+ever breaks: the docs rebuild is nominally scheduled 06:00 UTC but starts ~08:00–08:35 UTC
+after GitHub's delay, takes 60–90 minutes, and some days fails outright — which is exactly
+why tracking `docgen` beats tracking `main` plus polling `pages.yml`.) As a GitHub Actions
+workflow the same logic applies with `schedule: - cron: "3 3,15 * * *"` (UTC, which is UK
+time in winter). GitHub's scheduled runs are best-effort; the watermark protocol makes
+missed days harmless, since the next run picks up the whole missed window.
 
 Whichever way it runs, the eventual home is the Tau Ceti CLI. Keep the decision logic here
 rather than in shell scripts so it can be lifted across intact.
@@ -198,7 +218,7 @@ mandatory, before every post:
 **The window ends at the `docgen` branch, not `main`.** TauCeti's `docgen` branch (set up in
 TauCeti#1539) tracks the most recent commit on main **for which a complete docgen run is
 published** — so everything inside the window is guaranteed to have API-docs pages to link
-to, results merged after the docs point simply wait for the next run (≤ a day), and no
+to, results merged after the docs point simply wait for the next run (≤ half a day), and no
 docs-workflow polling is needed.
 
 Clone with **full history** — step 5 needs it for PR attribution, and a shallow clone breaks
@@ -258,6 +278,17 @@ git diff <previous-sha>..HEAD -- '*.lean' | grep -E '^\+\s*(theorem|lemma|def|st
 
 A useful cross-check on both passes: an eponym grep over the diff,
 `grep -iE '<name1>|<name2>|…'`, seeded from the eponyms already in the library.
+
+**Then check every survivor's name and strength.** This is where most weak bullets used to
+slip through. For each candidate, write down in your notes (not in the post):
+- the standard name;
+- where that name is used (a Wikipedia page, a textbook's theorem, a paper);
+- the statement there;
+- whether the Lean statement is that statement in full.
+
+Drop anything that fails the full-statement or importance test in *What counts*. Side
+results that came in the same PR are separate candidates, not material for the headline's
+bullet.
 
 ### 3. Novelty gate — is it already in Mathlib?
 
@@ -371,34 +402,42 @@ Operational facts learned the hard way:
 - one batched call, not one per candidate: each call costs minutes;
 - the question must be **self-contained** — the model has no file access, so paste the
   declaration name, its statement, and its docstring summary;
-- the gate is **best-effort, never a precondition for posting**: if it is unavailable (quota,
-  the plan rejects the model, codex missing, timeout), select and order on your own
-  judgement, post as normal, and say so — with the model name and, when it served, which
-  account (`GATE_SERVED_BY`) — in the run log, never in the Zulip message, and never by
-  substituting a different model.
+- the gate is **required** (owner decision, 2026-10-10: every post is made with Fable and
+  Astra). If it is unavailable on both accounts (quota, the plan rejects the model, codex
+  missing, timeout), post nothing, leave the watermark, and end the run as failed so the
+  scheduler retries later. Record the model and which account served (`GATE_SERVED_BY`) in
+  the run log, never in the Zulip message, and never substitute a different model.
 
 Prompt template:
 
 ```
 I am triaging newly added results in a Lean mathematics library to decide which are
-worth announcing. For EACH numbered item below, answer with one of:
+worth announcing to working mathematicians. For EACH numbered item below, answer with
+one of:
 
-  ANNOUNCE  — a named mathematical result or notable definition: it has a Wikipedia
-              page, or is a named theorem/definition in a standard textbook or paper,
-              or is an eponymous result, or is a definition the surrounding subject is
-              phrased in.
-  SKIP      — an auxiliary lemma, API glue, a routine special case, or a technical step
-              with no independent mathematical identity.
+  ANNOUNCE  — an important named result or notable definition, proved in full. It has a
+              Wikipedia page, or is a named theorem/definition in a standard textbook or
+              paper, or is an eponymous result people in the area know by that name, or
+              is a definition the surrounding subject is phrased in; AND the Lean
+              statement is the result as the literature states it.
+  PARTIAL   — a named result, but the Lean statement is only a special case, one
+              direction or part, or needs a hypothesis the standard statement does not
+              have. Say what is missing.
+  SKIP      — an auxiliary lemma, API glue, a routine special case, a step towards a
+              larger theorem, or a name used only by its own paper.
 
-For each ANNOUNCE, add: (a) the standard name of the result, (b) one sentence, for a
-mathematician who does not know it, saying what it asserts, (c) whether it has a
-Wikipedia page, and (d) a standard reference if you know one.
+For each ANNOUNCE, add: (a) the standard name, (b) what it asserts, in at most 30 words,
+for a mathematician who does not know it, (c) whether it has a Wikipedia page, and (d)
+one standard reference.
 
-Be conservative: if a result is only interesting inside its own proof, say SKIP. Do not
-be polite about it — a false ANNOUNCE is more costly than a false SKIP.
+Be conservative: a false ANNOUNCE costs more than a false SKIP. Do not be polite about
+it. Rank the ANNOUNCE items by importance, most important first.
 
 <numbered list: name, Lean statement, docstring summary>
 ```
+
+Treat PARTIAL as SKIP: the theorem goes out when it is proved in full. A part with a
+standard name of its own comes back as ANNOUNCE under that name.
 
 Take its verdicts as **advice, not authority**. It has been wrong before on this project —
 it misnumbered a Wedhorn theorem and mis-attributed a Mathlib file's authors. If a verdict
@@ -436,11 +475,11 @@ Format (Zulip markdown):
 **Voyager · what's new in Tau Ceti**
 
 *Named results*
-- **[<Standard name>](<link to the source file at main>)** — <one sentence on what it asserts>. (TauCeti#123)
+- **[<Standard name>](<docs anchor>)** — <one sentence, at most 40 words, on what it asserts> (<one short reference>). (TauCeti#123)
 - ...
 
 *Notable definitions*
-- **[<Name>](<source link>)** — <what it is, and what it is for>. (TauCeti#124)
+- **[<Name>](<docs anchor>)** — <what it is and what it is for, at most 40 words>. (TauCeti#124)
 
 *Stats*
 - <N> lines of Lean across <M> files (Tau Ceti only, excluding Mathlib)
@@ -496,10 +535,39 @@ Zulip-specific rules, each learned from reader feedback on the first message:
   (`GET` the message with `apply_markdown=true` and check the stats lines are present and
   "[message truncated]" is not).
 
-Rules for the prose: one sentence per item, written for a mathematician who does not know
-the result; no marketing adjectives; no "exciting"/"major milestone". State what the
-theorem says, not how impressive it is. If a result is a strengthening of Mathlib, say so
-in the sentence.
+Rules for the prose. **Short is the house style.**
+
+- **One sentence of at most 40 words** per bullet, not counting the bold name, the reference
+  and the PR citation. 20–30 is the norm. Write for a mathematician who does not know the
+  result.
+- **Say what the theorem asserts, and nothing else.** Leave out:
+  - how it is proved;
+  - what it is built from ("the input is…", "because…");
+  - what else landed with it ("with it…", "on the way…");
+  - what is planned next.
+
+  Side results are separate candidates.
+- **One link per bullet**: the bold name. No further inline links inside the sentence.
+- **One short reference**, such as "(Fulton, *Young Tableaux*, §1.1)" or "(Schensted 1961)",
+  not a list.
+- **A scope clause only when needed**: when the formalized statement differs from the
+  standard one in a way a reader must know. Then first ask whether the result passes the
+  full-statement test at all.
+- If a result strengthens Mathlib, say so in a clause.
+- No marketing adjectives; no "exciting"/"major milestone". State what the theorem says,
+  not how impressive it is.
+
+**Size.** A normal update fits in one message. If yours needs more than two, the bar has
+slipped: re-apply the tests in *What counts* to every candidate rather than trimming
+sentences or splitting into more parts.
+
+A worked example from the 2026-10-11 post. Before (78 words, five links):
+
+> - **[The fundamental theorem of Γ-convergence](…)** — for a sequence of extended-real functionals Fₙ on a first-countable space that Γ-converges to f in the sequential sense ([liminf inequality and recovery sequences](…)) and is [equicoercive](…), the infima of the Fₙ converge to the infimum of f, which [is attained](…), and cluster points of minimisers minimise f; sequential Γ-convergence is [equivalent to the Γ-liminf and Γ-limsup both being f](…) (Braides, *Γ-convergence for Beginners*, Ch. 1; Dal Maso, Chs. 7–8). (TauCeti#14447)
+
+After (26 words, one link):
+
+> - **[The fundamental theorem of Γ-convergence](…)** — if Fₙ Γ-converges to f and the Fₙ are equicoercive, then inf Fₙ → min f, and cluster points of minimisers of the Fₙ minimise f (Braides, *Γ-convergence for Beginners*, Ch. 1). (TauCeti#14447)
 
 **Quiet runs still report.** If the window contains newly merged PRs but nothing survives
 the gates, post this short check-in instead of the full format:
