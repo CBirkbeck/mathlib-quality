@@ -33,12 +33,25 @@ Concretely, in descending order of confidence:
 
 A candidate that qualifies by name must also pass two tests before it goes in a post:
 
-- **The full-statement test.** The Lean statement proves the result *as the literature
-  states it*: not a special case, not one direction or one part, not a version under a
-  hypothesis the standard statement does not have. A partial version waits until the full
-  theorem lands, unless the part carries a standard name of its own, in which case it is
-  announced under that name. (2026-10-11: Schensted's theorem went out with "the
-  decreasing-subsequence half is still to come". That bullet should have waited.)
+- **The full-statement test.** The Lean statement proves the result as a standard
+  textbook or the original paper states it. It fails if it is:
+  - a special case of that statement;
+  - one direction or one part of it;
+  - a version under a hypothesis that statement does not have;
+  - conditional on an input that is still unproved.
+
+  The benchmark is *a* standard statement, not the most general one in the literature.
+  A theorem proved for free or projective complexes, as most textbooks state it, passes
+  even when a later source has a flat version. (2026-10-12: the Künneth short exact
+  sequence, proved for complexes with projective cycles and boundaries, was held back only
+  because Weibel states it for flat modules; announced under that name it would have
+  passed.)
+
+  A partial version gets no bullet. If it is a big milestone it may go in the in-progress
+  line (§6), and the theorem gets its bullet when it lands in full. A part that carries a
+  standard name of its own is announced under that name. (2026-10-11: Schensted's theorem
+  went out with "the decreasing-subsequence half is still to come". That bullet should have
+  waited.)
 - **The importance test.** A mathematician working in the area would recognise the name
   without looking it up. A lemma named after its author in one paper, a named step inside a
   single textbook proof, or a name only the formaliser uses fails it.
@@ -56,8 +69,8 @@ Do **not** post:
   *what Tau Ceti adds*, so an announcement of a theorem people can already `exact?` from
   Mathlib is worse than useless;
 - a result whose proof still contains `sorry` in its dependency cone;
-- a special case, one half, or a conditional version of a named theorem, under the
-  theorem's name;
+- a special case, one half, or a conditional version of a named theorem, as a bullet under
+  the theorem's name (a big one may go in the in-progress line, §6);
 - side results that landed with a headline result. They do not ride along in its bullet;
   each gets a bullet of its own only if it passes the tests by itself.
 
@@ -174,9 +187,9 @@ voyager-state
 `commit=<full sha> pr=<total merged PR count> ts=<ISO8601>`
 ```
 
-`pr=` is the **total number of merged PRs at post time** (the GitHub search count from §7),
-**not** the highest PR number — PR numbers share a sequence with issues, so the two differ,
-and the since-last-update stat subtracts `pr=` from the current total.
+`pr=` is the **total number of merged PRs at the docgen commit** (the squash-commit count
+from §7), **not** the highest PR number — PR numbers share a sequence with issues, so the
+two differ, and the since-last-update stat subtracts `pr=` from the current total.
 
 Each run:
 
@@ -206,7 +219,9 @@ mandatory, before every post:
    bold link texts). A candidate whose name matches one already announced posts only if it
    is a genuine strengthening from a *different* PR, and then the sentence must state the
    delta ("now for arbitrary null-homologous cycles", "extended to countable index types") —
-   otherwise drop it as a restatement.
+   otherwise drop it as a restatement. A name that has appeared only in an in-progress line
+   was not announced: its bullet goes out when it lands in full, saying "now in full". A name
+   that has appeared in any earlier in-progress line never goes in another one.
 3. **Freshness abort.** If the newest Voyager channel message or state DM is less than
    2 hours old, another run just happened or is still in flight: abort without posting.
    On the daily cadence, fresher activity is never legitimate.
@@ -284,7 +299,7 @@ slip through. For each candidate, write down in your notes (not in the post):
 - the standard name;
 - where that name is used (a Wikipedia page, a textbook's theorem, a paper);
 - the statement there;
-- whether the Lean statement is that statement in full.
+- whether the Lean statement proves that statement in full (the full-statement test).
 
 Drop anything that fails the full-statement or importance test in *What counts*. Side
 results that came in the same PR are separate candidates, not material for the headline's
@@ -419,10 +434,14 @@ one of:
               Wikipedia page, or is a named theorem/definition in a standard textbook or
               paper, or is an eponymous result people in the area know by that name, or
               is a definition the surrounding subject is phrased in; AND the Lean
-              statement is the result as the literature states it.
-  PARTIAL   — a named result, but the Lean statement is only a special case, one
-              direction or part, or needs a hypothesis the standard statement does not
-              have. Say what is missing.
+              statement proves it as a standard textbook or the original paper states
+              it (a more general version elsewhere does not make it partial).
+  PARTIAL   — a named result, but the Lean statement is weaker than a standard
+              statement of it: a special case, one direction or part, an extra
+              hypothesis, or conditional on an unproved input. Say what is proved, in
+              at most six words, and mark it MILESTONE if that part is a big step a
+              reader in the area would care about (the main case, one of two main
+              halves), or MINOR otherwise.
   SKIP      — an auxiliary lemma, API glue, a routine special case, a step towards a
               larger theorem, or a name used only by its own paper.
 
@@ -436,8 +455,10 @@ it. Rank the ANNOUNCE items by importance, most important first.
 <numbered list: name, Lean statement, docstring summary>
 ```
 
-Treat PARTIAL as SKIP: the theorem goes out when it is proved in full. A part with a
-standard name of its own comes back as ANNOUNCE under that name.
+PARTIAL items get no bullet; the theorem goes out when it is proved in full. A PARTIAL
+marked MILESTONE may go in the in-progress line (§6) if it passes the importance test and
+has never been named there before; MINOR ones are left out. A part with a standard name of
+its own comes back as ANNOUNCE under that name.
 
 Take its verdicts as **advice, not authority**. It has been wrong before on this project —
 it misnumbered a Wedhorn theorem and mis-attributed a Mathlib file's authors. If a verdict
@@ -481,6 +502,8 @@ Format (Zulip markdown):
 *Notable definitions*
 - **[<Name>](<docs anchor>)** — <what it is and what it is for, at most 40 words>. (TauCeti#124)
 
+*In progress* — <Standard name>: <what is proved, at most six words> (TauCeti#125); <…>
+
 *Stats*
 - <N> lines of Lean across <M> files (Tau Ceti only, excluding Mathlib)
 - <D> declarations
@@ -496,10 +519,12 @@ Zulip-specific rules, each learned from reader feedback on the first message:
 - **Use the realm linkifiers**: bare `TauCeti#NNN` for TauCeti PRs, `mathlib4#NNN` for
   Mathlib PRs — not explicit markdown PR links.
 - **Link each bold result name to its declaration in the API docs**, so readers land on the
-  exact statement: `https://taucetiproject.github.io/TauCeti/docs/TauCeti/<Module/Path>.html#<Fully.Qualified.Name>`
-  (doc-gen4 layout). **Extract the anchor from the published page's HTML — never construct
-  it from the declaration name.** Namespaces vary and some files have no `TauCeti` namespace
-  at all (`lieExp`, `pointDerivationEquivTangentSpace`, `ModularForm.lSeries`,
+  exact statement:
+  `https://taucetiproject.org/docs/TauCeti/<Module/Path>.html#<Fully.Qualified.Name>`
+  (doc-gen4 layout; the old `taucetiproject.github.io/TauCeti/docs/` address redirects
+  there). **Extract the anchor from the published page's HTML — never construct it from the
+  declaration name.** Namespaces vary and some files have no `TauCeti` namespace at all
+  (`lieExp`, `pointDerivationEquivTangentSpace`, `ModularForm.lSeries`,
   `Matrix.SpecialLinearGroup.map_intCast_zmod_surjective` are bare or foreign-namespaced);
   probability lives under `TauCeti.Probability.*`, Lévy downward under `MeasureTheory.*`.
   **Verify every link before posting**: curl the page (expect 200) and pull the real
@@ -561,6 +586,20 @@ Rules for the prose. **Short is the house style.**
 slipped: re-apply the tests in *What counts* to every candidate rather than trimming
 sentences or splitting into more parts.
 
+**The in-progress line** (owner request, 2026-10-12: "progress has to be meaningful … we want
+big milestones only") names big milestones that have partly landed, so readers see them
+coming without a premature bullet.
+- **Big milestones only**: an important named theorem (the importance test) whose main case,
+  or one of its two main halves, is now proved. Never a technical step, a lemma on the way,
+  or lettered parts of a result.
+- **The form**: the name, what is proved in at most six words, and the PR, e.g.
+  "Schensted's theorem: the increasing-subsequence half (TauCeti#14191)".
+- **Once per theorem, ever.** Collect the names from every earlier in-progress line in the
+  topic history and never name one again. The theorem comes back only as a full bullet,
+  when it lands in full, with "now in full" in its sentence.
+- **Rarely more than three entries.** When nothing qualifies, leave the line out. A post with
+  no bullets is still the short check-in, even if something partly landed.
+
 A worked example from the 2026-10-11 post. Before (78 words, five links):
 
 > - **[The fundamental theorem of Γ-convergence](…)** — for a sequence of extended-real functionals Fₙ on a first-countable space that Γ-converges to f in the sequential sense ([liminf inequality and recovery sequences](…)) and is [equicoercive](…), the infima of the Fₙ converge to the infimum of f, which [is attained](…), and cluster points of minimisers minimise f; sequential Γ-convergence is [equivalent to the Γ-liminf and Γ-limsup both being f](…) (Braides, *Γ-convergence for Beginners*, Ch. 1; Dal Maso, Chs. 7–8). (TauCeti#14447)
@@ -598,7 +637,7 @@ zero-change check-ins.
 find TauCeti -name '*.lean' -print0 | xargs -0 cat | wc -l
 find TauCeti -name '*.lean' | wc -l                        # files
 grep -rhcE '^(theorem|lemma|def|structure|class|abbrev|instance)' --include='*.lean' TauCeti | awk '{s+=$1} END {print s}'
-gh api "search/issues?q=repo:TauCetiProject/TauCeti+is:pr+is:merged&per_page=1" --jq '.total_count'
+git log --format=%s origin/docgen | grep -cE '\(#[0-9]+\)$'      # T: PRs merged, at the docgen commit
 ```
 
 **Sanity-check every stat against the previous post before you publish.** The library is
@@ -615,12 +654,18 @@ an announcement *gate*: check nothing you announce has a `sorry` in its file, re
 docstring can mention the word without it being a proof hole.
 
 "PRs merged since the last update" = the number of squash-merge commits in the window
-(each carries its `(#N)`) — exact, and consistent with what was actually scanned; the total
-comes from the GitHub search count, with the previous `pr=` as a *loose* cross-check: `P`
-will **not** equal `T` minus the previous `pr=`, because `pr=` is recorded at post time
-while the window is bounded by docgen commits, which lag it — a discrepancy of a dozen PRs
-either way is expected, not a bug. Exclude `.lake/` and any vendored Mathlib from every count — the LOC number is
-meant to be *Tau Ceti's own* contribution and is the number most likely to be quoted.
+(each carries its `(#N)`), which is exact and consistent with what was actually scanned.
+The total `T` counts the same commits over the whole docgen history.
+- **Never use GitHub's merged search.** Tau Ceti lands pull requests through bors, which
+  closes them instead of merging them, so that count stopped moving in October 2026
+  (11,535 on 2026-10-12).
+- **Check.** On 2026-10-12 the commit count gave 13,783 at docgen `1885e7be`, the figure
+  that was posted.
+- **Cross-check.** `T` minus the previous `pr=` equals `P` when the window starts at the
+  previous post's docgen commit.
+
+Exclude `.lake/` and any vendored Mathlib from every count — the LOC number is meant to be
+*Tau Ceti's own* contribution and is the number most likely to be quoted.
 
 The `sorry` grep counts **mentions**, not proof holes: a docstring saying "the `sorry`-goal in
 `Suggested.lean`" matches too. The hit count is tiny, so read every hit and report only real

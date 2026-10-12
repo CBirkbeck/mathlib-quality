@@ -111,6 +111,16 @@ goes under results; a construction whose content is that it now exists in usable
 modular-form L-function, the central character) goes under definitions, with its best
 theorem folded into the sentence.
 
+**The in-progress line** (since 2026-10-12) is one optional line after the definitions:
+"*In progress* — Schensted's theorem: the increasing-subsequence half (TauCeti#14191)". Chris's
+terms: "progress has to be meaningful and I don't want to see the same item showing up over
+and over again, we want big milestones only".
+- An entry is an important named theorem whose main case or one of its two main halves has
+  landed.
+- A theorem appears there at most once, ever. Its next appearance is the full bullet, "now
+  in full".
+- Rarely more than three entries, and usually none.
+
 **No eponym? Name the content.** "The pairing of two permutation characters counts double
 cosets" and "The closed dominant chamber is a strict fundamental domain" are titles a reader
 recognises instantly; both were used in preference to Lean names or vague labels.
@@ -159,10 +169,11 @@ identifiers and formulas that read better monospaced.
 > - 11,669 declarations
 > - 64 PRs merged since the last update (1,692 total)
 
-P is the exact count of squash-merge commits in the window; T is the GitHub search total.
-They deliberately do not reconcile against the previous `pr=` (docgen lags post time, so a
-few PRs counted at the last post reappear in this window's commits) — that is expected, not
-a bug. No sorry counts.
+P is the exact count of squash-merge commits in the window. T is the same count over the
+whole docgen history: since Tau Ceti merges through bors, which closes pull requests rather
+than merging them, GitHub's merged search froze (11,535 on 2026-10-12) and must not be used.
+T minus the previous `pr=` is P when the window starts at the previous post's docgen commit.
+No sorry counts.
 
 **The quiet check-in**, when PRs merged but nothing survived the gates:
 
@@ -179,7 +190,8 @@ disclaimer — it is Chris's wording and it defuses complaints about judgment ca
 ## Links: verify, then verify the right thing
 
 Every bold name links to the declaration's anchor in the API docs,
-`https://taucetiproject.github.io/TauCeti/docs/TauCeti/<Module/Path>.html#<FQN>`. Two rules:
+`https://taucetiproject.org/docs/TauCeti/<Module/Path>.html#<FQN>` (the old
+`taucetiproject.github.io/TauCeti/docs/` address redirects there). Two rules:
 
 1. **Verify by extraction, not construction.** Curl the page (expect 200) and pull the real
    `id="…"` out of the HTML. Never guess the fully qualified name: some files have no
@@ -222,7 +234,13 @@ message, not a silent rewrite of history.
   lemmas on the way to de Finetti, cusp-width infrastructure under the Sturm bound: all
   skipped, correctly. Announce the summit when it exists; the approach ridge is not news.
 - **Half a theorem is not the theorem.** Schensted's theorem went out on 2026-10-11 with
-  "the decreasing-subsequence half is still to come". It should have waited for both halves.
+  "the decreasing-subsequence half is still to come". It should have waited for both halves
+  (or, since 2026-10-12, gone in the in-progress line once).
+- **Full means a standard statement, not the most general one.** On 2026-10-12 the Künneth
+  short exact sequence, proved for complexes with projective cycles and boundaries, was held
+  because Weibel states it for flat modules. Measured against the textbooks' free or
+  projective version it was full, and could have been announced under that name. That post
+  had two bullets.
 - **Side results do not ride along.** A bullet growing "with it…", "on the way…" or "the
   input is…" is carrying candidates that must be judged on their own, and usually skipped.
   This is why the bullets of 2026-10-11 ran to a median of 90 words.
