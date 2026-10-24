@@ -308,6 +308,9 @@ change):
 - `rubric`: the TauCetiReview rubric that should have caught it (`correctness`, `reuse`,
   `scope`, `attribution`, `api-design`, `generality`, `placement`, `naming`,
   `documentation`, `proof-quality`), or `none` for what no rubric covers.
+- `review_issue`: the number of the finding's "not correctly stated" review on the review
+  site (section 7). `sync` writes `merged` (the fix's commit) when its PR merges, and
+  `review_settled` (`fixed` or `withdraw`) once it has told the site.
 
 An audit: `{"file": "<path>", "matrix": {"(file)": {…}, "<declaration>": {"correctness":
 "ok", "reuse": "F:RT-…", …}, …}}`.
@@ -320,3 +323,56 @@ An audit: `{"file": "<path>", "matrix": {"(file)": {…}, "<declaration>": {"cor
   so a duplicate record is an inflated score.
 - Anonymous instances are keyed `instance@L<line>`. The script finds the declarations itself
   and refuses the audit if any is missing.
+
+## 7. Reviews on the review site
+
+The Tau Ceti review site (`https://cbirkbeck.github.io/tauceti-reviewed-by-test/`) asks one
+question of each declaration: is it correctly stated? A file's audit answers it for every
+declaration, so R6 step 9 records the answer there, as the red team's AI reviews.
+`scripts/review_site.py` checks and posts them; this section says what they say.
+
+**A yes** is one line of `yes.tsv`, `<full name><TAB><reasons>`, the reasons on one line: the
+statement in words, then the checks the audit ran on it.
+
+```text
+TauCeti.Foo.card_dvd	Correctly stated: for a finite group G acting on a finite set X, the size of each orbit divides |G|, as its docstring says. Red-team audit at 1a2b3c4d5e6f: restated beside the docstring and the roadmap; no False from the hypotheses (simp_all, omega, grind); lean_minimal_hypotheses needs both; specialised at the cyclic group of order 3 acting on itself.
+```
+
+**A no** is its own issue; its reasons (`why.md`):
+
+````text
+<the claim: what the name and docstring say, and what the statement says instead>
+
+Evidence, Lean at Tau Ceti <audited commit, 12 characters>:
+```lean
+<the probe, verbatim>
+```
+<what Lean said>
+
+Second opinion, gpt-6-astra: <agrees | disagrees | unsure>. <its summary>
+
+Red-team finding <id>. The fix goes to Tau Ceti as a PR; this review is marked fixed when it lands.
+````
+
+Its `--category` is the site's axis for the finding:
+
+| The finding | Axis |
+|---|---|
+| a wrong definition; a theorem about something other than what its name and docstring say | `object` |
+| a sign, normalisation or indexing convention unlike the source's | `convention` |
+| degenerate cases (empty, zero, `n = 0`, the trivial group) handled wrongly or left out | `edge-cases` |
+| a junk value making the statement hold for the wrong reason | `junk` |
+| vacuous, tautological or contradictory hypotheses; content moved into hypotheses; a placeholder | `vacuous` |
+| an arbitrary choice the statement depends on | `choice` |
+| assumptions that exclude cases the name or docstring covers | `generality` |
+| a name or docstring claiming more than the statement (`_iff` proving one direction) | `naming` |
+| anything else | `other` |
+
+These are the site's rubric axes (evidence-store's `ltb-rubric/1`).
+
+**What happens next.** `sync` follows each no: when the finding's PR merges it comments
+`/fixed <merge commit>` on the review's issue, and the site shows the problem fixed; when the
+finding is superseded, `/fixed <the commit named in its resolution>`; when it is refuted,
+`/withdraw <the resolution>`. A finding rejected because review showed the claim wrong is
+withdrawn by hand (R0). The site marks a yes stale once the declaration, or anything it rests
+on, changes, and the red team's later review of the same declaration (same model) replaces it.

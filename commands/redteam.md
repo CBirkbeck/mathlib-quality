@@ -1,6 +1,6 @@
 ---
 name: redteam
-description: The Tau Ceti red team — an adversarial loop that audits the library file by file for wrong definitions, vacuous or mis-stated theorems, needless hypotheses, duplication of Mathlib or of other roadmaps, and code smells; confirms every big finding in Lean with a second opinion from gpt-6-astra; fixes what it finds in PRs and sees them through review to merge; and keeps the scoreboard and the common-errors list for improving the rubrics. One round per invocation; loop it with /loop.
+description: The Tau Ceti red team — an adversarial loop that audits the library file by file for wrong definitions, vacuous or mis-stated theorems, needless hypotheses, duplication of Mathlib or of other roadmaps, and code smells; confirms every big finding in Lean with a second opinion from gpt-6-astra; fixes what it finds in PRs and sees them through review to merge; leaves a review on the Tau Ceti review site of every declaration it audits (correctly stated, yes or no); and keeps the scoreboard and the common-errors list for improving the rubrics. One round per invocation; loop it with /loop.
 ---
 
 # /redteam — the Tau Ceti red team
@@ -69,11 +69,11 @@ R6  HUNT     otherwise — unless --max-queue (default 10) topics of confirmed f
 ## What the red team may touch
 
 **Its outputs are PRs to `TauCetiProject/TauCeti` that change only files under `TauCeti/`,
-replies on those PRs' own threads, claims under `refs/tauceti-claims/`, and the ledger.**
-Nothing else. In particular, never:
+replies on those PRs' own threads, claims under `refs/tauceti-claims/`, the ledger, and its
+reviews on the Tau Ceti review site (R6 step 9).** Nothing else. In particular, never:
 
-- open issues anywhere, or touch TauCetiRoadmap, the intentions board, TauCetiReview,
-  Mathlib, or any other project;
+- open issues anywhere, other than the review site's "not correctly stated" reviews, or touch
+  TauCetiRoadmap, the intentions board, TauCetiReview, Mathlib, or any other project;
 - change `scripts/`, `.github/`, the lakefile, `lake-manifest.json` or `lean-toolchain`;
 - comment on, push to, label, close or merge any PR, including our own (closing is CI's job);
 - "fix" a missed-by-review or missed-by-CI problem at its source.
@@ -96,9 +96,10 @@ as a finding, status `needs-human`, and it reaches the user through the report.
   `lake exe cache get` (Mathlib) and `bash scripts/lake-cache-get.sh .` (Tau Ceti's own
   oleans; without it `lake build` compiles the library for hours), then `lake build`.
   Several agents need several checkouts.
-- The helper, resolved once per round:
+- The helpers, resolved once per round:
   ```bash
   RT="${CLAUDE_PLUGIN_ROOT:-$(ls -d ~/.claude/plugins/cache/*/mathlib-quality/*/ 2>/dev/null | sort -V | tail -1)}/scripts/redteam.py"
+  RS="$(dirname "$RT")/review_site.py"      # reviews on the Tau Ceti review site
   python3 "$RT" --help
   ```
   Run it from the TauCeti checkout. Its ledger is `$REDTEAM_LEDGER`, default
@@ -131,7 +132,8 @@ the newest scoreboard exactly as `/taupr` does (`statusCheckRollup` context `bui
 review binds only to the `head_sha` it names; never trust labels).
 
 Then `python3 "$RT" sync` (marks findings `landed` or `rejected` as their PRs merge or
-close) and `python3 "$RT" tally`.
+close, and settles their reviews on the review site: fixed when a finding lands or is
+superseded, withdrawn when it is refuted) and `python3 "$RT" tally`.
 
 **Parked PRs** are left alone by R1–R4 and not counted against the cap: one labelled
 `review-budget-spent`, or whose findings are all `refuted` or `needs-human`. Name each in
@@ -139,8 +141,9 @@ the report so the user can close it.
 
 **A rejected finding is a loss until shown otherwise.** For each finding `sync` marked
 `rejected`, read why its PR closed. If another change fixed the problem, re-mark it
-`superseded` (still a win); if review showed the claim wrong, leave it `rejected` and
-record the reason.
+`superseded` (still a win); if review showed the claim wrong, leave it `rejected`, record
+the reason, and take back its review if it has one:
+`python3 "$RS" withdraw <review_issue> "<the reason>"`.
 
 # R1–R4 — Tend our PRs
 
@@ -161,7 +164,8 @@ Release it when done.
   **When review attacks the red team's premise** (the "wrong" definition is a deliberate
   convention, the "duplicate" differs), re-examine it the way you confirmed it: Lean, then
   Astra. If the premise falls, record the finding `refuted` with the reviewer's reason — a
-  loss, honestly taken — and park the PR. Never quietly reshape a PR into something else.
+  loss, honestly taken — and park the PR. The next `sync` withdraws its review on the
+  review site. Never quietly reshape a PR into something else.
 - **R4 REVIEW** — `build` success at the head, no scoreboard for that head, and ≥ 1h since
   the `build` status:
   `uvx --from git+https://github.com/TauCetiProject/TauCetiReview tauceti-review <PR> --reviewer codex --post`.
@@ -178,7 +182,8 @@ Only when fewer than `--max-open` of this agent's PRs are open (parked ones excl
 2. **Claim its file**: `python3 "$RT" claim acquire <file>`. Held → take the next finding.
 3. **Re-check on today's `main`.** `git fetch origin`, then re-run the evidence probe. If
    the problem is gone, record the finding `superseded` (resolution: the commit that fixed
-   it) and pick again — that does not end the round.
+   it, by its hash, at which `sync` marks the finding's review fixed) and pick again — that
+   does not end the round.
 4. **Branch**: `git switch -c redteam/<finding-id, lower case> origin/main`.
 5. **Fix it** by the playbook in the reference (delete and repoint, restate and re-prove,
    generalise, decompose, rename, relocate). **No backwards compatibility**: a deleted or
@@ -282,7 +287,36 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
    with the full matrix (`python3 "$RT" audit @audit.json`). **The script refuses a win
    without compiled evidence and an Astra verdict, and an audit with any declaration or
    category missing.** A refusal means a step was skipped: do it.
-9. **Release the claim.**
+9. **Review what you checked** on the Tau Ceti review site, which asks one question of each
+   declaration: is it correctly stated? The audit has answered it. The site shows Tau Ceti at
+   its `docgen` commit, a little behind `main`, so first make sure it shows the file as you
+   audited it:
+   ```bash
+   SITE=$(python3 "$RS" site) && git diff --quiet "$SITE" HEAD -- <file>
+   ```
+   Anything but exit 0: no reviews of this file this round; say so in the round line.
+   Otherwise, with `--agent "Tau Ceti red team, <your model>, session $(python3 "$RT" whoami)"`
+   and `--commit "$SITE"` on each call:
+   - **Yes** for each declaration whose `correctness` cell is `ok` and which has no confirmed
+     CRITICAL finding, and no confirmed MAJOR finding that its name or docstring claims more
+     than it proves or that its assumptions exclude cases they cover. One line each in
+     `yes.tsv`, `<full name><TAB><reasons>`: the statement in words and the checks you ran
+     (reference section 7). Then `python3 "$RS" yes yes.tsv … --skip-missing --note
+     "Red-team audit of <file> at Tau Ceti <audited commit, 12 characters>."`
+   - **No** for each such confirmed finding, as its own issue:
+     `python3 "$RS" no why.md … --decl <name> --category <axis>`, where `why.md` holds the
+     claim, the evidence probe and what Lean said, Astra's verdict, and the finding's id, and
+     the axis comes from the finding (reference section 7). It prints `issue <n> <url>`;
+     record it: `python3 "$RT" finding '{"id":"<id>","review_issue":<n>}'`. A finding that
+     already has a `review_issue` has its review; never open a second.
+   - **Nothing** for a declaration whose correctness cell cites a lesser or a suspected
+     finding, for anything a red-team PR wrote or restated (the red team does not review its
+     own work), and for what the site has no page for (`private` declarations, anonymous
+     instances; `--skip-missing` drops them).
+
+   A review is the red team's verdict in public, so post only what Lean has decided. When a
+   finding's fix lands, `sync` marks its review fixed; when it is refuted, `sync` takes it back.
+10. **Release the claim.**
 
 ## Severity, wins and losses
 
@@ -308,7 +342,8 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
 | "Probably intended API — a specialisation" | Show a consumer (`lean_references`). No consumer, no exemption. |
 | "`ok`, it looks fine" | `ok` means you ran that category's checks on that declaration. |
 | "This proof is long, decompose it" | Search first. A one-line Mathlib proof replaces it; decomposing it keeps the waste. |
-| "This needs an issue, a roadmap change or a rubric PR" | Out of bounds. Record it `needs-human`; the report carries it to the user. |
+| "This needs an issue, a roadmap change or a rubric PR" | Out of bounds: the review site's reviews are the only issues the red team opens. Record it `needs-human`; the report carries it to the user. |
+| "The audit is done; the reviews are a formality" | They are the audit's answer in public. Yes only on `ok` correctness, no only on a confirmed finding. |
 
 ## Running it continuously
 
@@ -351,8 +386,9 @@ clone, commit and push it.
 ## Reference
 
 - `references/tauceti-redteam.md` — checklist per category, evidence recipes, Astra prompts,
-  the fix playbook, the ledger's records
+  the fix playbook, the ledger's records, reviews on the review site
 - `references/tauceti.md` — review mechanics, claims, `--force-with-lease`, merge policy
 - `commands/taupr.md` — the worker loop R1–R4 come from
 - `scripts/redteam.py` — queue, claims, ledger, score (`--help`)
+- `scripts/review_site.py` — reviews on the Tau Ceti review site (`--help`)
 - Upstream: TauCeti `AGENTS.md`, `COORDINATION.md`; TauCetiReview `rubrics/`
