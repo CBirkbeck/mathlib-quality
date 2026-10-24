@@ -19,7 +19,9 @@ reasons say only what the answers already there (`reviews`) do not, such as a se
 states it as Lean does. With nothing to add, a yes is its name alone.
 
 A is the agent, "TOOL, MODEL[, session S]" ("Voyager, claude-fable-5-1"): the reviews show on the
-site as that AI agent's, via the account `gh` is signed in as. What deserves a yes or a no is
+site as that AI agent's, via the account `gh` is signed in as. MODEL is the model exactly as the
+harness names it ("claude-opus-5-5", "GPT-6 Astra"), never its family ("Opus", "GPT-6"), which is
+refused: the site shows it beside each answer, and readers weigh the answer by it. What deserves a yes or a no is
 decided by the skills (skills/voyager/SKILL.md section 8, commands/redteam.md R6), never here;
 this only checks, formats and posts. `no` runs evidence-store through `uvx`; I, the account's
 relation to Tau Ceti (outsider, contributor, author), is read from Tau Ceti's history when not
@@ -89,10 +91,17 @@ def at_commit(meta, sha):
     return commit
 
 
+# A model's family, not the model: "GPT-6", "Opus 5", "Claude". (scripts/redteam.py has the same.)
+FAMILY = re.compile(r"^(gpt|claude|opus|sonnet|haiku|fable|gemini|codex)[-\s]?(\d+(\.\d+)?)?$", re.I)
+
+
 def agent_mark(agent):
     parts = [p.strip() for p in agent.split(",") if p.strip()]
     if len(parts) < 2:
         die("error: --agent is 'TOOL, MODEL[, session S]'", 2)
+    if FAMILY.match(parts[1]):
+        die("error: --agent's MODEL, %r, is a family, not a model: give the model exactly as your harness "
+            "names it (GPT-6 Astra, not GPT-6; claude-opus-5-5, not Opus)" % parts[1], 2)
     fields = [f"tool={parts[0]}", f"model={parts[1]}"]
     if len(parts) > 2:
         fields.append("session=" + parts[2].removeprefix("session").strip())

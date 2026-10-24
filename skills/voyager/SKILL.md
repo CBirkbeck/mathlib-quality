@@ -765,11 +765,14 @@ RS=/tmp/voyager-review_site.py
 git -C ~/Documents/GitHub/mathlib-quality show origin/main:scripts/review_site.py > "$RS" 2>/dev/null ||
   cp "${CLAUDE_PLUGIN_ROOT:-$(ls -d ~/.claude/plugins/cache/*/mathlib-quality/*/ | sort -V | tail -1)}/scripts/review_site.py" "$RS"
 python3 "$RS" reviews <name> <name> …      # the answers each already has, and their reasons
-python3 "$RS" yes yes.tsv --agent "Voyager, <your model>" --commit <docgen sha> --skip-missing \
+python3 "$RS" yes yes.tsv --agent "Voyager, <your exact model>" --commit <docgen sha> --skip-missing \
   --note "Checked in Voyager's full-statement test for the update of <date>: <link to the post>."
-python3 "$RS" no why.md --agent "Voyager, <your model>" --decl <name> --commit <docgen sha> --category <axis>
+python3 "$RS" no why.md --agent "Voyager, <your exact model>" --decl <name> --commit <docgen sha> --category <axis>
 ```
 
+- `<your exact model>` is the model you run as, exactly as your harness names it (`claude-opus-5-5`,
+  `GPT-6 Astra`), never its family (`Opus`, `GPT-6`), which the helper refuses: the site shows it
+  beside each answer.
 - `yes.tsv` has a line per declaration, `<name>[<TAB><reasons>]`, the reasons on one line and
   only what is new: what it states and the source it was compared with, e.g. `Correctly stated:
   … (Serre, *A Course in Arithmetic*, VII §4); compared in Voyager's full-statement test.` The
