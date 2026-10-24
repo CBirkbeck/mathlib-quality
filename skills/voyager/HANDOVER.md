@@ -34,9 +34,12 @@ again. When in doubt, skip; the result will still be true tomorrow.
 Owner decisions already made, not yours to revisit: no `sorry` counts in the stats block
 (the no-`sorry` rule stays as an announcement gate); twice-daily cadence at 04:03 and 16:03
 UK (since 2026-10-10); every post made with Fable and Astra, so no gate means no post (since
-2026-10-10); short bullets, at most 40 words with one link (since 2026-10-11); quiet windows
-with merged PRs still get a short check-in; only a genuinely empty window posts nothing; the
-loop keeps running until Chris says otherwise.
+2026-10-10); short bullets, at most 40 words with one link (since 2026-10-11); an update takes
+as many parts as its qualifying results need, the bar for what qualifies unchanged (since
+2026-10-24: "only report on interesting known named results", in-progress for significant
+milestones only, never small progress reports towards the same goal); quiet windows with merged
+PRs still get a short check-in; only a genuinely empty window posts nothing; the loop keeps
+running until Chris says otherwise.
 
 ## The shape of a run
 
@@ -66,8 +69,10 @@ SKILL.md has the details; the skeleton, in order, with no step optional:
 7. **Compose** (see the style section — this is the part Chris singled out as good). Since
    2026-10-11 bullets are capped at 40 words: Chris found them getting wordy.
 8. **Verify every link on the review site** (SKILL.md §6: wait for the site if it is behind,
-   fall back to the docs anchor only for a name it still lacks), count codepoints (< 9,500), post,
-   **re-fetch rendered** and check the stats lines are present and `[message truncated]` is absent.
+   fall back to the docs anchor only for a name it still lacks), count codepoints (< 9,500 in each
+   part; an update with more qualifying results than one message holds goes out in parts, never
+   trimmed), post, **re-fetch rendered** and check each part's last bullet, and the last part's
+   stats lines, are present and `[message truncated]` is absent.
 9. **State DM** — post first, DM second; retry the DM if it fails.
 10. **No cron upkeep.** Since 2026-09-12 the schedule is the server's systemd timers, not a
     session cron.

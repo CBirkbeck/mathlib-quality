@@ -202,7 +202,8 @@ Each run:
    channel message's timestamp, set `commit` to the last TauCeti commit merged before it and
    `pr=` to the merged-PR count at that time, write the DM, then proceed.
 4. **After every successful channel post, send the updated state DM** — post first, DM
-   second; if the DM write fails, retry it before ending the run.
+   second; if the DM write fails, retry it before ending the run. An update in several parts
+   (§6, "Size and parts") is one post: the DM goes after its last part.
 
 ## Never double-post
 
@@ -598,9 +599,9 @@ Zulip-specific rules, each learned from reader feedback on the first message:
   exceeds the cap returns **success while silently truncating** the rendered message with a
   trailing "[message truncated]" (this happened: it cut "Mathlib" to "Math" mid-word and ate
   the stats block). Count codepoints before sending (`len()` in Python on the exact
-  content), stay under ~9,500, and **verify the rendered tail after every post or edit**
-  (`GET` the message with `apply_markdown=true` and check the stats lines are present and
-  "[message truncated]" is not).
+  content), stay under ~9,500 in every part, and **verify the rendered tail after every
+  post or edit** (`GET` the message with `apply_markdown=true` and check that its last bullet,
+  and in the last part the stats lines, are present, and "[message truncated]" is not).
 
 Rules for the prose. **Short is the house style.**
 
@@ -624,9 +625,26 @@ Rules for the prose. **Short is the house style.**
 - No marketing adjectives; no "exciting"/"major milestone". State what the theorem says,
   not how impressive it is.
 
-**Size.** A normal update fits in one message. If yours needs more than two, the bar has
-slipped: re-apply the tests in *What counts* to every candidate rather than trimming
-sentences or splitting into more parts.
+**Size and parts** (owner request, 2026-10-24). Space never decides what goes in. Every result
+that passes *What counts* gets its bullet, however many there are: when they do not fit in one
+message under ~9,500 codepoints, post the update in parts. Never drop, merge or shorten a
+qualifying bullet to fit one message; that is what made the October posts stop just under the
+cap. Equally, never relax the bar to fill a part. What goes in is unchanged: named results and
+notable definitions people in the area know by name, each proved in full, and in the
+in-progress line only big milestones, once per theorem, never steps towards the same goal.
+- **Split between bullets**, never inside one, each part under ~9,500 codepoints.
+- **Every part is readable on its own**: its header line is
+  `**Voyager · what's new in Tau Ceti** (part k of n)`, with whatever suffix the header carries,
+  and it repeats the section heading (`*Named results*`, `*Notable definitions*`) over its
+  bullets. The review site reads each message on its own, and takes a bullet's kind from the
+  heading above it.
+- **The in-progress line and the stats block** go in the last part only.
+- **Post the parts in order**, verifying each one's rendered tail before posting the next. Send
+  the state DM after the last. If a part fails to post, stop and report, leaving the watermark:
+  the next run's PR dedupe drops what already went out and posts the rest.
+- **More than about three parts** is rare: it can happen after a long quiet spell, but more
+  often it means the bar has slipped. Re-apply the tests in *What counts* to every candidate
+  before posting that much.
 
 **The in-progress line** (owner request, 2026-10-12: "progress has to be meaningful … we want
 big milestones only") names big milestones that have partly landed, so readers see them
