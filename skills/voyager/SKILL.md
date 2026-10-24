@@ -1,6 +1,6 @@
 ---
 name: voyager
-description: Post a "what's new in Tau Ceti" update as the voyager bot on the Lean Zulip — detect named theorems and significant definitions newly added to the TauCeti library since the last update, verify they are genuinely new (not already in Mathlib) and genuinely significant (via a ChatGPT second opinion), and post them with docs and PR links plus library stats. Use when running the daily Voyager update, when asked to check what's new in Tau Ceti, or when asked to post/refresh a Voyager message.
+description: Post a "what's new in Tau Ceti" update as the voyager bot on the Lean Zulip — detect named theorems and significant definitions newly added to the TauCeti library since the last update, verify they are genuinely new (not already in Mathlib) and genuinely significant (via a ChatGPT second opinion), and post them with links to the Tau Ceti review site and PR links plus library stats. Use when running the daily Voyager update, when asked to check what's new in Tau Ceti, or when asked to post/refresh a Voyager message.
 ---
 
 # Voyager — what's new in Tau Ceti
@@ -232,9 +232,11 @@ mandatory, before every post:
 
 **The window ends at the `docgen` branch, not `main`.** TauCeti's `docgen` branch (set up in
 TauCeti#1539) tracks the most recent commit on main **for which a complete docgen run is
-published** — so everything inside the window is guaranteed to have API-docs pages to link
-to, results merged after the docs point simply wait for the next run (≤ half a day), and no
-docs-workflow polling is needed.
+published** — so everything inside the window is guaranteed to have API-docs pages, results
+merged after the docs point simply wait for the next run (≤ half a day), and no docs-workflow
+polling is needed. The Tau Ceti review site, where the bullets link (§6), follows the same branch,
+so everything in the window has a page there too once the site has caught up: check it now (§6,
+"Verify every link on the site") and start its update if it is behind.
 
 Clone with **full history** — step 5 needs it for PR attribution, and a shallow clone breaks
 that silently:
@@ -483,8 +485,7 @@ report the same PR, that is the bug. Check with `test -f .git/shallow` and
 `git` may have no network while `gh` does; fetch accordingly.
 
 - Cite the PR as bare `TauCeti#<n>` — the Lean Zulip's linkifier turns it into a link.
-- The bold result name links to the **current source file at `main`** (see §6), which also
-  covers the case where the declaration has moved since its PR.
+- The bold result name links to the declaration's page on the **Tau Ceti review site** (see §6).
 - If no PR can be found (direct push), cite the commit hash with an explicit link.
 - Never announce something you could not link.
 
@@ -496,11 +497,11 @@ Format (Zulip markdown):
 **Voyager · what's new in Tau Ceti**
 
 *Named results*
-- **[<Standard name>](<docs anchor>)** — <one sentence, at most 40 words, on what it asserts> (<one short reference>). (TauCeti#123)
+- **[<Standard name>](<review-site link>)** — <one sentence, at most 40 words, on what it asserts> (<one short reference>). (TauCeti#123)
 - ...
 
 *Notable definitions*
-- **[<Name>](<docs anchor>)** — <what it is and what it is for, at most 40 words>. (TauCeti#124)
+- **[<Name>](<review-site link>)** — <what it is and what it is for, at most 40 words>. (TauCeti#124)
 
 *In progress* — <Standard name>: <what is proved, at most six words> (TauCeti#125); <…>
 
@@ -518,34 +519,75 @@ Zulip-specific rules, each learned from reader feedback on the first message:
   breaks, so hard-wrapped prose renders with ragged mid-sentence breaks. Never wrap.
 - **Use the realm linkifiers**: bare `TauCeti#NNN` for TauCeti PRs, `mathlib4#NNN` for
   Mathlib PRs — not explicit markdown PR links.
-- **Link each bold result name to its declaration in the API docs**, so readers land on the
-  exact statement:
-  `https://taucetiproject.org/docs/TauCeti/<Module/Path>.html#<Fully.Qualified.Name>`
-  (doc-gen4 layout; the old `taucetiproject.github.io/TauCeti/docs/` address redirects
-  there). **Extract the anchor from the published page's HTML — never construct it from the
-  declaration name.** Namespaces vary and some files have no `TauCeti` namespace at all
+- **Link each bold result name to the declaration's page on the Tau Ceti review site** (owner
+  request, 2026-10-24), where a reader sees the statement as the docs show it and what it rests on,
+  and can review it, suggest a test or say what could be better:
+  `https://cbirkbeck.github.io/tauceti-reviewed-by-test/#/d/<Fully.Qualified.Name>`, the name
+  percent-encoded as a URI component (Python `urllib.parse.quote(name, safe="")`; most names need
+  nothing). **Take the name from the API docs, never construct it**: curl the published page,
+  `https://taucetiproject.org/docs/TauCeti/<Module/Path>.html` (expect 200), and pull the real
+  `id="…"` out of its HTML. Namespaces vary and some files have no `TauCeti` namespace at all
   (`lieExp`, `pointDerivationEquivTangentSpace`, `ModularForm.lSeries`,
   `Matrix.SpecialLinearGroup.map_intCast_zmod_surjective` are bare or foreign-namespaced);
-  probability lives under `TauCeti.Probability.*`, Lévy downward under `MeasureTheory.*`.
-  **Verify every link before posting**: curl the page (expect 200) and pull the real
-  `id="…"` out of the HTML. **Link the anchor of the theorem the headline claims, never the
-  containing definition** — a bullet titled "…is finite" links the finiteness statement
-  (`instFinite`), not the group it is about; the maintainer caught exactly this once. The
-  docs rebuild at most once daily (`pages.yml` — slow, delayed, and occasionally failing;
-  see the schedule notes), so a result merged after the last successful build is not
-  documented yet — for those, fall back to the source file at
-  `https://github.com/TauCetiProject/TauCeti/blob/main/<path>`; a later run can use the docs
-  link when it next mentions the module. Waiting for the day's docs run (see the schedule)
-  keeps these fallbacks rare.
-- **Links rot after posting.** The docs site serves only the newest build, so a link that
-  verified at post time dies when a later refactor moves the file or renames the
-  declaration (`Montel.lean` → `Montel/`, `JordanCurve.lean` → `JordanCurve/Basic.lean`,
-  the Fredholm upstreaming that deleted `TauCeti.IsFredholm` and `Parametrix.lean`
-  outright). A full audit of all previously posted links on 2026-08-03 found four dead;
-  re-audit periodically and after any large refactor lands. Retarget to the current anchor;
-  for a file *deleted* from the tree, use a pinned-commit permalink
-  (`blob/<sha>/<path>`), which cannot rot. In-place edits of posted messages remain
-  maintainer-request-only, as below.
+  probability lives under `TauCeti.Probability.*`, Lévy downward under `MeasureTheory.*`. **Link
+  the declaration the headline claims, never the containing definition** — a bullet titled "…is
+  finite" links the finiteness statement (`instFinite`), not the group it is about; the maintainer
+  caught exactly this once.
+- **Verify every link on the site before posting.** The site follows the `docgen` branch your
+  window ends at: it checks every 20 minutes and rebuilds in about 45, so at the time of a run it
+  can be behind.
+  1. Right after establishing the window (§1), run the check below with the `docgen` commit and no
+     names: it prints the site's commit. If that is not the `docgen` commit, start the site's update
+     once, `gh workflow run follow.yml -R CBirkbeck/tauceti-reviewed-by-test`, and carry on with the
+     gates; it is ready long before you are.
+  2. Before posting, run the check with the `docgen` commit and every name you will link. It waits,
+     at most nine minutes per call, until each name is on the site or the site has reached the
+     `docgen` commit. On `SITE_PENDING`, run it again, for up to 90 minutes in all. Run it in the
+     foreground with the Bash timeout at 600000; never detach it, and never end your turn while it
+     is pending.
+  3. Every name must print `ON-SITE`. A name still `MISSING` with the site at the `docgen` commit (the
+     site's extractor skips a module that did not build for it), or after 90 minutes: link that
+     bullet to the API docs anchor instead, `https://taucetiproject.org/docs/TauCeti/<Module/Path>.html#<Name>`
+     (curled, 200, the `id` present), and say in the run log which name and why. Never post a link
+     you have not verified.
+
+  ```bash
+  python3 - <docgen-sha> <Name> <Name> … <<'PY'
+  import json, sys, time, urllib.request
+  SITE = "https://cbirkbeck.github.io/tauceti-reviewed-by-test/data/"
+  def get(path):  # past the Pages cache: the build may be minutes old
+      return json.load(urllib.request.urlopen(f"{SITE}{path}?t={time.time():.0f}", timeout=60))
+  def on_site(meta, name):  # the site's own name lookup (FNV-1a over UTF-16 code units)
+      h, data = 0x811C9DC5, name.encode("utf-16-le")
+      for i in range(0, len(data), 2):
+          h = ((h ^ (data[i] | data[i + 1] << 8)) * 0x01000193) & 0xFFFFFFFF
+      ids = [r[0] for r in get(f"names/{h % meta['shards']['names']}.json") if r[1] == name]
+      n = meta["shards"]["nodes"]
+      return bool(ids) and get(f"nodes/{ids[0] // n}.json")[ids[0] % n][2] & 1 == 1  # one of Tau Ceti's own
+  target, names = sys.argv[1], sys.argv[2:]
+  deadline = time.time() + 540
+  while True:
+      meta = get("meta.json")
+      missing = [x for x in names if not on_site(meta, x)]
+      if not missing or meta["library"]["commit"] == target or time.time() > deadline:
+          break
+      time.sleep(60)
+  print("site at", meta["library"]["commit"], "· docgen at", target)
+  for x in names:
+      print("MISSING" if x in missing else "ON-SITE", x)
+  if missing and meta["library"]["commit"] != target:
+      print("SITE_PENDING")
+  PY
+  ```
+- **Links rot after posting**, on the site as in the docs: both show only the current build, so a
+  link that verified at post time dies when a later refactor renames or deletes the declaration (in
+  the docs era: `Montel.lean` → `Montel/`, `JordanCurve.lean` → `JordanCurve/Basic.lean`, the
+  Fredholm upstreaming that deleted `TauCeti.IsFredholm` and `Parametrix.lean` outright). Re-audit
+  periodically and after any large refactor lands, with the check above over the topic's links.
+  Retarget a renamed declaration to its new name (the site's Named page lists each announcement under
+  its current name); for one deleted from the tree, use a pinned-commit permalink to the source
+  (`https://github.com/TauCetiProject/TauCeti/blob/<sha>/<path>`), which cannot rot. In-place edits
+  of posted messages remain maintainer-request-only, as below.
 - **Bold goes OUTSIDE links**: `**[Name](url)**`, never `[**Name**](url)` — Zulip renders
   markup inside link text literally, so the reader sees raw asterisks.
 - **No HTML comments anywhere** — Zulip renders them as visible text.
