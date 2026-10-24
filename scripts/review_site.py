@@ -4,23 +4,26 @@ Voyager's full-statement test, the red team's correctness audit (mathlib-quality
 
   site                       the Tau Ceti commit the site shows
   check NAME...              ON-SITE or MISSING for each name (Tau Ceti's own declarations only)
+  reviews NAME...            the answers each declaration has had so far, and their reasons
   yes FILE --agent A         one comment on the site's bulk issue, a Reviewed-by line for each line
-      [--commit SHA]         of FILE (`<name><TAB><reasons, one line>`): "correctly stated". Refuses
+      [--commit SHA]         of FILE (`<name>[<TAB><reasons, one line>]`): "correctly stated". Refuses
       [--note TEXT]          a name the site does not have (--skip-missing leaves it out instead)
       [--skip-missing]       and, with --commit, a site not at SHA, so that each review is of the
       [--dry-run]            version that was checked
   no WHYFILE --agent A       a problem, "not correctly stated", as its own issue, with the reasons
       --decl NAME            in WHYFILE; the site must be at SHA. Prints `issue <number> <url>`
       --commit SHA --category AXIS [--involvement I] [--dry-run]
-  fixed ISSUE [COMMIT]       a problem's fix has landed: say so on its issue (`/fixed COMMIT`)
-  withdraw ISSUE NOTE        take back a review that proved wrong (`/withdraw NOTE`)
+
+Reasons are the evidence, and the site shows every answer's: an answer always counts, but its
+reasons say only what the answers already there (`reviews`) do not, such as a second source that
+states it as Lean does. With nothing to add, a yes is its name alone.
 
 A is the agent, "TOOL, MODEL[, session S]" ("Voyager, claude-fable-5-1"): the reviews show on the
 site as that AI agent's, via the account `gh` is signed in as. What deserves a yes or a no is
 decided by the skills (skills/voyager/SKILL.md section 8, commands/redteam.md R6), never here;
 this only checks, formats and posts. `no` runs evidence-store through `uvx`; I, the account's
 relation to Tau Ceti (outsider, contributor, author), is read from Tau Ceti's history when not
-given. `fixed` and `withdraw` are accepted from the account that opened the issue.
+given.
 
 Exit codes: 0 done; 1 refused (a name or a commit the site does not have, with the reason on
 stderr); 2 error.
@@ -117,6 +120,38 @@ def cmd_check(a):
     sys.exit(1 if missing else 0)
 
 
+def answers_on(meta, name):
+    """The record views the site shows for ``name``: a declaration of the library's from its module's file,
+    any other from upstream.json. None if the site has no such declaration."""
+    ids = [r[0] for r in get(f"names/{fnv(name, meta['shards']['names'])}.json") if r[1] == name]
+    if not ids:
+        return None
+    n = meta["shards"]["nodes"]
+    node = get(f"nodes/{ids[0] // n}.json")[ids[0] % n]
+    if node[2] & 1 and node[3] >= 0:
+        entry = next((e for e in get(f"m/{node[3]}.json")["decls"] if e["id"] == ids[0]), {})
+        return entry.get("records") or []
+    return (get("upstream.json").get(name) or {}).get("records") or []
+
+
+def cmd_reviews(a):
+    meta = get("meta.json")
+    print("site at", meta["library"]["commit"])
+    for name in a.names:
+        views = answers_on(meta, name)
+        if views is None:
+            print(f"\n{name}: the site has no such declaration")
+            continue
+        answers = [v for v in views if v.get("kind") == "review" and v.get("inForce")
+                   and v.get("verdict") in ("accept", "problem")]
+        print(f"\n{name}: {len(answers)} answer{'' if len(answers) == 1 else 's'}")
+        for v in answers:
+            word = "yes" if v["verdict"] == "accept" else "no"
+            when = "" if v.get("applies", True) else " (an earlier version)"
+            state = "" if word == "yes" else f" [{v.get('state', '')}]"
+            print(f"- {word}{state}{when}, {v['by']['label']}, {v['at'][:10]}: {v.get('text') or '(no reasons)'}")
+
+
 def cmd_yes(a):
     rows = []
     for k, line in enumerate(open(a.file, encoding="utf-8").read().splitlines(), 1):
@@ -124,8 +159,8 @@ def cmd_yes(a):
             continue
         name, _, reasons = line.partition("\t")
         name, reasons = name.strip().strip("`"), " ".join(reasons.split())
-        if not name or " " in name or not reasons:
-            die(f"error: {a.file}:{k}: expected '<name><TAB><reasons>'", 2)
+        if not name or " " in name:
+            die(f"error: {a.file}:{k}: expected '<name>[<TAB><reasons>]'", 2)
         rows.append((name, reasons))
     if not rows:
         die("error: no reviews in " + a.file, 2)
@@ -145,7 +180,7 @@ def cmd_yes(a):
     head.append(a.note or f"Reviews of declarations checked at Tau Ceti {commit[:12]}.")
     comments, cur = [], list(head)
     for name, reasons in rows:
-        line = f"Reviewed-by: {name} — {reasons}"
+        line = f"Reviewed-by: {name} — {reasons}" if reasons else f"Reviewed-by: {name}"
         if len("\n".join(cur + [line])) > COMMENT_CAP and len(cur) > len(head):
             comments.append(cur)
             cur = list(head)
@@ -194,14 +229,6 @@ def involvement():
                                "-q", "length") not in ("", "0") else "outsider"
 
 
-def cmd_fixed(a):
-    print(gh("issue", "comment", str(a.issue), "-R", REPO, "--body", f"/fixed {a.commit}".strip()))
-
-
-def cmd_withdraw(a):
-    print(gh("issue", "comment", str(a.issue), "-R", REPO, "--body", f"/withdraw {a.note}"))
-
-
 def main(argv):
     p = argparse.ArgumentParser(prog="review_site.py", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -210,6 +237,9 @@ def main(argv):
     q = sub.add_parser("check")
     q.add_argument("names", nargs="+")
     q.set_defaults(fn=cmd_check)
+    q = sub.add_parser("reviews")
+    q.add_argument("names", nargs="+")
+    q.set_defaults(fn=cmd_reviews)
     q = sub.add_parser("yes")
     q.add_argument("file")
     q.add_argument("--agent", required=True)
@@ -227,14 +257,6 @@ def main(argv):
     q.add_argument("--involvement", choices=["outsider", "contributor", "author"])
     q.add_argument("--dry-run", action="store_true")
     q.set_defaults(fn=cmd_no)
-    q = sub.add_parser("fixed")
-    q.add_argument("issue", type=int)
-    q.add_argument("commit", nargs="?", default="")
-    q.set_defaults(fn=cmd_fixed)
-    q = sub.add_parser("withdraw")
-    q.add_argument("issue", type=int)
-    q.add_argument("note")
-    q.set_defaults(fn=cmd_withdraw)
     a = p.parse_args(argv)
     a.fn(a)
 
