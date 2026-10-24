@@ -6,9 +6,10 @@
             claims refs/tauceti-claims/redteam/<path>; branch/<pr> claims a PR branch
   finding   record a finding, or a change to one (validated; a win needs its evidence)
   audit     record a finished file audit (validated; every declaration needs a verdict
-            in every category)
-  sync      mark findings landed or rejected once their PRs merge or close, and settle their
-            "not correctly stated" reviews on the review site (fixed, or withdrawn if refuted)
+            in every category), with its yeses for the review site
+  sync      mark findings landed or rejected once their PRs merge or close
+  reviews   post this agent's yeses on the Tau Ceti review site once the site shows each
+            file as it was audited; drop those whose file changed first
   whoami    this agent's id: its PRs carry it, so each agent tends and counts only its own
   astra     ask gpt-6-astra through the Codex CLI, for machines without the chatgpt-math MCP
   tally     the scoreboard: wins, losses, landed fixes, coverage, recurring patterns
@@ -46,7 +47,7 @@ REMOTE = "https://github.com/TauCetiProject/TauCeti.git"
 REPO_SLUG = "TauCetiProject/TauCeti"
 CLAIM_PREFIX = "refs/tauceti-claims/redteam/"
 SKEW = 60
-#: Posts and settles the red team's reviews on the Tau Ceti review site (R6, step 9).
+#: Posts the red team's yeses on the Tau Ceti review site (R6 step 10).
 REVIEW_SITE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "review_site.py")
 
 MODS = r"(?:(?:private|protected|public|noncomputable|partial|unsafe|nonrec|scoped|local)\s+)*"
@@ -85,7 +86,7 @@ def iso(t=None):
 
 def ledger_dir():
     d = os.path.expanduser(os.environ.get("REDTEAM_LEDGER", "~/.tauceti-redteam"))
-    for sub in ("findings", "audits"):
+    for sub in ("findings", "audits", "reviews"):
         os.makedirs(os.path.join(d, sub), exist_ok=True)
     return d
 
@@ -433,6 +434,7 @@ def cmd_audit(a):
             for i in ids or []:
                 if i not in known:
                     bad.append("%s: %s cites %s, which is not in the ledger" % (decl, c, i))
+    bad += yes_problems(row, matrix, known)
     if bad:
         die("audit of %s not recorded (%d problems):\n  - %s" % (path, len(bad), "\n  - ".join(bad[:60])), 1)
     ids = sorted({i for cells in matrix.values() for v in cells.values() for i in cell_ids(v) or []})
@@ -443,33 +445,86 @@ def cmd_audit(a):
     print("recorded: %s, %d declarations and the file row, %d findings" % (path, len(matrix) - 1, len(ids)))
 
 
-# --- sync -------------------------------------------------------------------------------
+def yes_problems(row, matrix, known):
+    """An audit's yeses (R6 step 8): {full name: reasons on one line, or "" when the answers already on
+    the site say it all}, each for a declaration of the matrix whose correctness checks passed and
+    against which no CRITICAL finding stands; and the model that audited, which names the reviewer."""
+    yes, bad = row.get("yes") or {}, []
+    if not isinstance(yes, dict):
+        return ["'yes' maps each full name to its reasons"]
+    if yes and not row.get("model"):
+        bad.append("an audit with yeses needs 'model', the model that audited: the site names the reviewer by it")
+    for name, reasons in yes.items():
+        keys = [k for k in matrix if k == name or name.endswith("." + k)]
+        cells = (matrix[keys[0]] or {}) if keys else None
+        if cells is None:
+            bad.append("yes for %s, which has no row in the matrix (give its full name)" % name)
+        elif cells.get("correctness") != "ok":
+            bad.append("yes for %s, whose correctness cell is not ok" % name)
+        elif any((known.get(i) or {}).get("severity") == "CRITICAL" and known[i].get("status") != "refuted"
+                 for v in cells.values() for i in cell_ids(v) or []):
+            bad.append("yes for %s, which a CRITICAL finding stands against" % name)
+        if not isinstance(reasons, str) or "\n" in reasons or " " in name.strip():
+            bad.append("yes for %s: a full name, and its reasons on one line (or \"\")" % name)
+    return bad
 
-def settle_review(f):
-    """A finding's review on the review site follows the finding: a fix that lands, or another change
-    that fixed it first, marks it fixed; a refutation withdraws it. A rejected finding waits for the
-    round to read why its PR closed (R0). The fields to record, or {} when there is nothing to do or
-    the site was not reached (the next sync tries again)."""
-    issue, status = f.get("review_issue"), f.get("status")
-    if not issue or f.get("review_settled"):
-        return {}
-    if status in ("landed", "superseded"):
-        sha = f.get("merged") or ""
-        if not sha:
-            m = re.search(r"\b[0-9a-f]{7,40}\b", f.get("resolution") or "")
-            sha = m.group(0) if m else ""
-        args = ["fixed", str(issue)] + ([sha] if sha else [])
-    elif status == "refuted":
-        args = ["withdraw", str(issue), f.get("resolution") or "the finding was refuted"]
-    else:
-        return {}
-    r = run([sys.executable, REVIEW_SITE] + args, check=False)
+
+# --- reviews ----------------------------------------------------------------------------
+
+def cmd_reviews(a):
+    """The yeses of this agent's audits go on the review site once it shows each file as it was audited:
+    the site follows Tau Ceti's docgen commit, behind main, so a file added or changed since then waits.
+    If the file changes again before the site reaches the audited commit, its yeses are dropped: they
+    were about a version the site never shows."""
+    d = ledger_dir()
+    pull(d)
+    owner = owner_id(a.repo)
+    r = run([sys.executable, REVIEW_SITE, "site"], check=False)
     if r.returncode != 0:
-        print("%s: review #%s not updated, the next sync tries again: %s" % (f["id"], issue, r.stderr.strip()))
-        return {}
-    print("%s: review #%s %s" % (f["id"], issue, "marked fixed" if args[0] == "fixed" else "withdrawn"))
-    return {"review_settled": args[0]}
+        print("the review site cannot be read; the yeses wait for a later round: %s" % r.stderr.strip())
+        return
+    site = r.stdout.strip()
+    if run(["git", "cat-file", "-e", site + "^{commit}"], cwd=a.repo, check=False).returncode != 0:
+        run(["git", "fetch", "-q", "origin"], cwd=a.repo, check=False)
+    settled = {(x["file"], x["main"]) for x in read_jsonl(d, "reviews")}
+    newest = {}
+    for au in read_jsonl(d, "audits"):  # the newest audit of each file by this agent stands for it
+        if au.get("owner") == owner and au.get("audited_at", "") >= newest.get(au["file"], {}).get("audited_at", ""):
+            newest[au["file"]] = au
+    posted = waiting = dropped = 0
+    for au in sorted(newest.values(), key=lambda x: x.get("audited_at", "")):
+        if not au.get("yes") or (au["file"], au["main"]) in settled:
+            continue
+        g = run(["git", "rev-parse", "%s:%s" % (site, au["file"])], cwd=a.repo, check=False)
+        row = {"file": au["file"], "main": au["main"], "site": site}
+        if g.returncode != 0 or g.stdout.strip() != au["blob"]:
+            if run(["git", "merge-base", "--is-ancestor", au["main"], site], cwd=a.repo, check=False).returncode != 0:
+                waiting += 1  # the site has not reached the audited commit yet
+                continue
+            row.update(state="dropped", why="the file changed after the audit, before the site showed it")
+            dropped += 1
+        else:
+            tsv = os.path.join(d, "yes-%d.tsv" % os.getpid())
+            with open(tsv, "w") as f:
+                f.write("".join("%s\t%s\n" % (n, " ".join(t.split())) for n, t in sorted(au["yes"].items())))
+            p = run([sys.executable, REVIEW_SITE, "yes", tsv, "--commit", site, "--skip-missing",
+                     "--agent", "Tau Ceti red team, %s, session %s" % (au["model"], owner),
+                     "--note", "Red-team audit of %s at Tau Ceti %s." % (au["file"], au["main"][:12])], check=False)
+            os.remove(tsv)
+            if p.returncode != 0:  # the site moved, or GitHub failed: try again next round
+                print("%s: not posted, tried again next round: %s" % (au["file"], p.stderr.strip()))
+                waiting += 1
+                continue
+            row.update(state="posted", yeses=len(au["yes"]))
+            posted += 1
+            print("%s: %d yeses posted" % (au["file"], len(au["yes"])))
+        row.update({"at": iso(), "owner": owner})
+        append(d, "reviews", owner, row)
+    push(d, "redteam: reviews, %d posted" % posted)
+    print("review site at %s: %d files posted, %d waiting, %d dropped" % (site[:12], posted, waiting, dropped))
 
+
+# --- sync -------------------------------------------------------------------------------
 
 def cmd_sync(a):
     d = ledger_dir()
@@ -477,28 +532,24 @@ def cmd_sync(a):
     owner = owner_id(a.repo)
     changed = 0
     for f in findings(d).values():
-        row = {}
-        if f.get("status") == "pr-open":
-            r = run(["gh", "pr", "view", str(f["pr"]), "--repo", REPO_SLUG, "--json", "state,url,mergeCommit"],
-                    check=False)
-            if r.returncode != 0:
-                die("gh pr view %s failed; stop the round.\n%s" % (f["pr"], r.stderr))
-            pr = json.loads(r.stdout)
-            if pr["state"] == "MERGED":
-                row = {"id": f["id"], "status": "landed", "merged": (pr.get("mergeCommit") or {}).get("oid", "")}
-            elif pr["state"] == "CLOSED":
-                row = {"id": f["id"], "status": "rejected",
-                       "resolution": "PR #%s closed without merging (%s); read why, and re-mark it superseded "
-                                     "if another change fixed it" % (f["pr"], pr["url"])}
-            if row:
-                print("%s %s (#%s)" % (f["id"], row["status"], f["pr"]))
-        settled = settle_review(dict(f, **row))
-        if not row and not settled:
+        if f.get("status") != "pr-open":
             continue
-        row = dict(row or {"id": f["id"]}, **settled)
+        r = run(["gh", "pr", "view", str(f["pr"]), "--repo", REPO_SLUG, "--json", "state,url"], check=False)
+        if r.returncode != 0:
+            die("gh pr view %s failed; stop the round.\n%s" % (f["pr"], r.stderr))
+        pr = json.loads(r.stdout)
+        if pr["state"] == "MERGED":
+            row = {"id": f["id"], "status": "landed"}
+        elif pr["state"] == "CLOSED":
+            row = {"id": f["id"], "status": "rejected",
+                   "resolution": "PR #%s closed without merging (%s); read why, and re-mark it superseded "
+                                 "if another change fixed it" % (f["pr"], pr["url"])}
+        else:
+            continue
         row.update({"at": iso(), "owner": owner})
         append(d, "findings", owner, row)
         changed += 1
+        print("%s %s (#%s)" % (f["id"], row["status"], f["pr"]))
     push(d, "redteam: sync %d" % changed)
     print("synced: %d changed" % changed)
 
@@ -611,8 +662,8 @@ def main():
     au = sub.add_parser("audit", help="record a finished file audit")
     au.add_argument("json", help="the audit as JSON, or @path to a JSON file")
     au.add_argument("--ref", default="origin/main")
-    sub.add_parser("sync", help="mark findings landed or rejected once their PRs merge or close, and settle "
-                                "their reviews on the review site")
+    sub.add_parser("sync", help="mark findings landed or rejected once their PRs merge or close")
+    sub.add_parser("reviews", help="post this agent's yeses on the review site where it shows the file as audited")
     sub.add_parser("whoami", help="print this agent's id (kept in <checkout>/.mathlib-quality/redteam-owner)")
     q = sub.add_parser("astra", help="ask gpt-6-astra through the Codex CLI; prints the answer")
     q.add_argument("question", help="a file holding the question (or @file)")
@@ -624,7 +675,7 @@ def main():
     a = ap.parse_args()
     a.repo = os.path.abspath(os.path.expanduser(a.repo))
     {"next": cmd_next, "claim": cmd_claim, "finding": cmd_finding, "audit": cmd_audit, "sync": cmd_sync,
-     "whoami": cmd_whoami, "astra": cmd_astra, "tally": cmd_tally}[a.cmd](a)
+     "reviews": cmd_reviews, "whoami": cmd_whoami, "astra": cmd_astra, "tally": cmd_tally}[a.cmd](a)
 
 
 if __name__ == "__main__":

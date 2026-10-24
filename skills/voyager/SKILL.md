@@ -750,6 +750,12 @@ compared, announced or not.
 - **Nothing** for a candidate dropped before its statement was compared (a helper, no docstring,
   the importance test failing first), and for anything you did not read at the window's commit.
 
+Every answer counts, so give it even when the declaration has answers already. Its reasons are
+evidence, and the site shows every answer's, so they say only what the answers already there do
+not (`reviews` below lists them): a second source that states it as Lean does, a check not yet
+listed. With nothing to add, a yes is the name alone; a no that an open no already makes can say
+just that (`as #N`), and anything more.
+
 Do it after the post and the state DM. A failure here never touches them: report it in the run
 log, and the next run does not redo it.
 
@@ -758,15 +764,16 @@ log, and the next run does not redo it.
 RS=/tmp/voyager-review_site.py
 git -C ~/Documents/GitHub/mathlib-quality show origin/main:scripts/review_site.py > "$RS" 2>/dev/null ||
   cp "${CLAUDE_PLUGIN_ROOT:-$(ls -d ~/.claude/plugins/cache/*/mathlib-quality/*/ | sort -V | tail -1)}/scripts/review_site.py" "$RS"
+python3 "$RS" reviews <name> <name> …      # the answers each already has, and their reasons
 python3 "$RS" yes yes.tsv --agent "Voyager, <your model>" --commit <docgen sha> --skip-missing \
   --note "Checked in Voyager's full-statement test for the update of <date>: <link to the post>."
 python3 "$RS" no why.md --agent "Voyager, <your model>" --decl <name> --commit <docgen sha> --category <axis>
 ```
 
-- `yes.tsv` has a line per declaration, `<name><TAB><reasons>`, the reasons on one line: what it
-  states and the source it was compared with, e.g. `Correctly stated: … (Serre, *A Course in
-  Arithmetic*, VII §4); compared in Voyager's full-statement test.` The helper posts them as one
-  comment on the site's bulk issue, marked as Voyager's AI review.
+- `yes.tsv` has a line per declaration, `<name>[<TAB><reasons>]`, the reasons on one line and
+  only what is new: what it states and the source it was compared with, e.g. `Correctly stated:
+  … (Serre, *A Course in Arithmetic*, VII §4); compared in Voyager's full-statement test.` The
+  helper posts them as one comment on the site's bulk issue, marked as Voyager's AI review.
 - Each no is its own issue, and `why.md` holds its reasons: what the name and docstring claim,
   what the Lean statement says, and the source's statement with its citation. Its category:
   `object` (a different object), `convention`, `edge-cases`, `junk`, `vacuous`, `generality` (an

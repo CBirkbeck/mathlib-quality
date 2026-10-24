@@ -308,9 +308,6 @@ change):
 - `rubric`: the TauCetiReview rubric that should have caught it (`correctness`, `reuse`,
   `scope`, `attribution`, `api-design`, `generality`, `placement`, `naming`,
   `documentation`, `proof-quality`), or `none` for what no rubric covers.
-- `review_issue`: the number of the finding's "not correctly stated" review on the review
-  site (section 7). `sync` writes `merged` (the fix's commit) when its PR merges, and
-  `review_settled` (`fixed` or `withdraw`) once it has told the site.
 
 An audit: `{"file": "<path>", "matrix": {"(file)": {…}, "<declaration>": {"correctness":
 "ok", "reuse": "F:RT-…", …}, …}}`.
@@ -323,56 +320,40 @@ An audit: `{"file": "<path>", "matrix": {"(file)": {…}, "<declaration>": {"cor
   so a duplicate record is an inflated score.
 - Anonymous instances are keyed `instance@L<line>`. The script finds the declarations itself
   and refuses the audit if any is missing.
+- `"model"` and `"yes"`: the model that audited, and the yeses for the review site, `{"<full
+  name>": "<reasons>"}` (section 7). The script refuses a yes for a declaration whose
+  correctness cell is not `ok`, or against which a CRITICAL finding stands.
 
-## 7. Reviews on the review site
+`python3 "$RT" reviews` writes `reviews/<owner>.jsonl`, one line per audit whose yeses it has
+settled: `"state": "posted"` with the site's commit, or `"dropped"` with why.
+
+## 7. Yeses on the review site
 
 The Tau Ceti review site (`https://cbirkbeck.github.io/tauceti-reviewed-by-test/`) asks one
 question of each declaration: is it correctly stated? A file's audit answers it for every
-declaration, so R6 step 9 records the answer there, as the red team's AI reviews.
-`scripts/review_site.py` checks and posts them; this section says what they say.
+declaration, and the red team records the yeses there as its AI reviews (R6 steps 8–10).
+**It never says no**: what it finds wrong it fixes (R5), and the fix landing changes the
+declaration, so any earlier yes for it goes stale by itself.
 
-**A yes** is one line of `yes.tsv`, `<full name><TAB><reasons>`, the reasons on one line: the
-statement in words, then the checks the audit ran on it.
+**Every yes counts; its reasons say only what is new.** The site shows each answer's reasons
+as the evidence for the declaration, so an agent that repeats what is there only buries it.
+Before writing them, read the answers the declaration already has
+(`python3 "$RS" reviews <full names>`). Say yes regardless, but put in the reasons only what
+they lack: the checks the audit ran, if no one lists them; a second source that states it as
+Lean does; a case the others did not try. When there is nothing to add, the reasons are `""`
+and the yes goes up as the name alone.
 
-```text
-TauCeti.Foo.card_dvd	Correctly stated: for a finite group G acting on a finite set X, the size of each orbit divides |G|, as its docstring says. Red-team audit at 1a2b3c4d5e6f: restated beside the docstring and the roadmap; no False from the hypotheses (simp_all, omega, grind); lean_minimal_hypotheses needs both; specialised at the cyclic group of order 3 acting on itself.
+```json
+"yes": {
+  "TauCeti.Foo.card_dvd": "Correctly stated: for a finite group G acting on a finite set X, the size of each orbit divides |G|, as its docstring says. Red-team audit at 1a2b3c4d5e6f: no False from the hypotheses (simp_all, omega, grind); lean_minimal_hypotheses needs both; specialised at the cyclic group of order 3 acting on itself.",
+  "TauCeti.Foo.card_orbit_mul_card_stabilizer": ""
+}
 ```
 
-**A no** is its own issue; its reasons (`why.md`):
-
-````text
-<the claim: what the name and docstring say, and what the statement says instead>
-
-Evidence, Lean at Tau Ceti <audited commit, 12 characters>:
-```lean
-<the probe, verbatim>
-```
-<what Lean said>
-
-Second opinion, gpt-6-astra: <agrees | disagrees | unsure>. <its summary>
-
-Red-team finding <id>. The fix goes to Tau Ceti as a PR; this review is marked fixed when it lands.
-````
-
-Its `--category` is the site's axis for the finding:
-
-| The finding | Axis |
-|---|---|
-| a wrong definition; a theorem about something other than what its name and docstring say | `object` |
-| a sign, normalisation or indexing convention unlike the source's | `convention` |
-| degenerate cases (empty, zero, `n = 0`, the trivial group) handled wrongly or left out | `edge-cases` |
-| a junk value making the statement hold for the wrong reason | `junk` |
-| vacuous, tautological or contradictory hypotheses; content moved into hypotheses; a placeholder | `vacuous` |
-| an arbitrary choice the statement depends on | `choice` |
-| assumptions that exclude cases the name or docstring covers | `generality` |
-| a name or docstring claiming more than the statement (`_iff` proving one direction) | `naming` |
-| anything else | `other` |
-
-These are the site's rubric axes (evidence-store's `ltb-rubric/1`).
-
-**What happens next.** `sync` follows each no: when the finding's PR merges it comments
-`/fixed <merge commit>` on the review's issue, and the site shows the problem fixed; when the
-finding is superseded, `/fixed <the commit named in its resolution>`; when it is refuted,
-`/withdraw <the resolution>`. A finding rejected because review showed the claim wrong is
-withdrawn by hand (R0). The site marks a yes stale once the declaration, or anything it rests
-on, changes, and the red team's later review of the same declaration (same model) replaces it.
+**When they go up.** The site follows Tau Ceti's `docgen` commit, up to a day behind `main`.
+`python3 "$RT" reviews` posts an audit's yeses, as one comment on the site's bulk issue, once
+the site shows the file exactly as audited (the same blob): at once if the file has not
+changed since the site's commit, otherwise in the round after the site catches up. If the file
+changes again before then, the yeses are dropped, since they describe a version the site never
+shows. Names the site has no page for (`private` declarations, anonymous instances) are left
+out. Nothing here limits the hunt: any file on `main` is audited, on the site or not.
