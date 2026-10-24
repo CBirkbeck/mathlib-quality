@@ -49,6 +49,8 @@ CLAIM_PREFIX = "refs/tauceti-claims/redteam/"
 SKEW = 60
 #: Posts the red team's yeses on the Tau Ceti review site (R6 step 10).
 REVIEW_SITE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "review_site.py")
+# A model's family, not the model: "GPT-6", "Opus 5", "Claude" (as scripts/review_site.py, which refuses them too).
+FAMILY = re.compile(r"^(gpt|claude|opus|sonnet|haiku|fable|gemini|codex)[-\s]?(\d+(\.\d+)?)?$", re.I)
 
 MODS = r"(?:(?:private|protected|public|noncomputable|partial|unsafe|nonrec|scoped|local)\s+)*"
 ATTRS = r"(?:@\[[^\]]*\]\s*)*"
@@ -454,6 +456,9 @@ def yes_problems(row, matrix, known):
         return ["'yes' maps each full name to its reasons"]
     if yes and not row.get("model"):
         bad.append("an audit with yeses needs 'model', the model that audited: the site names the reviewer by it")
+    elif yes and FAMILY.match(str(row["model"]).strip()):
+        bad.append("'model' is %r, a family, not a model: give the model exactly as your harness names it "
+                   "(claude-opus-5-5, not Opus; GPT-6 Astra, not GPT-6)" % row["model"])
     for name, reasons in yes.items():
         keys = [k for k in matrix if k == name or name.endswith("." + k)]
         cells = (matrix[keys[0]] or {}) if keys else None

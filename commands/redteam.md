@@ -293,7 +293,8 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
    you ran, a second source that states it as Lean does. With nothing to add they are `""`
    (reference section 7).
 9. **Record** with the script: each finding (`python3 "$RT" finding @f.json`), then the audit
-   with the full matrix, your `"model"` and the `"yes"` of step 8,
+   with the full matrix, your `"model"` (exactly as your harness names it, `claude-opus-5-5` or
+   `GPT-6 Astra`, never a family like `Opus` or `GPT-6`: the site shows it) and the `"yes"` of step 8,
    `{"<full name>": "<reasons>"}` (`python3 "$RT" audit @audit.json`). **The script refuses a
    win without compiled evidence and an Astra verdict, an audit with any declaration or
    category missing, and a yes where a correctness check failed.** A refusal means a step was

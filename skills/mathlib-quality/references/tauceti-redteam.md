@@ -320,8 +320,9 @@ An audit: `{"file": "<path>", "matrix": {"(file)": {…}, "<declaration>": {"cor
   so a duplicate record is an inflated score.
 - Anonymous instances are keyed `instance@L<line>`. The script finds the declarations itself
   and refuses the audit if any is missing.
-- `"model"` and `"yes"`: the model that audited, and the yeses for the review site, `{"<full
-  name>": "<reasons>"}` (section 7). The script refuses a yes for a declaration whose
+- `"model"` and `"yes"`: the model that audited, exactly as its harness names it (`claude-opus-5-5`,
+  `GPT-6 Astra`; the script refuses a family such as `Opus` or `GPT-6`, since the site shows the model
+  beside each answer), and the yeses for the review site, `{"<full name>": "<reasons>"}` (section 7). The script refuses a yes for a declaration whose
   correctness cell is not `ok`, or against which a CRITICAL finding stands.
 
 `python3 "$RT" reviews` writes `reviews/<owner>.jsonl`, one line per audit whose yeses it has
