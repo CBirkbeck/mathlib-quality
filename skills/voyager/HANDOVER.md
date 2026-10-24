@@ -30,6 +30,7 @@ again. When in doubt, skip; the result will still be true tomorrow.
 | scheduling | a self-renewing session cron job in Chris's Claude session (currently `a22e2578`). Session-only: it dies if that session closes, and it fires late if the machine is asleep or the session busy at 16:03 — this has happened three times and is harmless (the watermark defines the window, not the clock). The sturdier long-term home is a GitHub Actions workflow in the TauCeti repo; Chris knows |
 | first-run.md | dead weight — the backlog was posted once (2026-07-30) and must never be reposted; ignore that file entirely |
 | links | the declaration's page on the Tau Ceti review site, since 2026-10-24 (owner request); every earlier post's links were retargeted there the same day, also at the owner's request |
+| reviews | since 2026-10-24 (owner request), every candidate whose statement a run compared with its source gets an AI review on the review site: yes, or no with why (SKILL.md §8), posted after the DM with `scripts/review_site.py` |
 
 Owner decisions already made, not yours to revisit: no `sorry` counts in the stats block
 (the no-`sorry` rule stays as an announcement gate); twice-daily cadence at 04:03 and 16:03
@@ -74,7 +75,10 @@ SKILL.md has the details; the skeleton, in order, with no step optional:
    trimmed), post, **re-fetch rendered** and check each part's last bullet, and the last part's
    stats lines, are present and `[message truncated]` is absent.
 9. **State DM** — post first, DM second; retry the DM if it fails.
-10. **No cron upkeep.** Since 2026-09-12 the schedule is the server's systemd timers, not a
+10. **Reviews** — on the review site, of every candidate whose statement you compared with a
+    source: yes, or no with why (SKILL.md §8). After the DM; a failure is logged, never retried
+    into the next run.
+11. **No cron upkeep.** Since 2026-09-12 the schedule is the server's systemd timers, not a
     session cron.
 
 The three **never-double-post** checks (freshness; permanent `TauCeti#NNN` dedupe over the

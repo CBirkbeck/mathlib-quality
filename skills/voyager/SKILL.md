@@ -128,10 +128,10 @@ confirms channel subscription without posting. Run it first after setup.
 
 ## Prerequisites
 
-Tools: `gh` CLI (authenticated), `git`, python3 stdlib only, the npm **`codex` CLI** (OpenAI;
-driven through `~/.claude3/voyager/gate.sh`, which tries `CODEX_HOME=~/.codex` then `~/.codex2`)
-for the significance gate, and a local Mathlib checkout for the novelty gate (the roadmap repo's
-`.lake/packages/mathlib` is fine).
+Tools: `gh` CLI (authenticated), `git`, python3 stdlib only, `uvx` (for a review that says no,
+§8), the npm **`codex` CLI** (OpenAI; driven through `~/.claude3/voyager/gate.sh`, which tries
+`CODEX_HOME=~/.codex` then `~/.codex2`) for the significance gate, and a local Mathlib checkout
+for the novelty gate (the roadmap repo's `.lake/packages/mathlib` is fine).
 
 If credentials are missing, **stop and report** — do not post to a fallback channel and do
 not invent a message.
@@ -158,7 +158,8 @@ general-purpose agent with:
 The agent needs the Zulip env vars, an authenticated `gh`, and the npm `codex` CLI on PATH
 (the significance gate runs through it, not through an MCP — see §4). Give it `Bash`, `Read`,
 `Grep`, `Glob`. It does **not** need write access to any repository — Voyager never commits
-anything.
+anything. Its reviews (§8) are a comment and issues on the review site, which any signed-in `gh`
+can make.
 
 **On the schedule** (the intended cadence): twice a day, at 04:03 and 16:03 UK (owner-chosen
 slots; twice daily since 2026-10-10, once at 16:03 before that). Timing is forgiving because
@@ -512,7 +513,8 @@ Format (Zulip markdown):
 - <P> PRs merged since the last update (<T> total)
 ```
 
-…then send the updated state DM (see the watermark protocol).
+…then send the updated state DM (see the watermark protocol), then leave the reviews of what you
+checked (§8).
 
 Zulip-specific rules, each learned from reader feedback on the first message:
 
@@ -731,6 +733,50 @@ The `sorry` grep counts **mentions**, not proof holes: a docstring saying "the `
 `Suggested.lean`" matches too. The hit count is tiny, so read every hit and report only real
 `sorry` terms. (As of `a695b8c` the library's one grep hit is a docstring mention — the honest
 number was 0.)
+
+### 8. Review what you checked
+
+Owner request, 2026-10-24: Voyager leaves a review on the Tau Ceti review site of every result it
+checks. The full-statement test of §2 (the standard name, where it is used, the statement there,
+and whether the Lean statement proves it) is the question the site asks of a declaration — is it
+correctly stated? — so its answer is recorded there, for every candidate whose statement you
+compared, announced or not.
+
+- **Yes** when the Lean statement says what its name and docstring say it does. A correctly
+  labelled special case is a yes, though it gets no bullet.
+- **No** when they claim more or other than it proves: the full named theorem for a special case,
+  one direction or one part, an extra hypothesis, a different object or convention. Say what is
+  claimed, what is stated, and the source you compared it with.
+- **Nothing** for a candidate dropped before its statement was compared (a helper, no docstring,
+  the importance test failing first), and for anything you did not read at the window's commit.
+
+Do it after the post and the state DM. A failure here never touches them: report it in the run
+log, and the next run does not redo it.
+
+```bash
+# The helper at origin/main, like this file; the plugin's copy if the clone is missing.
+RS=/tmp/voyager-review_site.py
+git -C ~/Documents/GitHub/mathlib-quality show origin/main:scripts/review_site.py > "$RS" 2>/dev/null ||
+  cp "${CLAUDE_PLUGIN_ROOT:-$(ls -d ~/.claude/plugins/cache/*/mathlib-quality/*/ | sort -V | tail -1)}/scripts/review_site.py" "$RS"
+python3 "$RS" yes yes.tsv --agent "Voyager, <your model>" --commit <docgen sha> --skip-missing \
+  --note "Checked in Voyager's full-statement test for the update of <date>: <link to the post>."
+python3 "$RS" no why.md --agent "Voyager, <your model>" --decl <name> --commit <docgen sha> --category <axis>
+```
+
+- `yes.tsv` has a line per declaration, `<name><TAB><reasons>`, the reasons on one line: what it
+  states and the source it was compared with, e.g. `Correctly stated: … (Serre, *A Course in
+  Arithmetic*, VII §4); compared in Voyager's full-statement test.` The helper posts them as one
+  comment on the site's bulk issue, marked as Voyager's AI review.
+- Each no is its own issue, and `why.md` holds its reasons: what the name and docstring claim,
+  what the Lean statement says, and the source's statement with its citation. Its category:
+  `object` (a different object), `convention`, `edge-cases`, `junk`, `vacuous`, `generality` (an
+  assumption the name and docstring do not mention), `naming` (the name or docstring claims more
+  than the statement), or `other`.
+- The helper refuses a site not at the window's `docgen` commit, so a review is always of the
+  version you checked. The site was waited for in §6; if it is not there (it never caught up, or
+  has moved on since), skip the reviews this run and say so in the log. `--skip-missing` leaves out a name the site has no page for
+  and prints it: name it in the log too.
+- On the site these are AI reviews, counted apart from people's.
 
 ## First run (once, ever)
 

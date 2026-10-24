@@ -7,7 +7,8 @@
   finding   record a finding, or a change to one (validated; a win needs its evidence)
   audit     record a finished file audit (validated; every declaration needs a verdict
             in every category)
-  sync      mark findings landed or rejected once their PRs merge or close
+  sync      mark findings landed or rejected once their PRs merge or close, and settle their
+            "not correctly stated" reviews on the review site (fixed, or withdrawn if refuted)
   whoami    this agent's id: its PRs carry it, so each agent tends and counts only its own
   astra     ask gpt-6-astra through the Codex CLI, for machines without the chatgpt-math MCP
   tally     the scoreboard: wins, losses, landed fixes, coverage, recurring patterns
@@ -45,6 +46,8 @@ REMOTE = "https://github.com/TauCetiProject/TauCeti.git"
 REPO_SLUG = "TauCetiProject/TauCeti"
 CLAIM_PREFIX = "refs/tauceti-claims/redteam/"
 SKEW = 60
+#: Posts and settles the red team's reviews on the Tau Ceti review site (R6, step 9).
+REVIEW_SITE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "review_site.py")
 
 MODS = r"(?:(?:private|protected|public|noncomputable|partial|unsafe|nonrec|scoped|local)\s+)*"
 ATTRS = r"(?:@\[[^\]]*\]\s*)*"
@@ -442,30 +445,60 @@ def cmd_audit(a):
 
 # --- sync -------------------------------------------------------------------------------
 
+def settle_review(f):
+    """A finding's review on the review site follows the finding: a fix that lands, or another change
+    that fixed it first, marks it fixed; a refutation withdraws it. A rejected finding waits for the
+    round to read why its PR closed (R0). The fields to record, or {} when there is nothing to do or
+    the site was not reached (the next sync tries again)."""
+    issue, status = f.get("review_issue"), f.get("status")
+    if not issue or f.get("review_settled"):
+        return {}
+    if status in ("landed", "superseded"):
+        sha = f.get("merged") or ""
+        if not sha:
+            m = re.search(r"\b[0-9a-f]{7,40}\b", f.get("resolution") or "")
+            sha = m.group(0) if m else ""
+        args = ["fixed", str(issue)] + ([sha] if sha else [])
+    elif status == "refuted":
+        args = ["withdraw", str(issue), f.get("resolution") or "the finding was refuted"]
+    else:
+        return {}
+    r = run([sys.executable, REVIEW_SITE] + args, check=False)
+    if r.returncode != 0:
+        print("%s: review #%s not updated, the next sync tries again: %s" % (f["id"], issue, r.stderr.strip()))
+        return {}
+    print("%s: review #%s %s" % (f["id"], issue, "marked fixed" if args[0] == "fixed" else "withdrawn"))
+    return {"review_settled": args[0]}
+
+
 def cmd_sync(a):
     d = ledger_dir()
     pull(d)
     owner = owner_id(a.repo)
     changed = 0
     for f in findings(d).values():
-        if f.get("status") != "pr-open":
+        row = {}
+        if f.get("status") == "pr-open":
+            r = run(["gh", "pr", "view", str(f["pr"]), "--repo", REPO_SLUG, "--json", "state,url,mergeCommit"],
+                    check=False)
+            if r.returncode != 0:
+                die("gh pr view %s failed; stop the round.\n%s" % (f["pr"], r.stderr))
+            pr = json.loads(r.stdout)
+            if pr["state"] == "MERGED":
+                row = {"id": f["id"], "status": "landed", "merged": (pr.get("mergeCommit") or {}).get("oid", "")}
+            elif pr["state"] == "CLOSED":
+                row = {"id": f["id"], "status": "rejected",
+                       "resolution": "PR #%s closed without merging (%s); read why, and re-mark it superseded "
+                                     "if another change fixed it" % (f["pr"], pr["url"])}
+            if row:
+                print("%s %s (#%s)" % (f["id"], row["status"], f["pr"]))
+        settled = settle_review(dict(f, **row))
+        if not row and not settled:
             continue
-        r = run(["gh", "pr", "view", str(f["pr"]), "--repo", REPO_SLUG, "--json", "state,url"], check=False)
-        if r.returncode != 0:
-            die("gh pr view %s failed; stop the round.\n%s" % (f["pr"], r.stderr))
-        pr = json.loads(r.stdout)
-        if pr["state"] == "MERGED":
-            row = {"id": f["id"], "status": "landed"}
-        elif pr["state"] == "CLOSED":
-            row = {"id": f["id"], "status": "rejected",
-                   "resolution": "PR #%s closed without merging (%s); read why, and re-mark it superseded "
-                                 "if another change fixed it" % (f["pr"], pr["url"])}
-        else:
-            continue
+        row = dict(row or {"id": f["id"]}, **settled)
         row.update({"at": iso(), "owner": owner})
         append(d, "findings", owner, row)
         changed += 1
-        print("%s %s (#%s)" % (f["id"], row["status"], f["pr"]))
     push(d, "redteam: sync %d" % changed)
     print("synced: %d changed" % changed)
 
@@ -578,7 +611,8 @@ def main():
     au = sub.add_parser("audit", help="record a finished file audit")
     au.add_argument("json", help="the audit as JSON, or @path to a JSON file")
     au.add_argument("--ref", default="origin/main")
-    sub.add_parser("sync", help="mark findings landed or rejected once their PRs merge or close")
+    sub.add_parser("sync", help="mark findings landed or rejected once their PRs merge or close, and settle "
+                                "their reviews on the review site")
     sub.add_parser("whoami", help="print this agent's id (kept in <checkout>/.mathlib-quality/redteam-owner)")
     q = sub.add_parser("astra", help="ask gpt-6-astra through the Codex CLI; prints the answer")
     q.add_argument("question", help="a file holding the question (or @file)")
