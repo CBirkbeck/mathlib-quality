@@ -1,6 +1,6 @@
 # Voyager — operator handover
 
-Written 2026-08-04, after the sixth update; updated 2026-10-11. The authority on procedure
+Written 2026-08-04, after the sixth update; updated 2026-10-24. The authority on procedure
 is `SKILL.md` in this directory: read it in full before your first run, and treat it as the
 contract — the logic deliberately lives there, not in shell scripts or anyone's memory. This
 document is the briefing on top of it: the current state, the editorial taste the skill
@@ -29,6 +29,7 @@ again. When in doubt, skip; the result will still be true tomorrow.
 | cadence | twice daily, 04:03 and 16:03 UK (since 2026-10-10); the window always ends at TauCeti's `docgen` branch |
 | scheduling | a self-renewing session cron job in Chris's Claude session (currently `a22e2578`). Session-only: it dies if that session closes, and it fires late if the machine is asleep or the session busy at 16:03 — this has happened three times and is harmless (the watermark defines the window, not the clock). The sturdier long-term home is a GitHub Actions workflow in the TauCeti repo; Chris knows |
 | first-run.md | dead weight — the backlog was posted once (2026-07-30) and must never be reposted; ignore that file entirely |
+| links | the declaration's page on the Tau Ceti review site, since 2026-10-24 (owner request); every earlier post's links were retargeted there the same day, also at the owner's request |
 
 Owner decisions already made, not yours to revisit: no `sorry` counts in the stats block
 (the no-`sorry` rule stays as an announcement gate); twice-daily cadence at 04:03 and 16:03
@@ -64,8 +65,9 @@ SKILL.md has the details; the skeleton, in order, with no step optional:
    statement.
 7. **Compose** (see the style section — this is the part Chris singled out as good). Since
    2026-10-11 bullets are capped at 40 words: Chris found them getting wordy.
-8. **Verify every link**, count codepoints (< 9,500), post, **re-fetch rendered** and check
-   the stats lines are present and `[message truncated]` is absent.
+8. **Verify every link on the review site** (SKILL.md §6: wait for the site if it is behind,
+   fall back to the docs anchor only for a name it still lacks), count codepoints (< 9,500), post,
+   **re-fetch rendered** and check the stats lines are present and `[message truncated]` is absent.
 9. **State DM** — post first, DM second; retry the DM if it fails.
 10. **No cron upkeep.** Since 2026-09-12 the schedule is the server's systemd timers, not a
     session cron.
@@ -85,13 +87,13 @@ now proved, not like release notes. Every rule below came from feedback or a nea
 
 **The bullet is the unit.** Its anatomy, fixed:
 
-> - **[Standard name](verified docs anchor)** — one sentence of at most 40 words, for a
+> - **[Standard name](verified review-site link)** — one sentence of at most 40 words, for a
 >   mathematician who does not know the result, saying what it *asserts*; then one short
 >   reference. (TauCeti#NNN)
 
 A dissected specimen from the sixth update:
 
-> - **[Strong approximation for SL₂](…#Matrix.SpecialLinearGroup.map_intCast_zmod_surjective)**
+> - **[Strong approximation for SL₂](…/#/d/Matrix.SpecialLinearGroup.map_intCast_zmod_surjective)**
 >   — the reduction map SL₂(ℤ) → SL₂(ℤ/dℤ) is surjective for every d (Shimura §1.6), the
 >   input that realizes every unit of ℤ/N as a lower-right entry in Γ₀(N). (TauCeti#1882)
 
@@ -189,32 +191,38 @@ disclaimer — it is Chris's wording and it defuses complaints about judgment ca
 
 ## Links: verify, then verify the right thing
 
-Every bold name links to the declaration's anchor in the API docs,
-`https://taucetiproject.org/docs/TauCeti/<Module/Path>.html#<FQN>` (the old
-`taucetiproject.github.io/TauCeti/docs/` address redirects there). Two rules:
+Since 2026-10-24 (owner request) every bold name links to the declaration's page on the Tau Ceti
+review site, `https://cbirkbeck.github.io/tauceti-reviewed-by-test/#/d/<FQN>`: the statement as the
+docs show it, what it rests on, and a box where a reader reviews it, suggests a test or says what
+could be better. Three rules:
 
-1. **Verify by extraction, not construction.** Curl the page (expect 200) and pull the real
-   `id="…"` out of the HTML. Never guess the fully qualified name: some files have no
-   `TauCeti` namespace at all (`lieExp`, `pointDerivationEquivTangentSpace`,
-   `ModularForm.lSeries`, `Matrix.SpecialLinearGroup.map_intCast_zmod_surjective` are all
-   bare or foreign-namespaced).
-2. **Link the theorem the headline claims**, not the containing definition. The
-   narrow-class-group finiteness bullet once linked the group's definition instead of
-   `instFinite`; Chris caught it. If the bold text says "…is finite", the anchor is the
-   finiteness statement.
+1. **Take the name from the docs, by extraction, not construction.** Curl the docs page (expect
+   200) and pull the real `id="…"` out of the HTML. Never guess the fully qualified name: some
+   files have no `TauCeti` namespace at all (`lieExp`, `pointDerivationEquivTangentSpace`,
+   `ModularForm.lSeries`, `Matrix.SpecialLinearGroup.map_intCast_zmod_surjective` are all bare or
+   foreign-namespaced).
+2. **Link the theorem the headline claims**, not the containing definition. The narrow-class-group
+   finiteness bullet once linked the group's definition instead of `instFinite`; Chris caught it.
+   If the bold text says "…is finite", the link is to the finiteness statement.
+3. **Verify every link on the site**, with SKILL.md §6's check. The site follows `docgen` (every
+   20 minutes, about 45 minutes to rebuild), so it can be behind when a run starts: the run starts
+   the site's update early (`gh workflow run follow.yml -R CBirkbeck/tauceti-reviewed-by-test`) and
+   waits for it before posting, up to 90 minutes. A name the site still lacks (its extractor skips a
+   module that does not build for it) gets the docs anchor,
+   `https://taucetiproject.org/docs/TauCeti/<Module/Path>.html#<FQN>`, and a line in the run log.
 
-Fallback when the docs page or anchor is missing: the source file at
-`https://github.com/TauCetiProject/TauCeti/blob/main/<path>`. If the file has since been
-*deleted* (it happens — `Parametrix.lean` went when TauCeti adopted Mathlib's Fredholm
-predicate), use a pinned-commit permalink (`blob/<sha>/…`), which cannot rot.
+The site is CBirkbeck/tauceti-reviewed-by-test. It also reads this topic: its Named page is built
+from Voyager's bullets, through either kind of link.
 
-**Link rot is real.** The docs site serves only the newest build, so links verified at post
-time die when files move or declarations rename (Montel.lean → Montel/, JordanCurve.lean →
-JordanCurve/Basic.lean, the Fredholm upstreaming). A full 70-link audit on 2026-08-03 fixed
-four. Worth re-running such an audit occasionally, and always after a big refactor lands.
+**Link rot is real.** Both the site and the docs serve only the newest build, so links verified at
+post time die when files move or declarations rename (Montel.lean → Montel/, JordanCurve.lean →
+JordanCurve/Basic.lean, the Fredholm upstreaming). A full 70-link audit on 2026-08-03 fixed four.
+Worth re-running such an audit occasionally, and always after a big refactor lands: retarget a
+renamed declaration to its new name; for a deleted file use a pinned-commit permalink to the source
+(`blob/<sha>/…`), which cannot rot.
 
 **Editing posted messages:** only for maintainer-requested fixes (links, formatting, tone) —
-that is the standing rule, and both in-place edit rounds so far were Chris-requested. If a
+that is the standing rule, and all three in-place edit rounds so far were Chris-requested (the third, on 2026-10-24, moved every post's links to the review site). If a
 posted claim turns out to be wrong or already in Mathlib, the remedy is a new correction
 message, not a silent rewrite of history.
 
