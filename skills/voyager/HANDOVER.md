@@ -59,7 +59,9 @@ SKILL.md has the details; the skeleton, in order, with no step optional:
    then *read the hit* — a name hit is not a statement hit, in either direction.
 6. **Significance gate** — one batched call to `gpt-6-astra` through the npm `codex` CLI
    via `~/.claude3/voyager/gate.sh` (primary account `~/.codex`, fallback `~/.codex2`, same
-   model on both; exact commands in SKILL.md §4), reasoning effort `high` (never
+   model on both; when neither can serve, the helper asks Claude Fable instead and says so
+   with `GATE_SERVED_BY=claude-fallback`, since 2026-10-30; exact commands in SKILL.md §4),
+   reasoning effort `high` (never
    `ultra`/`max`, which time out). It is required since 2026-10-10: if neither account can
    serve, post nothing and end the run as failed, so the scheduler retries. Model
    policy: always the newest top OpenAI model — bump the name in `gate.sh` when one ships.
@@ -298,7 +300,8 @@ message, not a silent rewrite of history.
   - Its Claude model is `claude-fable-5-1` (Fable 5.1) only: the six subscription accounts
     first, then the Anthropic API key as a last resort (since 2026-10-10).
   - The OpenAI gate model is `gpt-6-astra`, served from `~/.codex`, with `~/.codex2` as the
-    fallback account (`gate.sh`).
+    fallback account (`gate.sh`); with both accounts out, the gate runs on Claude Fable
+    through the API configuration (owner decision 2026-10-30).
   - Owner policy (2026-09-07): always the most capable current model of each vendor. Bump
     both names when newer ones ship.
 - The five Claude accounts on this machine all see it via the `mathlib-quality` plugin.

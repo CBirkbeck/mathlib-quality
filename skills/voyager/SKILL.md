@@ -422,10 +422,13 @@ Operational facts learned the hard way:
 - the question must be **self-contained** — the model has no file access, so paste the
   declaration name, its statement, and its docstring summary;
 - the gate is **required** (owner decision, 2026-10-10: every post is made with Fable and
-  Astra). If it is unavailable on both accounts (quota, the plan rejects the model, codex
-  missing, timeout), post nothing, leave the watermark, and end the run as failed so the
-  scheduler retries later. Record the model and which account served (`GATE_SERVED_BY`) in
-  the run log, never in the Zulip message, and never substitute a different model.
+  Astra). When no OpenAI account can serve (quota, the plan rejects the model, codex missing,
+  timeout), `gate.sh` itself falls back to Claude Fable (`claude-fable-5-1`, API billing) with
+  the same question and reports `GATE_SERVED_BY=claude-fallback` (owner decision, 2026-10-30:
+  a post must still go out when Astra is unavailable). Only if the fallback fails too: post
+  nothing, leave the watermark, and end the run as failed so the scheduler retries later.
+  Record the model and which account served (`GATE_SERVED_BY`) in the run log and the state
+  DM, never in the Zulip message; never pick a model or account by hand.
 
 Prompt template:
 
