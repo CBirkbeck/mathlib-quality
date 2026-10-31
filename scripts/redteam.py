@@ -6,17 +6,21 @@
             claims refs/tauceti-claims/redteam/<path>; branch/<pr> claims a PR branch
   finding   record a finding, or a change to one (validated; a win needs its evidence)
   audit     record a finished file audit (validated; every declaration needs a verdict
-            in every category), with its yeses for the review site
+            in every category), with its reviews for the review site: for each declaration
+            whose correctness checks passed, the site's eight cells and one decision on its
+            standard review (approve, write or edit)
   sync      mark findings landed or rejected once their PRs merge or close
-  reviews   post this agent's yeses on the Tau Ceti review site once the site shows each
-            file as it was audited; drop those whose file changed first
+  reviews   post this agent's reviews on the Tau Ceti review site once the site shows each
+            file as it was audited; drop those whose file changed first, and name for a
+            re-review those whose standard review has changed since they were decided
+  yes       record a re-review: new decisions for the yes of this agent's audit of a file
   whoami    this agent's id: its PRs carry it, so each agent tends and counts only its own
   astra     ask gpt-6-astra through the Codex CLI, for machines without the chatgpt-math MCP
   tally     the scoreboard: wins, losses, landed fixes, coverage, recurring patterns
 
 The ledger is a directory: $REDTEAM_LEDGER, else ~/.tauceti-redteam. Each agent appends
-only to its own findings/<owner>.jsonl and audits/<owner>.jsonl, so a ledger shared
-through git never conflicts. If the directory is a git clone with a remote, reads pull
+only to its own findings/<owner>.jsonl, audits/<owner>.jsonl and reviews/<owner>.jsonl,
+so a ledger shared through git never conflicts. If the directory is a git clone with a remote, reads pull
 first and writes are committed and pushed.
 
 Exit codes: 0 done; 1 refused (claim held by another agent, or a record failed
@@ -32,8 +36,12 @@ import secrets
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import review_site  # noqa: E402  - checks an audit's yes as `review_site.py post` will, so none waits on a refusal
 
 CATEGORIES = ["correctness", "generality", "reuse", "proof", "naming", "api", "docs", "hygiene"]
 SEVERITIES = ["CRITICAL", "MAJOR", "MINOR", "NIT"]
@@ -47,10 +55,17 @@ REMOTE = "https://github.com/TauCetiProject/TauCeti.git"
 REPO_SLUG = "TauCetiProject/TauCeti"
 CLAIM_PREFIX = "refs/tauceti-claims/redteam/"
 SKEW = 60
-#: Posts the red team's yeses on the Tau Ceti review site (R6 step 10).
+#: Reads the standard reviews on the Tau Ceti review site, and posts the red team's (R6 step 10).
 REVIEW_SITE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "review_site.py")
 # A model's family, not the model: "GPT-6", "Opus 5", "Claude" (as scripts/review_site.py, which refuses them too).
 FAMILY = re.compile(r"^(gpt|claude|opus|sonnet|haiku|fable|gemini|codex)[-\s]?(\d+(\.\d+)?)?$", re.I)
+#: The decisions an entry of an audit's yes makes on the declaration's standard review, and the keys of an entry of
+#: each: approve the text the site shows (the value is its version), write the first one (the text), or edit it (the
+#: parent version, with a note, what it drops and why, and the whole new text).
+ENTRY_KEYS = {"approve": {"cells", "approve"}, "write": {"cells", "write"},
+              "edit": {"cells", "edit", "note", "dropped", "text"}}
+#: Why `reviews` drops the yeses of an audit recorded before 0.82.0, which were reasons.
+OLD_FORM = "the site takes standard-review approvals now"
 
 MODS = r"(?:(?:private|protected|public|noncomputable|partial|unsafe|nonrec|scoped|local)\s+)*"
 ATTRS = r"(?:@\[[^\]]*\]\s*)*"
@@ -380,7 +395,8 @@ def cmd_claim(a):
 
 def load_arg_json(s):
     if s.startswith("@"):
-        s = open(s[1:]).read()
+        with open(s[1:]) as f:
+            s = f.read()
     try:
         return json.loads(s)
     except ValueError as e:
@@ -448,18 +464,19 @@ def cmd_audit(a):
 
 
 def yes_problems(row, matrix, known):
-    """An audit's yeses (R6 step 8): {full name: reasons on one line, or "" when the answers already on
-    the site say it all}, each for a declaration of the matrix whose correctness checks passed and
-    against which no CRITICAL finding stands; and the model that audited, which names the reviewer."""
+    """An audit's yeses (R6 step 8): {full name: the site's eight cells and one decision on the declaration's standard
+    review}, each for a declaration of the matrix whose correctness checks passed and against which no CRITICAL finding
+    stands, and each one that `review_site.py post` takes (`entry_problems`); and the model that audited, which names
+    the reviewer."""
     yes, bad = row.get("yes") or {}, []
     if not isinstance(yes, dict):
-        return ["'yes' maps each full name to its reasons"]
+        return ["'yes' maps each full name to the site's eight cells and one decision on its standard review"]
     if yes and not row.get("model"):
         bad.append("an audit with yeses needs 'model', the model that audited: the site names the reviewer by it")
     elif yes and FAMILY.match(str(row["model"]).strip()):
         bad.append("'model' is %r, a family, not a model: give the model exactly as your harness names it "
                    "(claude-opus-5-5, not Opus; GPT-6 Astra, not GPT-6)" % row["model"])
-    for name, reasons in yes.items():
+    for name, entry in yes.items():
         keys = [k for k in matrix if k == name or name.endswith("." + k)]
         cells = (matrix[keys[0]] or {}) if keys else None
         if cells is None:
@@ -469,64 +486,243 @@ def yes_problems(row, matrix, known):
         elif any((known.get(i) or {}).get("severity") == "CRITICAL" and known[i].get("status") != "refuted"
                  for v in cells.values() for i in cell_ids(v) or []):
             bad.append("yes for %s, which a CRITICAL finding stands against" % name)
-        if not isinstance(reasons, str) or "\n" in reasons or " " in name.strip():
-            bad.append("yes for %s: a full name, and its reasons on one line (or \"\")" % name)
+        if " " in name.strip():
+            bad.append("yes for %s: give its full name" % name)
+        bad += ["yes for %s: %s" % (name, p) for p in entry_problems(name, entry)]
+    return bad
+
+
+def decision(entry):
+    """The decision an entry of an audit's yes makes, "approve", "write" or "edit"; None unless it makes exactly one."""
+    kinds = [k for k in ENTRY_KEYS if k in entry]
+    return kinds[0] if len(kinds) == 1 else None
+
+
+def action_of(name, entry):
+    """The action of `review_site.py post` for ``entry``, the yes of ``name``, which makes one decision: {"approve": name,
+    "version", "cells"}, {"write": name, "cells", "text"} or {"edit": name, "parent", "cells", "note", "dropped",
+    "text"}."""
+    kind = decision(entry)
+    if kind == "approve":
+        return {"approve": name, "version": entry["approve"], "cells": entry.get("cells")}
+    if kind == "write":
+        return {"write": name, "cells": entry.get("cells"), "text": entry["write"]}
+    return {"edit": name, "parent": entry["edit"], "cells": entry.get("cells"), "note": entry.get("note"),
+            "dropped": entry.get("dropped", []), "text": entry.get("text")}
+
+
+def entry_problems(name, entry):
+    """Why ``entry``, the yes of ``name``, is not one that `review_site.py post` takes, as `post` checks it: the eight
+    cells, one decision with the keys it has (ENTRY_KEYS), a version of 8 to 16 hex digits, a text in the three parts,
+    and an edit's note and what it drops. Whether the version is the one the site shows is for `reviews` to see when it
+    posts."""
+    if not isinstance(entry, dict):
+        return ["reasons are the earlier form of a yes, which the site no longer takes: give the site's eight cells and "
+                "one decision on its standard review (reference section 7)"]
+    kind = decision(entry)
+    if kind is None:
+        given = [k for k in ENTRY_KEYS if k in entry]
+        return ["give one decision on its standard review: approve (its version), write (the text) or edit (the "
+                "parent's version, a note and the text), not %s" % (" and ".join(given) or "none")]
+    bad = ["`%s` is not a key of %s, which has %s" % (k, kind, ", ".join(sorted(ENTRY_KEYS[kind])))
+           for k in entry if k not in ENTRY_KEYS[kind]]
+    row = action_of(name, entry)
+    act = {"line": 0, "kind": kind, "decl": name, "fields": {k: v for k, v in row.items() if k != kind}}
+    given = act["fields"].get("version", act["fields"].get("parent"))
+    shown = given.strip().lower() if isinstance(given, str) else None  # any well-formed version passes here
+    bad += review_site.action_problems(act, lambda n: "", lambda n: shown, {})
+    if not bad and len(review_site.lines_of(act)) > review_site.COMMENT_CAP - review_site.ROOM:
+        bad.append("its lines are %d characters, more than a comment on the site's bulk issue holds: shorten its text"
+                   % len(review_site.lines_of(act)))
     return bad
 
 
 # --- reviews ----------------------------------------------------------------------------
 
+def newest_audits(d, owner):
+    """This agent's newest audit of each file, by file: it stands for the file."""
+    newest = {}
+    for au in read_jsonl(d, "audits"):
+        if au.get("owner") == owner and au.get("audited_at", "") >= newest.get(au["file"], {}).get("audited_at", ""):
+            newest[au["file"]] = au
+    return newest
+
+
+def yes_states(au, rows):
+    """The yeses of the audit ``au`` as they stand after ``rows``, its rows of the reviews ledger in the order written:
+    {name: entry}, and {name: state}, where a state is None while the entry waits to be posted, else "posted",
+    "re-review", "left out" or "dropped". A row of `yes` ("re-reviewed") replaces entries, which wait to be posted
+    again; a row that names no declarations, as those before 0.82.0, settles them all."""
+    entries = dict(au.get("yes") or {})
+    states = dict.fromkeys(entries)
+    for row in rows:
+        if row.get("state") == "re-reviewed":
+            entries.update(row.get("yes") or {})
+            states.update(dict.fromkeys(row.get("yes") or {}))
+        else:
+            states.update(dict.fromkeys(row["decls"] if "decls" in row else list(states), row.get("state")))
+    return entries, states
+
+
+def standard_now(names):
+    """The standard reviews the site shows for ``names``, as `review_site.py standard --json` gives them: {name: {"version":
+    V or None, ...}, or None where the site has no page}; None, with why printed, when it cannot be read."""
+    r = run([sys.executable, REVIEW_SITE, "standard", "--json", *names], check=False)
+    try:
+        shown = json.loads(r.stdout) if r.returncode in (0, 1) else None  # 1: a name the site has no page for
+    except ValueError:
+        shown = None
+    if not isinstance(shown, dict):
+        print("the site's standard reviews cannot be read; the reviews wait for a later round: %s"
+              % (r.stderr.strip() or r.stdout.strip()))
+        return None
+    return shown
+
+
+def stale(entry, version):
+    """Why ``entry`` no longer fits the standard review the site shows now, of ``version`` (None: it shows none): it was
+    decided against another text, or writes a first one where there is one now. "" when it fits."""
+    if decision(entry) == "write":
+        return "a standard review was written since, %s" % version if version else ""
+    given = str(entry.get("approve") or entry.get("edit") or "").strip().lower()
+    if not version:
+        return "the site shows no standard review of it now"
+    return "" if version.startswith(given) else "its standard review is now %s, not %s" % (version, given)
+
+
+def counted(actions):
+    """``actions`` counted by kind: "1 approval, 2 edits"."""
+    kinds = [decision(x) for x in actions]
+    word = {"approve": "approval", "write": "write", "edit": "edit"}
+    return ", ".join("%d %s%s" % (kinds.count(k), word[k], "" if kinds.count(k) == 1 else "s")
+                     for k in ENTRY_KEYS if k in kinds)
+
+
 def cmd_reviews(a):
-    """The yeses of this agent's audits go on the review site once it shows each file as it was audited:
-    the site follows Tau Ceti's docgen commit, behind main, so a file added or changed since then waits.
-    If the file changes again before the site reaches the audited commit, its yeses are dropped: they
-    were about a version the site never shows."""
+    """The yeses of this agent's audits go on the review site once it shows each file as it was audited: the site
+    follows Tau Ceti's docgen commit, behind main, so a file added or changed since then waits. If the file changes
+    again before the site reaches the audited commit, its yeses are dropped: they were about a version the site never
+    shows. Each goes up as it was decided, against the standard review the site shows now: one decided against another
+    text, or a first text where there is one now, is not posted, and waits for a re-review (`yes`)."""
     d = ledger_dir()
     pull(d)
     owner = owner_id(a.repo)
     r = run([sys.executable, REVIEW_SITE, "site"], check=False)
     if r.returncode != 0:
-        print("the review site cannot be read; the yeses wait for a later round: %s" % r.stderr.strip())
+        print("the review site cannot be read; the reviews wait for a later round: %s" % r.stderr.strip())
         return
     site = r.stdout.strip()
     if run(["git", "cat-file", "-e", site + "^{commit}"], cwd=a.repo, check=False).returncode != 0:
         run(["git", "fetch", "-q", "origin"], cwd=a.repo, check=False)
-    settled = {(x["file"], x["main"]) for x in read_jsonl(d, "reviews")}
-    newest = {}
-    for au in read_jsonl(d, "audits"):  # the newest audit of each file by this agent stands for it
-        if au.get("owner") == owner and au.get("audited_at", "") >= newest.get(au["file"], {}).get("audited_at", ""):
-            newest[au["file"]] = au
+    rows = {}  # this agent's rows of the reviews ledger, by file and audited commit, in the order written
+    for x in read_jsonl(d, "reviews"):
+        if x.get("owner") == owner:
+            rows.setdefault((x.get("file"), x.get("main")), []).append(x)
+    def settle(au, state, names, **more):  # the state of ``names``, yeses of ``au``, in the reviews ledger
+        append(d, "reviews", owner, dict(more, file=au["file"], main=au["main"], site=site, state=state,
+                                         decls=sorted(names), at=iso(), owner=owner))
+
     posted = waiting = dropped = 0
-    for au in sorted(newest.values(), key=lambda x: x.get("audited_at", "")):
-        if not au.get("yes") or (au["file"], au["main"]) in settled:
+    again = {}  # the declarations waiting for a re-review, by file
+    for au in sorted(newest_audits(d, owner).values(), key=lambda x: x.get("audited_at", "")):
+        entries, states = yes_states(au, rows.get((au["file"], au["main"]), []))
+        again[au["file"]] = sorted(n for n, s in states.items() if s == "re-review")
+        pending = {n: e for n, e in entries.items() if states[n] is None}
+        old = [n for n, e in pending.items() if not isinstance(e, dict)]
+        if old:
+            settle(au, "dropped", old, why=OLD_FORM)
+            print("%s: dropped, %s" % (au["file"], OLD_FORM))
+            dropped += 1
+            pending = {n: e for n, e in pending.items() if n not in old}
+        if not pending:
             continue
         g = run(["git", "rev-parse", "%s:%s" % (site, au["file"])], cwd=a.repo, check=False)
-        row = {"file": au["file"], "main": au["main"], "site": site}
         if g.returncode != 0 or g.stdout.strip() != au["blob"]:
             if run(["git", "merge-base", "--is-ancestor", au["main"], site], cwd=a.repo, check=False).returncode != 0:
                 waiting += 1  # the site has not reached the audited commit yet
                 continue
-            row.update(state="dropped", why="the file changed after the audit, before the site showed it")
+            why = ("the file changed on the site before these were posted" if "posted" in states.values()
+                   else "the file changed after the audit, before the site showed it")
+            settle(au, "dropped", pending, why=why)
+            print("%s: dropped, %s" % (au["file"], why))
             dropped += 1
-        else:
-            tsv = os.path.join(d, "yes-%d.tsv" % os.getpid())
-            with open(tsv, "w") as f:
-                f.write("".join("%s\t%s\n" % (n, " ".join(t.split())) for n, t in sorted(au["yes"].items())))
-            p = run([sys.executable, REVIEW_SITE, "yes", tsv, "--commit", site, "--skip-missing",
-                     "--agent", "Tau Ceti red team, %s, session %s" % (au["model"], owner),
-                     "--note", "Red-team audit of %s at Tau Ceti %s." % (au["file"], au["main"][:12])], check=False)
-            os.remove(tsv)
+            continue
+        shown = standard_now(sorted(pending))
+        if shown is None:
+            waiting += 1
+            continue
+        actions, redo, left = [], {}, []
+        for n, e in sorted(pending.items()):
+            if shown.get(n) is None:
+                left.append(n)
+                continue
+            why = stale(e, shown[n].get("version"))
+            if why:
+                redo[n] = why
+            else:
+                actions.append(action_of(n, e))
+        if actions:
+            fd, path = tempfile.mkstemp(prefix="redteam-reviews-", suffix=".jsonl")
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in actions))
+                p = run([sys.executable, REVIEW_SITE, "post", path, "--commit", site,
+                         "--agent", "Tau Ceti red team, %s, session %s" % (au["model"], owner),
+                         "--note", "Red-team audit of %s at Tau Ceti %s." % (au["file"], au["main"][:12])],
+                        check=False)
+            finally:
+                os.remove(path)
             if p.returncode != 0:  # the site moved, or GitHub failed: try again next round
                 print("%s: not posted, tried again next round: %s" % (au["file"], p.stderr.strip()))
                 waiting += 1
-                continue
-            row.update(state="posted", yeses=len(au["yes"]))
-            posted += 1
-            print("%s: %d yeses posted" % (au["file"], len(au["yes"])))
-        row.update({"at": iso(), "owner": owner})
-        append(d, "reviews", owner, row)
+            else:
+                settle(au, "posted", [x[decision(x)] for x in actions])
+                posted += 1
+                print("%s: posted %s" % (au["file"], counted(actions)))
+        if redo:
+            settle(au, "re-review", redo)
+            again[au["file"]] += sorted(redo)
+            for n, why in sorted(redo.items()):
+                print("%s: %s waits for a re-review: %s" % (au["file"], n, why))
+        if left:
+            settle(au, "left out", left)
+            print("%s: left out, the site has no page for %s" % (au["file"], ", ".join(left)))
     push(d, "redteam: reviews, %d posted" % posted)
-    print("review site at %s: %d files posted, %d waiting, %d dropped" % (site[:12], posted, waiting, dropped))
+    again = {f: sorted(ns) for f, ns in again.items() if ns}
+    if again:
+        print("To re-review: read each text (review_site.py standard --json NAME...), then record a decision on it "
+              "(redteam.py yes @update.json):")
+        for f, ns in sorted(again.items()):
+            print("  %s: %s" % (f, ", ".join(ns)))
+    print("review site at %s: %d files posted, %d waiting, %d dropped, %d declarations to re-review"
+          % (site[:12], posted, waiting, dropped, sum(len(ns) for ns in again.values())))
+
+
+def cmd_yes(a):
+    """New decisions for the yes of this agent's newest audit of a file, after a re-review (R0): `reviews` posts them
+    once the site shows the file as audited. They are checked as the audit's are."""
+    d = ledger_dir()
+    pull(d)
+    owner = owner_id(a.repo)
+    row = load_arg_json(a.json)
+    if not isinstance(row, dict) or not row.get("file") or not row.get("yes"):
+        die('an update needs "file" and "yes": {"file": "<path>", "yes": {"<full name>": {"cells": {...}, '
+            '"approve" | "write" | "edit": ...}}}', 1)
+    extra = sorted(set(row) - {"file", "yes"})
+    if extra:
+        die("an update has only \"file\" and \"yes\", not %s: the reviews go up under the audit's model"
+            % ", ".join(extra), 1)
+    au = newest_audits(d, owner).get(row["file"])
+    if au is None:
+        die("no audit of %s by this agent (%s): a re-review replaces decisions of an audit" % (row["file"], owner), 1)
+    bad = yes_problems({"yes": row["yes"], "model": au.get("model")}, au.get("matrix") or {}, findings(d))
+    if bad:
+        die("re-review of %s not recorded (%d problems):\n  - %s" % (row["file"], len(bad), "\n  - ".join(bad[:60])), 1)
+    append(d, "reviews", owner, {"file": au["file"], "main": au["main"], "state": "re-reviewed", "yes": row["yes"],
+                                 "at": iso(), "owner": owner})
+    push(d, "redteam: re-reviewed %s" % au["file"])
+    print("recorded: %d decision%s for %s; `reviews` posts them" % (len(row["yes"]), "" if len(row["yes"]) == 1 else "s",
+                                                                    au["file"]))
 
 
 # --- sync -------------------------------------------------------------------------------
@@ -668,7 +864,9 @@ def main():
     au.add_argument("json", help="the audit as JSON, or @path to a JSON file")
     au.add_argument("--ref", default="origin/main")
     sub.add_parser("sync", help="mark findings landed or rejected once their PRs merge or close")
-    sub.add_parser("reviews", help="post this agent's yeses on the review site where it shows the file as audited")
+    sub.add_parser("reviews", help="post this agent's reviews on the review site where it shows the file as audited")
+    y = sub.add_parser("yes", help="record a re-review: new decisions for the yes of this agent's audit of a file")
+    y.add_argument("json", help='{"file": <path>, "yes": {<full name>: <decision>}} as JSON, or @path to a JSON file')
     sub.add_parser("whoami", help="print this agent's id (kept in <checkout>/.mathlib-quality/redteam-owner)")
     q = sub.add_parser("astra", help="ask gpt-6-astra through the Codex CLI; prints the answer")
     q.add_argument("question", help="a file holding the question (or @file)")
@@ -680,7 +878,7 @@ def main():
     a = ap.parse_args()
     a.repo = os.path.abspath(os.path.expanduser(a.repo))
     {"next": cmd_next, "claim": cmd_claim, "finding": cmd_finding, "audit": cmd_audit, "sync": cmd_sync,
-     "reviews": cmd_reviews, "whoami": cmd_whoami, "astra": cmd_astra, "tally": cmd_tally}[a.cmd](a)
+     "reviews": cmd_reviews, "yes": cmd_yes, "whoami": cmd_whoami, "astra": cmd_astra, "tally": cmd_tally}[a.cmd](a)
 
 
 if __name__ == "__main__":
