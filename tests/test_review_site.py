@@ -487,6 +487,7 @@ class PostTests(Case):
         self.a = review(says="a")
         self.c = review(says="c", refs=("- Fixture documentation, §1.", "- `Fixture.c_one` — its value at 1"))
         self.site.add("Fixture.a", entry(self.a)).add("Fixture.b").add("Fixture.c", entry(self.c))
+        self.site.add("Fixture.c_one").add("Fixture.c_uno")  # the tests the texts of c list, old and new
 
     def refused(self, *rows, **kw):
         """Posts for real, and checks that it was refused with nothing posted. The reasons on stderr."""
@@ -725,6 +726,144 @@ class PostTests(Case):
         # An approval and a change of one declaration may share a file.
         code = self.post(approve("Fixture.a", V(self.a)), edit("Fixture.a", V(self.a), review(says="a2"), "n"))[0]
         self.assertEqual(code, 0)
+
+    def test_post_refuses_a_write_where_the_site_shows_a_review(self):
+        # The intake takes a write only of a declaration with no standard review: over one, it is an approval or an
+        # edit.
+        err = self.refused(write("Fixture.a", review(says="a, written again")))
+        self.assertIn("line 1 (Fixture.a)", err)
+        self.assertIn(V(self.a), err)  # the version the site shows is named
+        self.assertIn("approve it, or edit it", err)
+        self.assertEqual(self.post(write("Fixture.b", review(says="b")))[0], 0)  # where it shows none, it is good
+
+    def test_post_refuses_an_edit_that_changes_nothing(self):
+        # Its text is its parent's as a version is taken, line ends and trailing spaces aside: the site's text, or a
+        # draft's that the parent names.
+        for same in (self.c, "\n" + self.c.replace("\n", "  \r\n")):
+            with self.subTest(same=same[:20]):
+                self.assertIn("the edit changes nothing", self.refused(edit("Fixture.c", V(self.c), same, "n")))
+        draft = review(says="a draft of b")
+        drafts = self.jsonl(write("Fixture.b", draft), name="drafts.jsonl")
+        err = self.refused(edit("Fixture.b", V(draft), draft, "n"), extra=("--drafts", drafts))
+        self.assertIn("the edit changes nothing", err)
+        code, out, err = self.post(edit("Fixture.b", V(draft), review(says="b, improved"), "n"),
+                                   extra=("--drafts", drafts))
+        self.assertEqual(code, 0, err)
+
+    def test_post_refuses_a_test_that_is_no_declaration(self):
+        # A bullet of Part 2 that starts with a name in backticks is a test, and the intake refuses a test that is no
+        # declaration of the library's dataset, which lists every declaration the site has: a type or a module first is
+        # one too.
+        self.outside("Nat.foo", "Mathlib.Data.Nat.Basic")
+        wrong = ("- `ℝ`-valued, as in Rudin, *Real and Complex Analysis*, 1.1.",
+                 "- `Mathlib.Analysis.Normed` has the norm it uses.")
+        tests = ("- `Fixture.c_one` — its value at 1", "- `Nat.foo` — a test in Mathlib")
+        text = review(says="c", refs=("- Fixture documentation, §1.", *tests, *wrong))
+        for action in (write("Fixture.b", text), edit("Fixture.c", V(self.c), text, "adds two bullets")):
+            with self.subTest(action=next(iter(action))):
+                err = self.refused(action)
+                for name in ("ℝ", "Mathlib.Analysis.Normed"):
+                    self.assertIn(f"the test `{name}` is not a declaration that exists", err)
+                for name in ("Fixture.c_one", "Nat.foo"):  # those on the site are declarations
+                    self.assertNotIn(f"`{name}` is not", err)
+        worded = ("- Real-valued, as in Rudin, *Real and Complex Analysis*, 1.1.",
+                  "- The norm of `Mathlib.Analysis.Normed`.")
+        text = review(says="c", refs=("- Fixture documentation, §1.", *tests, *worded))
+        self.assertEqual(self.post(write("Fixture.b", text), edit("Fixture.c", V(self.c), text, "adds two"))[0], 0)
+
+    def test_post_refuses_an_edit_that_drops_an_item_without_saying_why(self):
+        # The intake's rule: an edit loses no test, Check or reference of its parent unless a Dropped line names it,
+        # with a reason. A reference reworded is kept while it reads alike (the site's likeness), or holds the old one
+        # whole; a new reference keeps at most one old one by likeness.
+        ref = "Rudin, *Real and Complex Analysis*, Theorem 1.40."
+        test, check = "- `Fixture.c_one` — its value at 1", "- Check *test_r*, `Fixture/Examples.lean:7` — passes"
+        parent = review(says="`Fixture.r` is a function.", refs=(f"- {ref}", test, check))
+        self.site.add("Fixture.r", entry(parent))
+        reworded = "- W. Rudin (1987), RCA, 3rd ed., Thm 1.40 (p. 30)."  # it reads alike at 0.51, under 0.6
+        longer = (f"- {ref[:-1]}, the last theorem of its first chapter, which says that a measurable function into a "
+                  "topological space has a measurable composite")
+        cases = {  # Part 2 of the edit, its dropped entries, and what is refused ("" for nothing)
+            "a reference reworded past its likeness": ((reworded, test, check), [], f'drops the reference "{ref}"'),
+            "the reference, with why": ((reworded, test, check), [{"item": "Rudin, Real and Complex Analysis",
+                                                                    "why": "the edition with page numbers"}], ""),
+            "a reference reworded alike": (("- Rudin, Real and Complex Analysis, Thm 1.40.", test, check), [], ""),
+            "a reference with more said": ((longer, test, check), [], ""),
+            "another reference in its place": (("- Stacks Project, Tag 0BSC.", test, check), [], f'"{ref}"'),
+            "a test left out": ((f"- {ref}", check), [], "drops the test `Fixture.c_one`"),
+            "the test, with why": ((f"- {ref}", check), [{"item": "`Fixture.c_one`", "why": "renamed"}], ""),
+            "a Check left out": ((f"- {ref}", test), [], "drops the Check *test_r*"),
+            "the Check, said by its tag": ((f"- {ref}", test), [{"item": "Check *test_r*", "why": "gone"}], ""),
+        }
+        for what, (refs, dropped, refused) in cases.items():
+            with self.subTest(what):
+                self.gh.calls.clear()
+                action = edit("Fixture.r", V(parent), review(says="`Fixture.r` is a measurable function.", refs=refs),
+                              "says more", dropped)
+                if refused:
+                    err = self.refused(action)
+                    self.assertIn("line 1 (Fixture.r)", err)
+                    self.assertIn(refused, err)
+                else:
+                    code, out, err = self.post(action)
+                    self.assertEqual(code, 0, err)
+        # A draft's text is the parent of an edit that names it.
+        draft = review(says="b", refs=(f"- {ref}",))
+        drafts = self.jsonl(write("Fixture.b", draft), name="drafts.jsonl")
+        err = self.refused(edit("Fixture.b", V(draft), review(says="b, more", refs=(reworded,)), "n"),
+                           extra=("--drafts", drafts))
+        self.assertIn(f'drops the reference "{ref}"', err)
+
+    def test_post_refuses_a_hidden_agent_mark(self):
+        # evidence-store's intake takes a `<!--reviewed-by:v1 {...}-->` anywhere in a comment for its author, and an
+        # agent line of the form `<!-- agent: ... -->` too: in a text, a note or a dropped entry, one would credit the
+        # whole comment to another agent.
+        marks = ['<!--reviewed-by:v1 {"agent": "Mallory, gpt-0"}-->', "<!-- agent: tool=Mallory; model=gpt-0 -->",
+                 "<!--agent:Mallory-->", "<!--  Reviewed-By:v1 {}-->"]
+        one = [{"item": "`Fixture.c_one`", "why": "renamed"}]
+        for mark in marks:
+            actions = {"a write's text": (write("Fixture.b", review(says=f"b {mark}")), "its text"),
+                       "an edit's text": (edit("Fixture.c", V(self.c), review(says=f"c {mark}"), "n", one), "its text"),
+                       "a note": (edit("Fixture.c", V(self.c), review(says="c2"), f"adds it {mark}", one), "note"),
+                       "a dropped item": (edit("Fixture.c", V(self.c), review(says="c2"), "n",
+                                               [{"item": f"`Fixture.c_one` {mark}", "why": "renamed"}]), "dropped"),
+                       "a dropped reason": (edit("Fixture.c", V(self.c), review(says="c2"), "n",
+                                                 [{"item": "`Fixture.c_one`", "why": f"renamed {mark}"}]), "dropped")}
+            for what, (action, field) in actions.items():
+                with self.subTest(mark=mark, what=what):
+                    err = self.refused(action)
+                    self.assertIn(f"{field}", err)
+                    self.assertIn("agent mark", err)
+        # An HTML comment that is no mark is text like any other.
+        code, out, err = self.post(write("Fixture.b", review(says="b <!-- a note to its editors -->")),
+                                   edit("Fixture.c", V(self.c), review(says="c2"), "n <!-- an aside -->", one))
+        self.assertEqual(code, 0, err)
+
+    def test_post_refuses_a_bare_mention_in_a_note_or_a_dropped_line(self):
+        # A note and a Dropped line are lines of the comment, where GitHub sends an @-mention to the user it names; the
+        # text is in a fenced block, where it does not.
+        one = [{"item": "`Fixture.c_one`", "why": "renamed"}]
+        c2 = review(says="c2")
+        bare = {"as @kbuzzard noted": "kbuzzard", "(@kbuzzard)": "kbuzzard", "uses @Nat.succ explicitly": "Nat",
+                "cc @leanprover-community/mathlib": "leanprover-community", "`a` @b `c`": "b"}
+        for note, login in bare.items():
+            with self.subTest(note=note):
+                err = self.refused(edit("Fixture.c", V(self.c), c2, note, one))
+                self.assertIn(f"note: `@{login}` would notify the GitHub user {login}", err)
+            with self.subTest(item=note):
+                err = self.refused(edit("Fixture.c", V(self.c), c2, "n", [{"item": f"`Fixture.c_one` {note}",
+                                                                          "why": "renamed"}]))
+                self.assertIn(f"`@{login}` would notify", err)
+                self.assertIn("dropped", err)
+            with self.subTest(why=note):
+                err = self.refused(edit("Fixture.c", V(self.c), c2, "n", [{"item": "`Fixture.c_one`", "why": note}]))
+                self.assertIn(f"`@{login}` would notify", err)
+        for note in ("as `@kbuzzard` noted", "uses ``@Nat.succ` x`` explicitly", "kb@example.org wrote it",
+                     "tagged @[simp]", "a @ b", "@"):
+            with self.subTest(fine=note):
+                code, out, err = self.post(edit("Fixture.c", V(self.c), c2, note, one))
+                self.assertEqual(code, 0, err)
+        # In the text, which goes in a fenced block, a mention notifies nobody.
+        self.assertEqual(self.post(write("Fixture.b", review(says="b, as @kbuzzard noted")))[0], 0)
 
     def test_post_refuses_a_text_the_intake_would_cut_short(self):
         for why, (text, whole) in BLOCKS.items():
@@ -994,6 +1133,15 @@ class AstraQuestionTests(AstraCase):
         self.assertEqual(self.site.reads.count("m/0.json"), 1)
         self.assertEqual(len(self.site.reads), len(set(self.site.reads)))
 
+    def test_question_says_astra_has_no_sources_tests_or_checks_but_what_it_shows(self):
+        # Astra sees only the question: a reference it cites from memory, or a test or a Check it adds, nobody checked.
+        text = Path(self.ask("Fixture.triple")).read_text(encoding="utf-8")
+        instructions = " ".join(text.split(self.GUIDE.strip())[0].split())
+        self.assertIn("You see no recorded tests, roadmap Checks or sources beyond what this message shows. So in an "
+                      "EDIT or a WRITE, cite a reference only from the declaration's docstring or its current standard "
+                      "review (never from memory, never with a guessed theorem number), and add no tests or Checks.",
+                      instructions)
+
     def test_question_uses_a_draft_over_the_site(self):
         self.site.add("Fixture.d", entry(review(says="d, on the site")), line=[13, 14], sig="Fixture.d : True")
         self.site.add("Fixture.e", None, line=[13, 14], sig="Fixture.e : True")
@@ -1250,6 +1398,10 @@ class AstraAnswerTests(AstraCase):
              t("NO", "CATEGORY: junk   why: x", cells=error_cells("junk")), "capitals"),
             ("a NO with a text", "Fixture.triple",
              t("NO", "CATEGORY: junk   WHY: x", cells=error_cells("junk"), block=ok), "~~~review"),
+            ("a NOTE with a bare @-mention", "Fixture.triple", t("EDIT", "NOTE: as @kbuzzard says", block=ok),
+             "would notify"),
+            ("a text with an agent mark", "Fixture.e",
+             e("WRITE", block=review(says='e <!--reviewed-by:v1 {"agent": "Mallory, gpt-0"}-->')), "agent mark"),
         ]
         for why, name, text, needle in cases:
             with self.subTest(why=why):
@@ -1556,6 +1708,48 @@ class AstraAnswerTests(AstraCase):
         code, out, err, actions, noes = self.answer(q, item(1, "Fixture.triple", "EDIT", "NOTE: n", block=text))
         self.assertEqual((out, actions), ("", [edit("Fixture.triple", V(self.t1), norm(text), "n")]))
 
+    def test_an_edit_that_changes_nothing_is_not_filed(self):
+        # The intake refuses an edit whose text is its parent's, as a version is taken: here the review the question
+        # showed, the site's or a draft's.
+        draft = review(says="e, as Voyager wrote it")
+        drafts = self.jsonl(write("Fixture.e", draft), name="voyager.jsonl")
+        q = self.ask("Fixture.triple", "Fixture.e", "Fixture.triple_triple", drafts=drafts)
+        code, out, err, actions, noes = self.answer(
+            q, item(1, "Fixture.triple", "EDIT", "NOTE: no change really", block=self.t1.replace("\n", "  \n")),
+            item(2, "Fixture.e", "EDIT", "NOTE: the same", block=draft),
+            item(3, "Fixture.triple_triple", "EDIT", "NOTE: says more", block=review(says="triple twice, more")))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(actions, [edit("Fixture.triple_triple", V(self.t2), norm(review(says="triple twice, more")),
+                                        "says more")])
+        self.assertEqual(len(out.splitlines()), 2, out)
+        for name in ("Fixture.triple", "Fixture.e"):
+            self.assertRegex(out, rf"(?m)^not filed: {re.escape(name)}: the edit changes nothing")
+
+    def test_a_block_whose_end_is_unclear_is_not_filed(self):
+        # The block ends at the item's last `~~~` line, as the intake reads one, so a remark after it that holds a `~~~`
+        # line would land in the text; read by its fences, it ends at its first `~~~` line outside a fence of the
+        # text's. When the two readings disagree the item is not filed.
+        q = self.ask("Fixture.triple", "Fixture.e", "Fixture.triple_triple")
+        new, written = review(says="triple, measurable"), review(says="e")
+        tail = "\nNote: the other items were fine. A reminder of the format:\n~~~\nVERDICT: APPROVE\n~~~\n\n"
+        code, out, err, actions, noes = self.answer(
+            q, item(1, "Fixture.triple", "EDIT", "NOTE: adds measurability", block=new) + tail,
+            item(2, "Fixture.e", "WRITE", block=written).rstrip("\n") + "\nThat is the text. Close with:\n~~~\n\n",
+            item(3, "Fixture.triple_triple", "APPROVE"))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(actions, [approve("Fixture.triple_triple", V(self.t2))])
+        self.assertEqual(len(out.splitlines()), 2, out)
+        for name in ("Fixture.triple", "Fixture.e"):
+            self.assertRegex(out, rf"(?m)^not filed: {re.escape(name)}: .*the review block's end is unclear")
+        # A bare `~~~` fence in the text is unclear too: by the fences, its first line ends the block. Fences of the
+        # text that say what they hold (`~~~lean`) are not, and the text is filed whole.
+        bare = review(says="a fence:\n~~~\ndef x := 1\n~~~\nand more")
+        code, out, err, actions, noes = self.answer(q, item(1, "Fixture.triple", "EDIT", "NOTE: n", block=bare))
+        self.assertRegex(out, r"^not filed: Fixture\.triple: .*the review block's end is unclear")
+        fenced = review(says="a fence:\n~~~lean\ndef x := 1\n~~~\nand more\n~~~python\ny = 2\n~~~")
+        code, out, err, actions, noes = self.answer(q, item(1, "Fixture.triple", "EDIT", "NOTE: n", block=fenced))
+        self.assertEqual(actions, [edit("Fixture.triple", V(self.t1), norm(fenced), "n")], out)
+
     def test_answer_matches_items_by_number_and_name(self):
         q = self.ask("Fixture.triple", "Fixture.triple_triple", "Fixture.e")
         code, out, err, actions, noes = self.answer(
@@ -1789,7 +1983,7 @@ class IntakeReadsPostTests(Case):
                    {"item": "Check *test_one*", "why": "no longer there"}]
         note = "renames the test — and drops a Check"
         o = review(says="`Nat.o` is a successor, in Mathlib")
-        self.site.add("Fixture.a", entry(a)).add("Fixture.b").add("Fixture.c", entry(c))
+        self.site.add("Fixture.a", entry(a)).add("Fixture.b").add("Fixture.c", entry(c)).add("Fixture.c_uno")
         self.outside("Nat.o", "Mathlib.Data.Nat.Basic", o)  # one of Mathlib's, which the site asks about
         code, out, err = self.post(approve("Fixture.a", V(a)[:8].upper()), write("Fixture.b", b_raw),
                                    edit("Fixture.c", V(c), c2, note, dropped), approve("Nat.o", V(o)))
@@ -1903,6 +2097,129 @@ class IntakeReadsPostTests(Case):
         self.assertEqual(review_site.cells_line(CELLS), CELLS_LINE)
         every = {**CELLS, "naming": "na", "object": "na"}
         self.assertEqual(std.cells(review_site.cells_line(every), self.rubric.names)[0], every)
+
+    #: Bullets of Part 2 for the copies of the site's reading of it: tests, Checks and references, among them those of
+    #: the site's own tests of `items` and `check` (its tests/test_standard.py).
+    TEST = "- `Fixture.triple_two` — its value at 2"
+    CHECK = "- Check *test_two*, `TauCeti/Examples/Fixture.lean:42` — passes"
+    STACKS, SERRE = ("Stacks Project, Tag 00MA", "Stacks Project, Tag 0BSC"), ("Serre, Local Fields, II.3",
+                                                                               "Serre, Galois Cohomology, II.3")
+    LONG = ("Hartshorne, Algebraic Geometry, Chapter II, Proposition 8.20: for a smooth morphism of schemes the sheaf "
+            "of relative differentials is locally free of finite rank, and the rank is the relative dimension of the "
+            "morphism; compare also Bosch, Luetkebohmert and Raynaud, Neron Models, section 2.2.")
+
+    @staticmethod
+    def text(*bullets, says="## What it says\n`triple n` is $3n$.", subtle="## Lean subtleties\nNone."):
+        return "\n\n".join([says, "\n".join(["## References and tests", *bullets]), subtle]) + "\n"
+
+    def test_the_copy_of_the_sites_reading_of_part_two_agrees_with_it(self):
+        std, text = self.standard, self.text
+        names = ["Foo.bar'", "Foo.baz₂", "Real.log", "TauCeti.Foo.bar_two", "ι", "ℝ", "Mathlib.Analysis.Normed"]
+        texts = [
+            text("- Fixture documentation, §1.", self.TEST, self.CHECK), text(*(f"- `{n}` — a test" for n in names)),
+            text("- `2` is the base case", "- `TauCeti/Examples/Foo.lean` — the file", "- `a + b = b + a` — commutes",
+                 "- Check the roadmap", "- A test: `Foo.bar` is not first", "- `ℝ`-valued, as in Rudin, 1.1."),
+            text("- `Fixture.a` — a test", "* `Fixture.b` — a test", "+ `Fixture.c` — a test", "* Check *tag_b*, `x:1`",
+                 "+ A reference", "*  Another, after two spaces", "", "*Note:* emphasis is not a bullet",
+                 "**Bold** neither", "+1 is not one", "-1 neither", "-", "* ", "-\tTabbed",
+                 "- Check  *spaced tag* — two spaces"),
+            text("- Stacks Project, Tag 0BSC,", "  Lemma 10.156.3 (the same", "\tring).", "", "Prose between.",
+                 "- Hartshorne, II.1.", "  - a nested one", "", "More prose."),
+            text("- Check *test_two*, `F.lean:1`", "- Check *test_two* again", "- `Fixture.a`", "- `Fixture.a` twice"),
+            text(f"- {self.LONG}", *(f"- {r}" for r in self.STACKS + self.SERRE)).replace("\n", "  \r\n"),
+            text("- A reference", says="## What it says\n- `Fixture.in_part_one` — a bullet\n- Check *test_one*, `x:1`",
+                 subtle="## Lean subtleties\n- `Fixture.in_part_three` — a bullet"),
+            "nothing like a review", "", text(), "## References and tests\n- `Fixture.only` — Part 2 alone",
+            text("- Fixture documentation") + "\n## References and tests\n- `Fixture.second` — Part 2 twice",
+        ]
+        for t in texts:
+            with self.subTest(text=t[:60]):
+                theirs = std.items(t)
+                self.assertEqual(tuple(review_site.items(t)), (theirs.references, theirs.tests, theirs.checks))
+        # The one-to-one likeness and the containment that keep a parent's references.
+        a, b = self.STACKS
+        lists = [[a, b], [a], [f"{a}."], ["Stacks, Tag 00MA", "Stacks, Tag 0BSC"],
+                 ["Stacks, Tag 0BSC", "Stacks, Tag 00MA"], [f"{a}; {b}"], list(self.SERRE),
+                 ["Serre, Local Galois, II.3", "Serre LF II.3"], ["Serre LF II.3"],
+                 [self.LONG], [self.LONG.replace("Algebraic ", "").replace("section 2.2.", "section 2.2, p. 22.")],
+                 ["—", "- -"], ["Another book"], [], ["Stacks - Project, Tag 0BSC"],
+                 ["Stacks Project, Tag 0BSC, and a clause that makes it read too little like the old"]]
+        for old in lists:
+            for new in lists:
+                with self.subTest(old=old, new=new):
+                    self.assertEqual(review_site.kept(old, new), std.kept(old, new))
+                    for x in old:
+                        for y in new:
+                            self.assertEqual(review_site.likeness(x, y), std.likeness(x, y))
+                            self.assertEqual(review_site.extends(y, x), std.extends(y, x))
+
+    def test_what_post_says_of_a_text_is_what_the_sites_check_says(self):
+        # The intake refuses a text that `standard.check` finds fault with: its parts, and beyond them
+        # (`change_problems`) an edit that changes nothing, a test that is no declaration, and an item of the parent
+        # lost without a Dropped line. The two say the same of each text, first version or edit, word for word.
+        std, text = self.standard, self.text
+        good = text("- Fixture documentation, §1.", self.TEST, self.CHECK)
+        a, b = self.STACKS
+        parents = [good, text(f"- {a}", f"- {b}", self.TEST), text(*(f"- {r}" for r in self.SERRE), self.TEST),
+                   text(f"- {self.LONG}"), text("- Stacks Project, Tag 0BSC", self.TEST), text("- —", self.TEST),
+                   text("- Stacks - Project, Tag 0BSC", self.TEST), text("- Rudin, *Real and Complex Analysis*, 1.40.")]
+        children = parents + [
+            text("- Fixture documentation, §1.", self.CHECK), text("- Fixture documentation, §1.", self.TEST),
+            text(self.TEST, self.CHECK), text("- Fixture documentation, section 1.", self.TEST, self.CHECK),
+            text("- Stacks Project, Tag 0BSC, Lemma 10.156.3.", self.TEST, self.CHECK), text(f"- {a}", self.TEST),
+            text(f"- {a}", f"- {a}.", self.TEST), text("- Stacks, Tag 0BSC", "- Stacks, Tag 00MA", self.TEST),
+            text(f"- {a}; {b}", self.TEST), text("- Serre, Local Galois, II.3", "- Serre LF II.3", self.TEST),
+            text(f"- {self.LONG.replace('Algebraic ', '').replace('section 2.2.', 'section 2.2, p. 22.')}"),
+            text("- STACKS PROJECT; tag 0BSC, the strict henselisation of a local ring", self.TEST),
+            text("- Another book", self.TEST), text("- W. Rudin (1987), RCA, 3rd ed., Thm 1.40 (p. 30)."),
+            text("- `ℝ`-valued, as in Rudin, 1.40.", "- `Fixture.triple_two` — again", "- `Mathlib.Analysis.Normed`"),
+            text("Nothing yet."), good.replace("\n", "  \r\n"), good.replace("None.", "Division by zero is zero."),
+            text("- Fixture documentation, §1.", self.TEST, self.CHECK, subtle="## Lean subtleties"),
+            good.replace("## What it says", "## What it says:"), "",
+        ]
+        droppeds = [[], [("`Fixture.triple_two`", "it was renamed")], [("Check *test_two*", "it moved")],
+                    [("test_two", "it moved"), ("Fixture documentation", "not about this")],
+                    [("`Fixture.triple_two` and Check *test_two*", "both moved"),
+                     ["Fixture documentation, §1.", "gone"]],
+                    [("`Fixture.triple_two_ne`", "gone"), ("Check *test_two_b*", "gone")],
+                    [("`Other.Fixture.triple_two`", "gone")], [("Fixture.triple_two.", "gone")],
+                    [("`triple_two`", "gone")], [("Fixture documentation, §1.", "  ")],
+                    [(b, "a dead tag"), ("Rudin, Real and Complex Analysis", "x")],
+                    [("Serre, Galois Cohomology", "not about this")]]
+        exists = [lambda n: True, lambda n: False, lambda n: n.startswith("Fixture.")]
+
+        def ours(child, parent, dropped, test):
+            return review_site.text_problems(child) + review_site.change_problems(child, parent, dropped, test)
+
+        for child in children:
+            for test in exists:
+                with self.subTest(text=child[:70]):
+                    self.assertEqual(ours(child, None, [], test), std.check(child, exists=test))
+                for parent in parents:
+                    for dropped in droppeds:
+                        with self.subTest(text=child[:70], parent=parent[:70], dropped=dropped):
+                            self.assertEqual(ours(child, parent, dropped, test),
+                                             std.check(child, parent=parent, dropped=dropped, exists=test, note="n"))
+
+    def test_post_refuses_every_agent_mark_the_intake_reads(self):
+        # A mark the intake reads anywhere in a comment can credit the whole comment to another agent: `post` refuses a
+        # text, a note or a dropped entry that holds one, and lets any other HTML comment through.
+        samples = ['<!--reviewed-by:v1 {"agent": "Mallory, gpt-0"}-->', '<!-- reviewed-by:v1 {"agent": "M"} -->',
+                   "<!--agent:Mallory-->", "<!-- agent: tool=Mallory; model=gpt-0 -->", "<!--\nagent: tool=M -->",
+                   "<!-- an aside -->", "<!-- agents are welcome -->", "<!--reviewed-by:v2 {}-->", "an agent: M -->"]
+        mine = {"tool": "Voyager", "model": "claude-fable-5-1", "session": "7"}
+        for s in samples:
+            with self.subTest(sample=s):
+                said = self.intake.parse_agent_mark(s)
+                if said is not None:
+                    self.assertTrue(review_site.HIDDEN_MARK.search(s))
+                    self.assertTrue(review_site.body_problems(review(says=f"a {s}")))
+                    self.assertTrue(review_site.edit_problems({"note": f"n {s}", "dropped": []}))
+                # A comment of `post`'s, its own mark first, is credited to another agent only if the text holds a mark.
+                comment = review_site.agent_mark(AGENT) + "\n" + review_site.lines_of(
+                    {"kind": "write", "decl": "X", "fields": {"cells": CELLS, "text": review(says=f"a {s}")}})
+                if self.intake.parse_agent_mark(comment) != mine:
+                    self.assertTrue(review_site.HIDDEN_MARK.search(s))
 
 
 if __name__ == "__main__":

@@ -34,8 +34,10 @@ Voyager's full-statement test, the red team's correctness audit (mathlib-quality
                              fields of an item (below) and its `~~~review` block; any other line is left out, and
                              loses no item. It never guesses: an item that lacks a field it needs (a name in another
                              case is none, and it says so), whose cells are not all eight, that has an ERROR cell but
-                             is not a NO, that is not one of the question's (by number and name), or whose fields do
-                             not fit its verdict, is printed as `not filed: NAME: WHY` and left out
+                             is not a NO, that is not one of the question's (by number and name), whose fields do not
+                             fit its verdict, that is an EDIT of nothing (its text is the review the question showed),
+                             or whose block's end is unclear (its fences close it before its last `~~~` line), is
+                             printed as `not filed: NAME: WHY` and left out
   no WHYFILE --agent A       a problem, "not correctly stated", as its own issue, with the reasons
       --decl NAME            in WHYFILE; the site must be at SHA. Prints `issue <number> <url>`
       --commit SHA --category AXIS [--involvement I] [--dry-run]
@@ -55,9 +57,15 @@ why an edit leaves out a reference, test or Check of the text it replaces. `post
 stderr and nothing posted: a declaration the site does not ask its question of (it asks it of Tau Ceti's own, and of
 those outside the library in a module of Mathlib or another package it reviews); cells that are not all eight; a text
 without its three parts in order, or one that the intake would read cut short; a version that is not the site's or a
-draft's; a declaration written or edited twice in the file; an action longer than a comment; and a site not at SHA, so
-that each review is of the version that was checked. A long batch goes in several comments, split between actions, each
-of at most COMMENT_CAP characters.
+draft's; a write where the site shows a standard review; an edit whose text is its parent's (the site's text, or the
+draft's it names), or that leaves out a reference, test or Check of it that no `dropped` entry names (as the site
+reads them: a reference reworded is kept while it reads alike, or holds the old one whole); a test, a bullet of the
+second part that starts with a Lean name in backticks, that the site has no declaration of; an agent mark
+(`<!-- agent`, `<!-- reviewed-by`) in a text, a note or a `dropped` entry, and a bare @-mention in a note or a `dropped`
+entry, which GitHub would send to that user; a declaration written or edited twice in the file; an action longer than a
+comment; and a site not at SHA, so that each review is of the version that was checked. A long batch goes in several
+comments, split between actions, each of at most COMMENT_CAP characters. `post` prints the URL of each comment: the
+intake can still refuse a line, and its reply to the comment on the bulk issue says why.
 
 Astra answers each item of a question, as the instructions in the question say, with its number and name, the eight
 cells, a verdict, and the fields the verdict takes. A field is a line that starts with its name in capitals (`Note:`
@@ -96,6 +104,8 @@ import subprocess
 import sys
 import time
 import urllib.request
+from collections import namedtuple
+from difflib import SequenceMatcher
 
 SITE = os.environ.get("REVIEW_SITE", "https://cbirkbeck.github.io/tauceti-reviewed-by-test/")
 REPO = os.environ.get("REVIEW_SITE_REPO", "CBirkbeck/tauceti-reviewed-by-test")
@@ -110,6 +120,23 @@ RUBRIC = AXES[:-1]
 CELL_STATES = {"checked": "checked", "na": "na", "n/a": "na"}
 #: The parts of a standard review's text, each heading a line of its own, in this order (the site's standard.py).
 HEADINGS = ("## What it says", "## References and tests", "## Lean subtleties")
+#: How the site reads Part 2 (its scripts/standard.py, as are the functions from `sections` to `losses`; the tests pin
+#: the copies to it): a bullet opened by `- `, `* ` or `+ `; a test, one that opens with a Lean name in backticks, as
+#: the dataset spells declarations; an example Check, one that opens with `Check *tag*`; a reference, any other.
+IDENT = r"[^\W\d][\w'!?]*"
+BULLET = re.compile(r"^[-*+][ \t]+(\S.*)$")
+TEST = re.compile(rf"^`({IDENT}(?:\.[\w'!?]+)*)`")
+CHECK = re.compile(r"^Check\s+\*([^*]+)\*")
+#: How alike two references must read, by `SequenceMatcher`'s ratio, to be one reference reworded.
+SIMILAR = 0.6
+#: The start of an agent mark of evidence-store's (`<!-- agent: ... -->`, `<!--reviewed-by:v1 {...}-->`): the intake
+#: takes one anywhere in a comment for the author of the whole comment, so a text, a note or a dropped entry holds none.
+HIDDEN_MARK = re.compile(r"<!--\s*(?:agent|reviewed-by)", re.I)
+#: A bare @-mention, which GitHub sends to the user it names: an `@` that follows no letter or digit, then a login. A
+#: note and a Dropped line are lines of the comment; the text is in a fenced block, where a mention notifies nobody.
+MENTION = re.compile(r"(?<![\w@])@([A-Za-z0-9][A-Za-z0-9-]*)")
+#: Inline code, in which an @ is no mention: a run of backticks, and what comes before the next run as long.
+CODE_SPAN = re.compile(r"(`+).+?\1", re.S)
 #: What an action of `post` has besides the key that names its kind and its declaration.
 FIELDS = {"approve": {"version", "cells"}, "write": {"cells", "text"},
           "edit": {"parent", "cells", "note", "dropped", "text"}}
@@ -494,18 +521,23 @@ def cell_problems(cells):
     return out + ([f"cells: every check needs a cell; missing {', '.join(missing)}"] if missing else [])
 
 
-def text_problems(text):
-    """Why ``text`` is not the three parts of a standard review, each under its heading, in order, and none empty, as
-    sentences; none when it is (the site's `parts`, in scripts/standard.py)."""
-    found, before = [], []
+def sections(text):
+    """The text cut at its part headings: what comes before the first, and then each heading with its body."""
+    before, found = [], []
     for line in normalize(text).split("\n"):
         if line in HEADINGS:
             found.append((line, []))
         else:
             (found[-1][1] if found else before).append(line)
+    return "\n".join(before).strip(), [(heading, "\n".join(body).strip("\n")) for heading, body in found]
+
+
+def text_problems(text):
+    """Why ``text`` is not the three parts of a standard review, each under its heading, in order, and none empty, as
+    sentences; none when it is (the site's `parts`, in scripts/standard.py)."""
+    before, found = sections(text)
     names = [heading for heading, _ in found]
-    out = [f"there is text before `{HEADINGS[0]}`: every line must be in one of the three parts"] \
-        if "".join(before).strip() else []
+    out = [f"there is text before `{HEADINGS[0]}`: every line must be in one of the three parts"] if before else []
     for heading in HEADINGS:
         if heading not in names:
             out.append(f"the part `{heading}` is missing")
@@ -514,7 +546,147 @@ def text_problems(text):
     if len(set(names)) == len(names) and names != sorted(names, key=HEADINGS.index):
         out.append("the parts are out of order: they must come as " + ", ".join(f"`{h}`" for h in HEADINGS))
     return out + [f"the part `{heading}` is empty: if there is nothing to say, say so in a line (`None.`)"
-                  for heading, body in found if not "\n".join(body).strip("\n")]
+                  for heading, body in found if not body]
+
+
+#: What Part 2 lists: the text of each reference, the Lean names of the tests and the tags of the example Checks.
+Items = namedtuple("Items", "references tests checks")
+
+
+def bullets(body):
+    """The bullets of a part's body, each on one line: lines indented under a bullet go on from it, and a blank line or
+    a line of prose ends it."""
+    out, going = [], False
+    for line in body.split("\n"):
+        m = BULLET.match(line)
+        if m:
+            out.append([m[1]])
+            going = True
+        elif going and line[:1] in (" ", "\t") and line.strip():
+            out[-1].append(line.strip())
+        else:
+            going = False
+    return [" ".join(b) for b in out]
+
+
+def items(text):
+    """The items of the text's Part 2. It reads what it finds, so a text with its parts wrong still has items, and a
+    text with no Part 2 has none."""
+    body = next((b for heading, b in sections(text)[1] if heading == HEADINGS[1]), "")
+    references, tests, checks = [], [], []
+    for bullet in bullets(body):
+        if m := TEST.match(bullet):
+            tests.append(m[1])
+        elif m := CHECK.match(bullet):
+            checks.append(m[1].strip())
+        else:
+            references.append(bullet)
+    return Items(references, tests, checks)
+
+
+def squash(text):
+    """Text as references are compared: in lowercase, with only its letters, digits and spaces."""
+    return "".join(c for c in " ".join(text.lower().split()) if c.isalnum() or c == " ")
+
+
+def likeness(a, b):
+    """How alike two references read, from 0 to 1: `SequenceMatcher`'s ratio of their squashed texts, `autojunk` off."""
+    return SequenceMatcher(None, squash(a), squash(b), autojunk=False).ratio()
+
+
+def like(a, b):
+    """Whether two references read alike enough to be one reference reworded (`SIMILAR`)."""
+    return likeness(a, b) >= SIMILAR
+
+
+def plain(ref):
+    """A reference as references are told apart: squashed, and the spaces that taking out its punctuation left closed
+    up."""
+    return " ".join(squash(ref).split())
+
+
+def extends(new, old):
+    """Whether reference ``new`` is ``old`` with more said: the plain text of ``old`` is inside that of ``new``. A
+    reference with no letter or digit is inside no other."""
+    mine = plain(old)
+    return bool(mine) and mine in plain(new)
+
+
+def distinct(refs):
+    """The references, each once: two that differ only in case, punctuation or spacing are one."""
+    first = {}
+    for ref in refs:
+        first.setdefault(plain(ref), ref)
+    return list(first.values())
+
+
+def kept(old, new):
+    """The references of a parent, ``old``, that those of its edit, ``new``, keep. A new reference keeps every old one
+    it holds whole (`extends`); one that holds none keeps at most one by likeness (`like`), and the old references go to
+    the new ones they read like in the way that keeps the most of them, each offered first the one most like it, the
+    most alike old references placed first. A reference given twice counts once."""
+    old, new = distinct(old), distinct(new)
+    whole = {o for o in old if any(extends(n, o) for n in new)}
+    free = [n for n in new if not any(extends(n, o) for o in old)]
+    rest = [o for o in old if o not in whole]
+    score = {(o, n): likeness(o, n) for o in rest for n in free}
+    alike = {o: sorted((n for n in free if score[o, n] >= SIMILAR), key=lambda n: -score[o, n]) for o in rest}
+    keeper = {}  # a new reference, and the old one it keeps by likeness
+
+    def place(o, tried):
+        """Gives ``o`` a new reference like it: a free one, or one whose old reference can move to another."""
+        for n in alike[o]:
+            if n not in tried:
+                tried.add(n)
+                if n not in keeper or place(keeper[n], tried):
+                    keeper[n] = o
+                    return True
+        return False
+
+    for o in sorted(rest, key=lambda o: -max((score[o, n] for n in alike[o]), default=0)):
+        place(o, set())
+    return whole | set(keeper.values())
+
+
+def mentions(item, name):
+    """Whether ``item`` holds ``name`` whole: `Foo.bar` is in `Foo.bar.` but not in `Foo.bar_two`, `Foo.bar'` or
+    `Foo.bar.baz`, which are other names."""
+    return re.search(rf"(?<![\w'!?.]){re.escape(name)}(?![\w'!?]|\.\w)", item) is not None
+
+
+def losses(old, new, dropped):
+    """What the items ``new`` leave out of the items ``old`` that no (item, why) pair of ``dropped`` names with a
+    reason: a test or a Check is named by an item that holds its name or tag, a reference by one that reads alike. A
+    reference is not left out while a new one keeps it (`kept`)."""
+    said = [item for item, why in dropped if why.strip()]
+    ask = "keep it, or give the reason on a `Dropped:` line that names it"
+    problems = [f"the edit drops the test `{name}`: {ask}" for name in dict.fromkeys(old.tests)
+                if name not in new.tests and not any(mentions(item, name) for item in said)]
+    problems += [f"the edit drops the Check *{tag}*: {ask}" for tag in dict.fromkeys(old.checks)
+                 if tag not in new.checks and not any(mentions(item, tag) for item in said)]
+    refs = distinct(old.references)
+    keeps = kept(refs, new.references)
+    problems += [f'the edit drops the reference "{ref}": {ask}' for ref in refs
+                 if ref not in keeps and not any(like(ref, item) for item in said)]
+    return problems
+
+
+def change_problems(text, parent, dropped, exists):
+    """What the site's `check` says of ``text``, a write's or an edit's, besides its parts (`text_problems`) and an
+    edit's note: an edit, which has the ``parent`` text it replaces (None for a write), changes something and loses no
+    test, Check or reference of it unless an (item, why) pair of ``dropped`` names it; and each test the text lists is
+    a declaration (``exists``). The items are compared only when the parts are right, as the site does: with a part
+    missing, every item would be a loss. The intake refuses a line for each of these, so `post` refuses it first."""
+    out = []
+    if parent is not None and normalize(text) == normalize(parent):
+        out.append("the edit changes nothing: its text is its parent's")
+    if not text_problems(text):
+        new = items(text)
+        out += [f"the test `{name}` is not a declaration that exists" for name in dict.fromkeys(new.tests)
+                if not exists(name)]
+        if parent is not None:
+            out += losses(items(parent), new, dropped)
+    return out
 
 
 def block_whole(text):
@@ -534,18 +706,35 @@ def block_whole(text):
     return end == len(lines) - 1
 
 
+#: Why a text, a note or a dropped entry may not hold an agent mark (`HIDDEN_MARK`).
+MARKED = ("an agent mark (`<!-- agent…` or `<!-- reviewed-by…`), which the intake would take for the author of the "
+          "whole comment: leave it out")
+
+
 def body_problems(text):
     """Why ``text``, the whole text of a write or an edit, cannot be posted as it is."""
     if not isinstance(text, str):
         return ["its text is missing: give the whole text"]
-    return text_problems(text) or ([] if block_whole(normalize(text)) else [
+    out = text_problems(text) or ([] if block_whole(normalize(text)) else [
         f"its text would be read cut short: after a `{CLOSE}` line of its own it has a line that starts like an "
         f"action (`Test:`, `Edit:`...), or it has a `{OPEN}` line before its first `{CLOSE}` line"])
+    return out + ([f"its text holds {MARKED}"] if HIDDEN_MARK.search(text) else [])
+
+
+def line_problems(value):
+    """Why ``value``, an edit's note or a dropped entry's item or reason, which go on lines of the comment outside any
+    block, cannot go there: it holds an agent mark (`HIDDEN_MARK`), or a bare @-mention, outside inline code, which
+    GitHub would send to the user it names."""
+    out = [f"it holds {MARKED}"] if HIDDEN_MARK.search(value) else []
+    return out + [f"`@{login}` would notify the GitHub user {login}: put it in backticks, or leave it out"
+                  for login in dict.fromkeys(MENTION.findall(CODE_SPAN.sub(" ", value)))]
 
 
 def edit_problems(f):
     """Why the note of an edit, and what it says it drops, are not as they should be."""
-    out = [] if isinstance(f.get("note"), str) and f["note"].strip() else ["note: say what the edit adds or changes"]
+    note = f.get("note")
+    out = [] if isinstance(note, str) and note.strip() else ["note: say what the edit adds or changes"]
+    out += [f"note: {p}" for p in line_problems(note)] if isinstance(note, str) else []
     dropped = f.get("dropped", [])
     if not isinstance(dropped, list) or not all(isinstance(d, dict) for d in dropped):
         return out + ['dropped: a list of {"item": ..., "why": ...}']
@@ -557,6 +746,8 @@ def edit_problems(f):
             out.append(f"dropped: the item `{item}` holds a spaced dash, which would end its field: leave the dash out")
         if not isinstance(why, str) or not why.strip():
             out.append(f"dropped: say why {item!r} is dropped, in `why`")
+        out += [f"dropped: {value!r}: {p}" for value in (item, why) if isinstance(value, str)
+                for p in line_problems(value)]
     return out
 
 
@@ -604,7 +795,8 @@ def read_actions(path):
 def action_problems(act, site_reason, site_version, drafted):
     """Why ``act`` cannot be posted as it is, as sentences; none when it can. ``site_reason(name)`` is why the site does
     not ask its question of a declaration ("" when it does), ``site_version(name)`` gives the version of its standard
-    review that the site shows (or None), and ``drafted`` has the versions of the drafts' texts, by declaration."""
+    review that the site shows (or None), and ``drafted`` has the drafts' texts by their versions, by declaration. What
+    the site's text and its declarations say of the action is `site_problems`'s."""
     kind, name, f = act["kind"], act["decl"], act["fields"]
     if not isinstance(name, str) or not name.strip():
         return [f"`{kind}` names a declaration: give its full name"]
@@ -639,10 +831,36 @@ def lines_of(act):
     return "\n".join(lines) + "\n"
 
 
+def site_problems(act, review, drafts, exists):
+    """What the intake would refuse of ``act``, whose declaration the site asks its question of, by what the site shows
+    (its version aside, which `action_problems` checks): a write where the site shows a standard review (``review``, its
+    entry, or {}); and of the text of a write or an edit, what the site's `check` says besides its parts
+    (`change_problems`), an edit's parent being the text of the version it names, the site's or a draft's (``drafts``,
+    {version: text}), its dropped entries the pairs the intake reads from its `Dropped:` lines, and ``exists(name)``
+    whether the site has a declaration of that name."""
+    kind, f = act["kind"], act["fields"]
+    out = []
+    if kind == "write" and review.get("version"):
+        out.append(f"the site shows a standard review of it already, {review['version']}: approve it, or edit it")
+    text = f.get("text")
+    if kind == "approve" or not isinstance(text, str):
+        return out
+    parent = None
+    given = f.get("parent").strip().lower() if kind == "edit" and isinstance(f.get("parent"), str) else ""
+    if VERSION.fullmatch(given):
+        known = {**({review["version"]: review.get("text")} if review.get("version") else {}), **drafts}
+        parent = next((t for v, t in known.items() if v.startswith(given) and isinstance(t, str)), None)
+    dropped = f.get("dropped") if isinstance(f.get("dropped"), list) else []
+    pairs = [(one_line(d["item"]), one_line(d["why"])) for d in dropped
+             if isinstance(d, dict) and isinstance(d.get("item"), str) and isinstance(d.get("why"), str)]
+    return out + change_problems(text, parent, pairs, exists)
+
+
 def check_actions(actions, meta, drafted, head):
     """``actions`` checked against the site: the reasons any cannot be posted, as lines that name the action; and, if
     there are none, the declaration and the lines of each. A comment starts with ``head``."""
-    reasons, versions, modules = {}, {}, []
+    reasons, shown, found, modules = {}, {}, {}, []
+    read = reader()  # the site's files of names, read once each for the tests the texts list
 
     def site_modules():
         if not modules:
@@ -654,15 +872,22 @@ def check_actions(actions, meta, drafted, head):
             reasons[name] = why_not_asked(meta, name, site_modules)
         return reasons[name]
 
-    def site_version(name):
-        if name not in versions:
-            versions[name] = (standard_of(meta, name) or {}).get("version")
-        return versions[name]
+    def site_review(name):
+        if name not in shown:
+            shown[name] = standard_of(meta, name) or {}
+        return shown[name]
+
+    def exists(name):
+        if name not in found:
+            found[name] = id_of(meta, name, read) is not None
+        return found[name]
 
     problems, chunks, changed = [], [], set()
     for act in actions:
         name = act["decl"] if isinstance(act["decl"], str) else ""
-        why = action_problems(act, site_reason, site_version, drafted)
+        why = action_problems(act, site_reason, lambda n: site_review(n).get("version"), drafted)
+        if name.strip() and not site_reason(name):
+            why += site_problems(act, site_review(name), drafted.get(name, {}), exists)
         if act["kind"] != "approve" and name:
             if name in changed:
                 why.append("a comment changes the review of a declaration once, and this file changes it again")
@@ -699,10 +924,10 @@ def cmd_post(a):
     actions = read_actions(a.actions)
     if not actions:
         die("error: no actions in " + a.actions, 2)
-    drafted = {}  # the versions of the texts in the drafts (an approval has none), by declaration
+    drafted = {}  # the texts in the drafts (an approval has none) by their versions, by declaration
     for d in read_actions(a.drafts) if a.drafts else []:
         if isinstance(d["decl"], str) and isinstance(d["fields"].get("text"), str):
-            drafted.setdefault(d["decl"], set()).add(version_of(d["fields"]["text"]))
+            drafted.setdefault(d["decl"], {})[version_of(d["fields"]["text"])] = d["fields"]["text"]
     meta = get("meta.json")
     need_standard(meta)
     commit = at_commit(meta, a.commit)
@@ -776,6 +1001,10 @@ For each declaration below, in this order:
      `DROPPED: <item> — <why>` line says which it drops, and why (the item is how its bullet starts: a test's Lean
      name in backticks, a Check's tag, a reference's author and title);
    - `VERDICT: WRITE`, if the declaration shows "{no_review}": give the whole text.
+
+   You see no recorded tests, roadmap Checks or sources beyond what this message shows. So in an EDIT or a WRITE, cite
+   a reference only from the declaration's docstring or its current standard review (never from memory, never with a
+   guessed theorem number), and add no tests or Checks.
 
 Answer in this format, an item for each declaration, in the order given. For an approval:
 
@@ -1121,16 +1350,33 @@ def parse_cells(value):
     return states, problems + ([f"cells: every check needs a cell; missing {', '.join(missing)}"] if missing else [])
 
 
+def fence_end(lines, start):
+    """The line that closes the `~~~review` block opened on line ``start``, read by its fences: inside it a line that
+    starts with `~~~` and says more (`~~~lean`) opens a fence of the text's, and a `~~~` line closes the innermost, or
+    the block itself. None when nothing closes it."""
+    depth = 0
+    for k in range(start + 1, len(lines)):
+        s = lines[k].strip()
+        if s == CLOSE:
+            if not depth:
+                return k
+            depth -= 1
+        elif s.startswith(CLOSE):
+            depth += 1
+    return None
+
+
 def item_fields(body):
     """What the lines of an item hold, as ({field: [its values]}, the text of its `~~~review` block or None, whether
     it has one, the problems in reading it, the lines that start with the name of a field in another case, by name).
     The block starts at the first `~~~review` line and ends at the last `~~~` line, as the intake reads a block, so that
-    the text may hold fences of its own. Outside it a field is a line that starts with its name in capitals. CELLS,
-    VERDICT and CATEGORY are that line and no more. A NOTE, a DROPPED line and a WHY (the one on a CATEGORY line too)
-    are that line and the lines directly under it, joined by a space, up to a blank line, a rule or a fence, a heading,
-    a `Version:` line or another field (`BREAK`): a model wraps its lines, and its reasons run over two or three. Every
-    other line is left out (a remark after a blank line, a rule, an echoed `Version:`), and joins no field, so that
-    nothing a model says besides its fields can lose an item."""
+    the text may hold fences of its own; read by its fences (`fence_end`), it must end there too, or its end is unclear
+    (a remark after it with a `~~~` line, which would land in the text). Outside it a field is a line that starts with
+    its name in capitals. CELLS, VERDICT and CATEGORY are that line and no more. A NOTE, a DROPPED line and a WHY (the
+    one on a CATEGORY line too) are that line and the lines directly under it, joined by a space, up to a blank line, a
+    rule or a fence, a heading, a `Version:` line or another field (`BREAK`): a model wraps its lines, and its reasons
+    run over two or three. Every other line is left out (a remark after a blank line, a rule, an echoed `Version:`), and
+    joins no field, so that nothing a model says besides its fields can lose an item."""
     problems, text = [], None
     opens = [k for k, line in enumerate(body) if line.strip() == OPEN]
     rest = body
@@ -1138,6 +1384,11 @@ def item_fields(body):
         closes = [k for k in range(opens[0] + 1, len(body)) if body[k].strip() == CLOSE]
         if closes:  # the block ends what a field goes on over, before it and after it
             text, rest = "\n".join(body[opens[0] + 1:closes[-1]]), body[:opens[0]] + [""] + body[closes[-1] + 1:]
+            if fence_end(body, opens[0]) != closes[-1]:
+                problems.append(f"the review block's end is unclear: its last `{CLOSE}` line is not the one its "
+                                f"fences close it at, so a `{CLOSE}` line after the text (in a remark, say) or a bare "
+                                f"`{CLOSE}` fence in it would change the text; end the item at the block's last line, "
+                                f"and give each fence of the text what it holds (`~~~lean`)")
         else:
             rest = body[:opens[0]]
             problems.append(f"the `{OPEN}` block is not closed: it ends at the last line `{CLOSE}`")
@@ -1244,9 +1495,12 @@ def judge_item(name, body, version):
                     "text": body_text},
            "WRITE": {"write": name, "cells": cells, "text": body_text}}[verdict]
     kind = verdict.lower()
-    # What `post` would refuse of it, the version's being current aside (it refuses the whole file for one such action).
+    # What `post` would refuse of it, the version's being current aside (it refuses the whole file for one such action);
+    # and an edit of nothing, which the intake refuses: its text is the review the question showed.
     act = {"line": 0, "kind": kind, "decl": name, "fields": {k: v for k, v in row.items() if k != kind}}
-    more = action_problems(act, lambda n: "", lambda n: version, {})
+    more = ["the edit changes nothing: its text is the review the question showed"] \
+        if verdict == "EDIT" and version_of(body_text) == version else []
+    more += action_problems(act, lambda n: "", lambda n: version, {})
     if not more and len(lines_of(act)) > COMMENT_CAP - ROOM:
         more = [f"its lines are {len(lines_of(act)):,} characters, and a comment holds {COMMENT_CAP:,}"]
     return ("not filed", "; ".join(more)) if more else ("action", row)
