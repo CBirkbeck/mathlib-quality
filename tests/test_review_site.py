@@ -2,6 +2,9 @@
 commands beside them. The review site is faked by patching `review_site.get` (its data) and `review_site.fetch` (a text
 file of GitHub's), and GitHub by patching `review_site.gh`: nothing here touches the network or GitHub.
 
+`AstraQuestionTests` and `AstraAnswerTests` (`astra-question`, `astra-answer`) build a real git repository for the Tau
+Ceti checkout, in a temporary directory, and let `git -C` of that checkout run: nothing else may.
+
 `IntakeReadsPostTests` feeds what `post --dry-run` writes to the review site's own parser (its
 scripts/standard_intake.py), so that the two never drift. It needs the site's repository, at $TAUCETI_REVIEW_SITE_DIR or
 beside this one, and the packages that repository runs on (evidence-core and evidence-store: its .venv has them), and
@@ -27,6 +30,12 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "scripts"))
 import review_site  # noqa: E402
 
+#: The real `subprocess.run`, taken before any test patches it: the tests of the questions to Astra run git with it.
+REAL_RUN = subprocess.run
+#: The environment those git calls get: none of git's own variables (`GIT_DIR`, ... when a hook runs the tests), which
+#: would point `git -C <the fixture>` at another repository.
+GIT_ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
 #: The vector of the site's tests/test_standard.py, which pins the two copies of `version_of` equal: CRLF line ends,
 #: trailing spaces, blank lines at both ends.
 VECTOR = ("\n## What it says\r\n`triple n` is $3n$.  \r\n\r\n## References and tests\n- Fixture documentation.\n\n"
@@ -43,6 +52,10 @@ CELLS_LINE = "object, convention, edge-cases, junk, vacuous, choice n/a, general
 
 def V(text):
     return review_site.version_of(text)
+
+
+def norm(text):
+    return review_site.normalize(text)
 
 
 def review(says="`Fixture.a n` is $n$.", refs=("- Fixture documentation, §1.",), subtle="None."):
@@ -76,7 +89,7 @@ def long_review(n):
 
 def chunk(decl, text):
     """The lines of a Write of ``text`` to ``decl``, as `post` writes them: what a comment holds for it."""
-    return f"Write: {decl} — {CELLS_LINE}\n~~~review\n{review_site.normalize(text)}\n~~~\n"
+    return f"Write: {decl} — {CELLS_LINE}\n~~~review\n{norm(text)}\n~~~\n"
 
 
 def approve(decl, version, cells=CELLS):
@@ -137,23 +150,44 @@ def parse_writes(body):
 
 class Site:
     """The data the review site publishes, as `review_site.get` reads it: a few declarations, each with its record
-    views, and the standard reviews the site shows. The library has one module, `Fixture`; a declaration outside it
-    may be in a module of its own (modules.json lists them). ``outside`` is the packages whose declarations the site
-    asks its question of (`meta.review.outside`), or None for a site that does not say. ``reads`` lists what was asked
-    of it."""
+    views, and the standard reviews the site shows. The library has one module, `Fixture`, in the file ``path``; a
+    declaration outside it may be in a module of its own (modules.json lists them). ``outside`` is the packages whose
+    declarations the site asks its question of (`meta.review.outside`), or None for a site that does not say. ``reads``
+    lists what was asked of it.
+
+    A declaration may say more of itself, as keywords of `add`: its kind code ``k`` (default `t`), its signature
+    ``sig`` (or ``stmt``), the ``line`` range of its source in the file, and the names it ``rests`` on."""
     NODES, NAMES, STANDARD = 4, 4, 256
 
-    def __init__(self, commit=COMMIT, standard=True, bulk=1, outside=("Mathlib",)):
-        self.commit, self.standard, self.bulk, self.outside = commit, standard, bulk, outside
-        self.decls, self.reviews, self.modules, self.reads = [], {}, ["Fixture"], []
+    def __init__(self, commit=COMMIT, standard=True, bulk=1, outside=("Mathlib",), path="Fixture.lean"):
+        self.commit, self.standard, self.bulk, self.outside, self.path = commit, standard, bulk, outside, path
+        self.decls, self.reviews, self.modules, self.reads, self.info = [], {}, ["Fixture"], [], {}
 
-    def add(self, name, review=None, records=(), project=True, module=None):
+    def add(self, name, review=None, records=(), project=True, module=None, **info):
         if module and module not in self.modules:
             self.modules.append(module)
         self.decls.append((name, project, list(records), module))
         if review:
             self.reviews[name] = review
+        if info:
+            self.info[name] = info
         return self
+
+    def id_of(self, name):
+        return next(i for i, decl in enumerate(self.decls) if decl[0] == name)
+
+    def node(self, name, project, module):
+        """A row of nodes/<k>.json: name, kind, flags, module index, title, two states, what it rests on, and the
+        columns between that and how many things it rests on."""
+        rests = [self.id_of(x) for x in self.info.get(name, {}).get("rests", ())]
+        return [name, self.info.get(name, {}).get("k", "t"), 1 if project else 0,
+                0 if project else self.modules.index(module) if module else -1, "", 0, 0, rests, [], len(rests)]
+
+    def entry(self, i, name, **more):
+        """An entry of a module's file: the statement and the lines it was declared on, when the declaration says."""
+        said = self.info.get(name, {})
+        return {"id": i, "name": name, "k": said.get("k", "t"),
+                **{x: v for x, v in said.items() if x in ("sig", "stmt", "line")}, **more}
 
     def get(self, path):
         self.reads.append(path)
@@ -170,11 +204,16 @@ class Site:
         if kind == "names":
             return [[i, name] for i, (name, _, _, _) in enumerate(self.decls) if review_site.fnv(name, self.NAMES) == k]
         if kind == "nodes":
-            return [[name, "t", 1 if project else 0, 0 if project else self.modules.index(module) if module else -1]
+            return [self.node(name, project, module)
                     for name, project, _, module in self.decls[k * self.NODES:(k + 1) * self.NODES]]
         if kind == "m":
-            return {"decls": [{"id": i, "records": records} for i, (_, project, records, _) in enumerate(self.decls)
-                              if project]}
+            return {"name": self.modules[0], "path": self.path,
+                    "decls": [self.entry(i, name, records=records)
+                              for i, (name, project, records, _) in enumerate(self.decls) if project]}
+        if kind == "u":
+            return {"name": self.modules[k],
+                    "decls": [self.entry(i, name) for i, (name, project, _, module) in enumerate(self.decls)
+                              if not project and module == self.modules[k]]}
         if kind == "standard":
             return {name: r for name, r in self.reviews.items() if review_site.fnv(name, self.STANDARD) == k}
         raise AssertionError(f"the site was asked for {path}")
@@ -805,6 +844,601 @@ class PostTests(Case):
         self.assertIn("1 of 2 comments", err)  # the first is up
         self.assertIn("Fixture.d29", err)  # and these were not posted
         self.assertNotIn("Fixture.d00", err)
+
+
+#: A Tau Ceti file for the questions to Astra; the `line` range of each declaration of the fixture site is in it.
+SOURCE = (
+    "import Mathlib\n"  # 1
+    "\n"
+    "namespace Fixture\n"
+    "\n"
+    "/-- `triple n` is three times `n`. -/\n"  # 5
+    "def triple (n : ℕ) : ℕ := 3 * n\n"
+    "\n"
+    "/-- Tripling twice is multiplying by nine. -/\n"  # 8
+    "theorem triple_triple (n : ℕ) : triple (triple n) = 9 * n := by\n"
+    "  unfold triple\n"
+    "  omega\n"  # 11
+    "\n"
+    "theorem triple_two : triple 2 = 6 := by\n"  # 13
+    "  decide\n"
+    "\n"
+    "end Fixture\n")
+#: The cells of an answer, as the instructions to Astra show them.
+ANSWER_CELLS = ("object=checked, convention=checked, edge-cases=checked, junk=checked, vacuous=checked, "
+                "choice=n/a, generality=checked, naming=checked")
+
+
+def error_cells(axis, why="the statement is wrong"):
+    """The cells of an answer in which the check ``axis`` found an error."""
+    return ANSWER_CELLS.replace(f"{axis}=checked", f"{axis}=ERROR: {why}")
+
+
+def item(n, name, verdict, *lines, cells=ANSWER_CELLS, block=None):
+    """Astra's answer to item ``n`` of a question: the cells and the verdict (left out when None), the lines the verdict
+    takes, and the block of the whole text."""
+    out = [f"### {n}. {name}"] + ([f"CELLS: {cells}"] if cells is not None else []) \
+        + ([f"VERDICT: {verdict}"] if verdict is not None else []) + list(lines)
+    if block is not None:
+        out += ["~~~review", block.strip("\n"), "~~~"]
+    return "\n".join(out) + "\n\n"
+
+
+class AstraCase(Case):
+    """Questions to Astra and their answers, against a Tau Ceti checkout that is a real git repository (one `.lean`
+    file, one commit) and a site that describes it. Of everything that runs, only `git -C <the checkout>` may."""
+    PATH = "Fixture/Basic.lean"
+    GUIDE = "## The standard review\n\nEach declaration has one standard review.\n"
+    DOC = (f"# Reviewing\n\nIntro.\n\n{review_site.GUIDE_BEGIN}\n{GUIDE}{review_site.GUIDE_END}\n\n"
+           "## What you need\n\nElsewhere.\n")
+
+    def setUp(self):
+        super().setUp()
+        if shutil.which("git") is None:
+            self.skipTest("git is not installed")
+        self.repo, self.git_calls = self.dir / "TauCeti", []
+        self.commit = self.commit_files({self.PATH: SOURCE})
+        patcher = mock.patch.object(review_site.subprocess, "run", self.run_git)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.site = Site(commit=self.commit, path=self.PATH)
+        self.t1, self.t2, self.t3 = review(says="triple"), review(says="triple twice"), review(says="two")
+        self.site.add("Fixture.triple", entry(self.t1), k="d", line=[5, 6], sig="Fixture.triple (n : ℕ) : ℕ")
+        self.site.add("Fixture.triple_triple", entry(self.t2), line=[8, 11], rests=["Fixture.triple"],
+                      sig="Fixture.triple_triple (n : ℕ) : Fixture.triple (Fixture.triple n) = 9 * n")
+        self.site.add("Fixture.triple_two", entry(self.t3), line=[13, 14], rests=["Fixture.triple", "Nat.mul"],
+                      sig="Fixture.triple_two : Fixture.triple 2 = 6")
+        self.site.add("Nat.mul", None, project=False, module="Init.Prelude", k="d", sig="Nat.mul : ℕ → ℕ → ℕ")
+
+    def git(self, *args):
+        """git in the checkout, to build it: the real `run`, which the guard of `run_git` keeps from everything else."""
+        done = REAL_RUN(["git", "-C", str(self.repo), "-c", "user.name=T", "-c", "user.email=t@example.org", "-c",
+                         "commit.gpgsign=false", "-c", "core.autocrlf=false", "-c", f"core.hooksPath={os.devnull}",
+                         *args], capture_output=True, text=True, env=GIT_ENV)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout.strip()
+
+    def commit_files(self, files):
+        """Commits ``files`` (path to text or bytes) to the checkout, which is made if need be: the new commit."""
+        self.repo.mkdir(exist_ok=True)
+        if not (self.repo / ".git").exists():
+            self.git("init", "-q")
+        for path, content in files.items():
+            (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / path).write_bytes(content.encode("utf-8") if isinstance(content, str) else content)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "fixture")
+        return self.git("rev-parse", "HEAD")
+
+    def run_git(self, cmd, **kw):
+        """`subprocess.run` for the code under test: git in the checkout runs, and is recorded; anything else fails."""
+        if list(cmd[:3]) != ["git", "-C", str(self.repo)]:
+            raise AssertionError(f"unexpected call of run: {cmd}")
+        self.git_calls.append(list(cmd[3:]))
+        return REAL_RUN(cmd, **{"env": GIT_ENV, **kw})
+
+    def question(self, *names, drafts=None, tauceti=None, out="question.txt"):
+        """(exit code, stdout, stderr) of `astra-question NAMES`, written to the file ``out`` of the temporary
+        directory."""
+        return self.cli("astra-question", *names, "--tauceti", tauceti or str(self.repo), "--out", str(self.dir / out),
+                        *(["--drafts", drafts] if drafts else []), fetch=lambda url: self.DOC)
+
+    def ask(self, *names, **kw):
+        """The path of the question about ``names``, which must be written."""
+        code, out, err = self.question(*names, **kw)
+        self.assertEqual((code, out), (0, ""), err)
+        return str(self.dir / kw.get("out", "question.txt"))
+
+    @staticmethod
+    def items(text):
+        """The items of a question, each from its heading on: the declarations, not the examples of the instructions."""
+        return re.split(r"(?m)^(?=### \d+\. )", text.split("\n## The declarations\n", 1)[1])[1:]
+
+
+class AstraQuestionTests(AstraCase):
+    def test_question_holds_source_rests_on_and_review(self):
+        text = Path(self.ask("Fixture.triple_two", "Fixture.triple_triple")).read_text(encoding="utf-8")
+        # Three things, in this order: the instructions, the guide's section, the numbered items.
+        look, guide, first = (text.index(x) for x in
+                              ("Look for errors in the Lean first", self.GUIDE.strip(), "### 1. Fixture.triple_two"))
+        self.assertLess(look, guide)
+        self.assertLess(guide, first)
+        for want in ("ERROR:", "VERDICT: NO", "CATEGORY:", "WHY:", "APPROVE", "EDIT", "WRITE", "~~~review", "NOTE:",
+                     "DROPPED:", *AXES):
+            self.assertIn(want, text[:guide])
+        self.assertNotIn(review_site.GUIDE_BEGIN, text)  # the section, not its markers
+        one, two = self.items(text)
+        self.assertTrue(one.startswith("### 1. Fixture.triple_two\n"))
+        self.assertIn("Kind: theorem", one)
+        self.assertIn(f"Source: {self.PATH}, lines 13 to 14, at Tau Ceti {self.commit[:12]}", one)
+        self.assertIn("```lean\ntheorem triple_two : triple 2 = 6 := by\n  decide\n```", one)
+        self.assertNotIn("end Fixture", one)  # the lines of the declaration, not the rest of the file
+        self.assertNotIn("3 * n", one)  # what it rests on is shown by its statement, not its source
+        rests = one.split("Rests on:")[1].split("Current standard review")[0]
+        self.assertEqual([x for x in rests.splitlines() if x.strip()],
+                         ["- Fixture.triple: Fixture.triple (n : ℕ) : ℕ", "- Nat.mul: Nat.mul : ℕ → ℕ → ℕ"])
+        self.assertIn(f"Version: {V(self.t3)}\n~~~review\n{self.t3.strip(chr(10))}\n~~~", one)
+        self.assertTrue(two.startswith("### 2. Fixture.triple_triple\n"))
+        self.assertIn("/-- Tripling twice is multiplying by nine. -/\ntheorem triple_triple", two)
+        self.assertIn("  unfold triple\n  omega\n```", two)
+        self.assertEqual([x for x in two.split("Rests on:")[1].splitlines() if x.startswith("- ")][:1],
+                         ["- Fixture.triple: Fixture.triple (n : ℕ) : ℕ"])
+        self.assertIn(f"Version: {V(self.t2)}", two)
+        # The Lean is read from the commit the site shows, in the checkout: the file once for the two declarations.
+        self.assertEqual(self.git_calls, [["cat-file", "-e", f"{self.commit}^{{commit}}"],
+                                          ["show", f"{self.commit}:{self.PATH}"]])
+        # And each file of the site once: the module's file is read for both, and for what they rest on.
+        self.assertEqual(self.site.reads.count("m/0.json"), 1)
+        self.assertEqual(len(self.site.reads), len(set(self.site.reads)))
+
+    def test_question_uses_a_draft_over_the_site(self):
+        self.site.add("Fixture.d", entry(review(says="d, on the site")), line=[13, 14], sig="Fixture.d : True")
+        self.site.add("Fixture.e", None, line=[13, 14], sig="Fixture.e : True")
+        self.site.add("Fixture.f", None, line=[13, 14], sig="Fixture.f : True")
+        edited, written = review(says="triple twice, edited"), review(says="e, written")
+        drafts = self.jsonl(edit("Fixture.triple_triple", V(self.t2), edited, "says more"), write("Fixture.e", written),
+                            approve("Fixture.triple", V(self.t1)), name="drafts.jsonl")
+        text = Path(self.ask("Fixture.triple", "Fixture.triple_triple", "Fixture.d", "Fixture.e", "Fixture.f",
+                             drafts=drafts)).read_text(encoding="utf-8")
+        triple, triple_triple, d, e, f = self.items(text)
+        # A draft of the declaration is its current review, its version the hash of the draft's text, whatever the
+        # site shows.
+        self.assertIn(f"Version: {V(edited)}\n~~~review\n{edited.strip(chr(10))}\n~~~", triple_triple)
+        self.assertNotIn(V(self.t2), triple_triple)
+        self.assertNotIn("triple twice\n", triple_triple)
+        self.assertIn(f"Version: {V(written)}\n~~~review\n{written.strip(chr(10))}\n~~~", e)
+        # An approval is no draft of a text, and a declaration without a draft shows the site's review.
+        self.assertIn(f"Version: {V(self.t1)}", triple)
+        self.assertIn(f"Version: {V(review(says='d, on the site'))}", d)
+        # A declaration with neither is told there is none, and is to be written.
+        self.assertIn("Current standard review: (no standard review yet: write one)", f)
+        self.assertNotIn("Version:", f)
+        # Several drafts of one declaration: the last is the current one.
+        later = review(says="e, written again")
+        drafts = self.jsonl(write("Fixture.e", written), edit("Fixture.e", V(written), later, "again"), name="d2.jsonl")
+        self.assertIn(f"Version: {V(later)}", self.items(Path(self.ask("Fixture.e", drafts=drafts)).read_text(
+            encoding="utf-8"))[0])
+
+    def test_question_refuses_more_than_12(self):
+        names = [f"Fixture.x{i:02d}" for i in range(13)]
+        for name in names:
+            self.site.add(name, entry(review(says=name)), line=[13, 14], sig=f"{name} : True")
+        code, out, err = self.question(*names)
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("refused", err)
+        self.assertIn("at most 12", err)
+        self.assertFalse((self.dir / "question.txt").exists())
+        self.assertEqual((self.site.reads, self.git_calls), ([], []))  # refused before anything was read
+        text = Path(self.ask(*names[:12])).read_text(encoding="utf-8")  # twelve are fine
+        self.assertEqual([x.splitlines()[0] for x in self.items(text)],
+                         [f"### {k}. {name}" for k, name in enumerate(names[:12], 1)])
+
+    def test_question_refuses_what_it_cannot_ask_about(self):
+        self.site.add("Fixture.nolines", entry(review()), sig="Fixture.nolines : True")
+        names = ["Fixture.triple", "Fixture.nope", "Nat.mul", "Fixture.nolines"]
+        code, out, err = self.question(*names)
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("refused", err)
+        for name, why in (("Fixture.nope", "no page"), ("Nat.mul", "Tau Ceti's own"), ("Fixture.nolines", "source")):
+            self.assertRegex(err, rf"{re.escape(name)}: .*{why}")  # all of them at once, each with its reason
+        self.assertNotIn("Fixture.triple:", err)  # the name that is fine is not named
+        self.assertFalse((self.dir / "question.txt").exists())
+        self.assertEqual(self.git_calls, [])
+        code, out, err = self.question("Fixture.triple", "Fixture.triple_two", "Fixture.triple")
+        self.assertEqual((code, out), (1, ""))
+        self.assertRegex(err, r"Fixture\.triple .*twice")
+
+    def test_question_needs_the_commit_in_the_checkout(self):
+        self.site.commit = "1" * 40
+        code, out, err = self.question("Fixture.triple")
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("1" * 12, err)  # the commit the site shows
+        self.assertIn("fetch", err)  # and what to do
+        self.assertFalse((self.dir / "question.txt").exists())
+        # A file the commit lacks, and a checkout that is no directory, are told too.
+        self.site.commit, self.site.path = self.commit, "Fixture/Gone.lean"
+        code, out, err = self.question("Fixture.triple")
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("Fixture/Gone.lean", err)
+        self.site.path = self.PATH
+        code, out, err = self.question("Fixture.triple", tauceti=str(self.dir / "nowhere"))
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("nowhere", err)
+        self.assertFalse((self.dir / "question.txt").exists())
+
+    def test_question_gives_the_source_whatever_its_line_ends(self):
+        self.site.commit = self.commit_files({"Crlf.lean": b"namespace Crlf\r\ntheorem t : True := by\r\n  trivial\r\n"
+                                                           b"end Crlf\r\n"})
+        self.site.path = "Crlf.lean"
+        self.site.add("Crlf.t", entry(review()), line=[2, 3], sig="Crlf.t : True")
+        text = Path(self.ask("Crlf.t")).read_text(encoding="utf-8")
+        self.assertIn("```lean\ntheorem t : True := by\n  trivial\n```", text)
+        self.assertNotIn("\r", text)
+
+    def test_question_shows_the_source_in_a_fence_that_can_hold_it(self):
+        src = "/-- Use\n```lean\nexample : True := trivial\n```\nlike this. -/\ntheorem t : True := trivial\n"
+        self.site.commit = self.commit_files({"Fences.lean": src})
+        self.site.path = "Fences.lean"
+        self.site.add("Fences.t", entry(review()), line=[1, 6], sig="Fences.t : True")
+        one, = self.items(Path(self.ask("Fences.t")).read_text(encoding="utf-8"))
+        self.assertIn("````lean\n" + src.rstrip("\n") + "\n````", one)  # a fence longer than the one in the source
+
+    def test_question_shows_at_most_12_statements_it_rests_on(self):
+        rests = [f"Nat.l{i:02d}" for i in range(14)]
+        for name in rests:
+            self.site.add(name, None, project=False, module="Mathlib.Data.Nat.Basic", k="t", sig=f"{name} : P")
+        self.site.add("Fixture.big", entry(review()), line=[13, 14], rests=rests, sig="Fixture.big : True")
+        one, = self.items(Path(self.ask("Fixture.big")).read_text(encoding="utf-8"))
+        shown = one.split("Rests on:")[1].split("Current standard review")[0]
+        listed = [x for x in shown.splitlines() if x.startswith("- ")]
+        self.assertEqual(listed[:12], [f"- {name}: {name} : P" for name in rests[:12]])  # the node's order
+        self.assertEqual(len(listed), 13)
+        self.assertIn("2 more", listed[12])
+        self.assertNotIn(rests[12], one)
+
+    def test_question_says_what_it_rests_on_by_what_the_site_has(self):
+        self.site.add("Fixture.stated", None, stmt="theorem stated : 1 = 1", line=[13, 14])  # no signature, a statement
+        self.site.add("Fixture.bare", None, line=[13, 14])  # neither
+        self.site.add("Fixture.top", entry(review()), line=[13, 14], rests=["Fixture.stated", "Fixture.bare"], sig="x")
+        self.site.add("Fixture.lone", entry(review()), line=[13, 14], sig="Fixture.lone : True")  # rests on nothing
+        top, lone = self.items(Path(self.ask("Fixture.top", "Fixture.lone")).read_text(encoding="utf-8"))
+        self.assertIn("- Fixture.stated: theorem stated : 1 = 1", top)
+        self.assertRegex(top, r"- Fixture\.bare: \(.*no statement.*\)")
+        self.assertRegex(lone, r"Rests on: .*nothing")
+
+    def test_question_warns_when_it_is_longer_than_one_argument_can_be(self):
+        self.assertNotIn("warning", self.question("Fixture.triple")[2])
+        with mock.patch.object(review_site, "QUESTION_WARN", 1000):
+            code, out, err = self.question("Fixture.triple")
+        self.assertEqual((code, out), (0, ""))
+        self.assertIn("warning", err)  # the question is still written
+        self.assertTrue((self.dir / "question.txt").exists())
+
+    def test_question_needs_the_guide_and_a_site_with_standard_reviews(self):
+        def unreadable(url):
+            raise OSError("no route")
+
+        code, out, err = self.cli("astra-question", "Fixture.triple", "--tauceti", str(self.repo), "--out",
+                                  str(self.dir / "question.txt"), fetch=unreadable)
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("no route", err)
+        code, out, err = self.question("Fixture.triple", drafts=str(self.dir / "nowhere.jsonl"))
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("nowhere.jsonl", err)
+        self.site.standard = False
+        code, out, err = self.question("Fixture.triple")
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("the site does not show standard reviews yet", err)
+        self.assertFalse((self.dir / "question.txt").exists())
+
+
+class AstraAnswerTests(AstraCase):
+    def setUp(self):
+        super().setUp()
+        self.t4 = review(says="d")
+        self.site.add("Fixture.d", entry(self.t4), line=[13, 14], sig="Fixture.d : True")
+        self.site.add("Fixture.e", None, line=[13, 14], sig="Fixture.e : True")  # no review: to be written
+
+    def answer(self, question, *parts, name="answer.md"):
+        """(exit code, stdout, stderr, actions, noes) of `astra-answer` on the answer ``parts``, with the two files it
+        writes as lists of rows."""
+        path, actions, noes = self.dir / name, self.dir / "actions.jsonl", self.dir / "noes.jsonl"
+        path.write_bytes("".join(parts).encode("utf-8"))
+        self.site.reads.clear()
+        git_calls = len(self.git_calls)
+        code, out, err = self.cli("astra-answer", str(path), "--question", question, "--out", str(actions), "--noes",
+                                  str(noes))
+        rows = lambda p: [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines()] if p.exists() else None
+        # The answer needs nothing but its question: no site, no checkout.
+        self.assertEqual((self.site.reads, self.git_calls[git_calls:]), ([], []))
+        return code, out, err, rows(actions), rows(noes)
+
+    def test_answer_to_actions_and_noes(self):
+        q = self.ask("Fixture.triple", "Fixture.triple_triple", "Fixture.triple_two", "Fixture.d", "Fixture.e")
+        edited, written = review(says="triple twice, said better"), review(says="e")
+        why = "`triple 0 = 0`, not 6,\nso the statement needs `n ≠ 0`."
+        code, out, err, actions, noes = self.answer(
+            q, "Here are my reviews.\n\n",
+            item(1, "Fixture.triple", "APPROVE"),
+            item(2, "Fixture.triple_triple", "EDIT", "NOTE: adds the hypothesis the statement skips",
+                 "DROPPED: `Fixture.triple_triple_one` — renamed `Fixture.triple_triple_uno` in Tau Ceti",
+                 "DROPPED: Check *test_one* -- no longer in the roadmap", block=edited),
+            item(3, "Fixture.triple_two", "NO", f"CATEGORY: edge-cases   WHY: {why}",
+                 cells=error_cells("edge-cases", "it fails at 0")),
+            item(4, "Fixture.d", "APPROVE", cells=ANSWER_CELLS.replace(", naming=checked", "")),  # a cell is missing
+            item(5, "Fixture.e", "WRITE", block=written))
+        self.assertEqual(code, 0, err)
+        dropped = [{"item": "`Fixture.triple_triple_one`", "why": "renamed `Fixture.triple_triple_uno` in Tau Ceti"},
+                   {"item": "Check *test_one*", "why": "no longer in the roadmap"}]
+        # In the order of the question; versions from the question, texts as they will be posted.
+        self.assertEqual(actions, [
+            approve("Fixture.triple", V(self.t1)),
+            edit("Fixture.triple_triple", V(self.t2), norm(edited),
+                 "adds the hypothesis the statement skips", dropped),
+            write("Fixture.e", norm(written))])
+        self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "edge-cases", "why": why}])
+        self.assertEqual(len(out.splitlines()), 1, out)
+        self.assertRegex(out, r"^not filed: Fixture\.d: .*missing naming")
+        self.assertIn("3 actions", err)
+
+    def test_answer_writes_the_first_review(self):
+        q = self.ask("Fixture.e", "Fixture.triple")
+        text = Path(q).read_text(encoding="utf-8")
+        self.assertIn("(no standard review yet: write one)", self.items(text)[0])
+        written = review(says="e says this")
+        code, out, err, actions, noes = self.answer(q, item(1, "Fixture.e", "WRITE", block=written))
+        self.assertEqual((code, actions, noes), (0, [write("Fixture.e", norm(written))], []))
+        self.assertRegex(out, r"not filed: Fixture\.triple: .*no item 2")  # the other item was not answered
+
+    def test_answer_never_guesses(self):
+        q = self.ask("Fixture.triple", "Fixture.e")  # triple has a review, e has none
+        ok = review(says="fine")
+        t = lambda *a, **k: item(1, "Fixture.triple", *a, **k)
+        e = lambda *a, **k: item(2, "Fixture.e", *a, **k)
+        unclosed = f"### 1. Fixture.triple\nCELLS: {ANSWER_CELLS}\nVERDICT: EDIT\nNOTE: n\n~~~review\n{ok}"
+        cases = [
+            ("an ERROR cell under APPROVE", "Fixture.triple", t("APPROVE", cells=error_cells("junk")), "ERROR"),
+            ("an ERROR cell under EDIT", "Fixture.triple", t("EDIT", "NOTE: n", block=ok, cells=error_cells("junk")),
+             "ERROR"),
+            ("an ERROR cell under WRITE", "Fixture.e", e("WRITE", block=ok, cells=error_cells("junk")), "ERROR"),
+            ("a NO with no ERROR cell", "Fixture.triple", t("NO", "CATEGORY: junk   WHY: x"), "ERROR cell"),
+            ("a NO of another check than the ERROR cell's", "Fixture.triple",
+             t("NO", "CATEGORY: naming   WHY: x", cells=error_cells("junk")), "CATEGORY"),
+            ("a NO with a category that is no check", "Fixture.triple",
+             t("NO", "CATEGORY: style   WHY: x", cells=error_cells("junk")), "CATEGORY"),
+            ("a NO without its WHY", "Fixture.triple", t("NO", "CATEGORY: junk", cells=error_cells("junk")), "WHY"),
+            ("a NO without its CATEGORY", "Fixture.triple", t("NO", "WHY: x", cells=error_cells("junk")), "CATEGORY"),
+            ("a cell left out", "Fixture.triple", t("APPROVE", cells=ANSWER_CELLS.replace(", naming=checked", "")),
+             "missing naming"),
+            ("a check twice", "Fixture.triple", t("APPROVE", cells=ANSWER_CELLS + ", junk=checked"), "twice"),
+            ("a cell that is no state", "Fixture.triple",
+             t("APPROVE", cells=ANSWER_CELLS.replace("junk=checked", "junk=maybe")), "maybe"),
+            ("something before the first cell", "Fixture.triple", t("APPROVE", cells="all of them: " + ANSWER_CELLS),
+             "CELLS"),
+            ("no CELLS line", "Fixture.triple", t("APPROVE", cells=None), "CELLS"),
+            ("no VERDICT line", "Fixture.triple", t(None), "VERDICT"),
+            ("a verdict that is none of the four", "Fixture.triple", t("MAYBE"), "MAYBE"),
+            ("a verdict and more", "Fixture.triple", t("APPROVE, I think"), "VERDICT"),
+            ("an APPROVE with a NOTE", "Fixture.triple", t("APPROVE", "NOTE: n"), "NOTE"),
+            ("an APPROVE with a text", "Fixture.triple", t("APPROVE", block=ok), "~~~review"),
+            ("an EDIT without a NOTE", "Fixture.triple", t("EDIT", block=ok), "NOTE"),
+            ("an EDIT with a NOTE that says nothing", "Fixture.triple", t("EDIT", "NOTE:  ", block=ok), "NOTE"),
+            ("an EDIT without a text", "Fixture.triple", t("EDIT", "NOTE: n"), "~~~review"),
+            ("a text that is not closed", "Fixture.triple", unclosed, "not closed"),
+            ("a text without its parts", "Fixture.triple", t("EDIT", "NOTE: n", block="## What it says\nx"),
+             "References and tests"),
+            ("a text the intake would cut short", "Fixture.triple",
+             t("EDIT", "NOTE: n", block=BLOCKS["a command line after a tilde line"][0]), "cut short"),
+            ("an edit of nothing", "Fixture.e", e("EDIT", "NOTE: n", block=ok), "WRITE"),
+            ("an approval of nothing", "Fixture.e", e("APPROVE"), "WRITE"),
+            ("a write over a review", "Fixture.triple", t("WRITE", block=ok), "approve it"),
+            ("a write with a NOTE", "Fixture.e", e("WRITE", "NOTE: n", block=ok), "NOTE"),
+            ("a write with a DROPPED line", "Fixture.e", e("WRITE", "DROPPED: x — y", block=ok), "DROPPED"),
+            ("a write without a text", "Fixture.e", e("WRITE"), "~~~review"),
+            ("a DROPPED line with no why", "Fixture.triple", t("EDIT", "NOTE: n", "DROPPED: `x`", block=ok), "DROPPED"),
+            ("a version of its own", "Fixture.triple", t("APPROVE", "Version: ffffffffffffffff"), "cannot read"),
+            ("a line it cannot read", "Fixture.triple", t("APPROVE", "", "I agree."), "cannot read"),
+            ("a NO with a text", "Fixture.triple",
+             t("NO", "CATEGORY: junk   WHY: x", cells=error_cells("junk"), block=ok), "~~~review"),
+        ]
+        for why, name, text, needle in cases:
+            with self.subTest(why=why):
+                code, out, err, actions, noes = self.answer(q, text)
+                self.assertEqual(code, 0, err)
+                lines = [x for x in out.splitlines() if x.startswith(f"not filed: {name}: ")]
+                self.assertEqual(len(lines), 1, out)
+                self.assertIn(needle, lines[0])
+                self.assertEqual((actions, noes), ([], []))  # and nothing of it was filed
+
+    def test_a_bad_item_does_not_hold_back_a_good_one(self):
+        q = self.ask("Fixture.triple", "Fixture.triple_triple")
+        code, out, err, actions, noes = self.answer(q, item(1, "Fixture.triple", "MAYBE"),
+                                                    item(2, "Fixture.triple_triple", "APPROVE"))
+        self.assertEqual((code, actions), (0, [approve("Fixture.triple_triple", V(self.t2))]))
+        self.assertRegex(out, r"^not filed: Fixture\.triple: .*MAYBE")
+
+    def test_answer_reads_the_markup_a_model_adds(self):
+        q = self.ask("Fixture.triple", "Fixture.triple_triple", "Fixture.e", "Fixture.triple_two")
+        edited, written = review(says="triple twice, better"), review(says="e")
+        cells = ANSWER_CELLS.replace("object=checked", "Object=Checked").replace("choice=n/a", "choice=na")
+        answer = (
+            "Here is my review of the three.\r\n\r\n"  # before the first item
+            "## 1. `Fixture.triple`\r\n"  # another level of heading, the name in backticks
+            f"**CELLS:** {cells}\r\n"  # labels in bold, cells in capitals
+            "**VERDICT:** `approve`\r\n\r\n"
+            "#### 2. Fixture.triple_triple\r\n"
+            f"cells: {ANSWER_CELLS}\r\n"
+            "verdict: **EDIT**\r\n"
+            "NOTE: adds the hypothesis\r\n  the statement skips\r\n"  # a note over two lines
+            "DROPPED:  `Fixture.triple_triple_one`  —  renamed\r\n"
+            "~~~review\r\n" + edited.replace("\n", "\r\n") + "~~~\r\n\r\n"
+            f"### 3) Fixture.e\r\nCELLS: {ANSWER_CELLS}\r\nVERDICT: WRITE.\r\n"
+            "~~~review\r\n" + written.replace("\n", "\r\n") + "~~~\r\n\r\n"
+            "---\r\n\r\n"  # a rule between the items
+            "### 4. Fixture.triple_two\r\n"
+            f"**CELLS:** {error_cells('junk')}\r\n**VERDICT:** NO\r\n"
+            "**CATEGORY:** `junk`\r\n**WHY:** `triple 2` is the junk value.\r\n\r\nIt is `6` only by luck.\r\n")
+        code, out, err, actions, noes = self.answer(q, answer)
+        self.assertEqual((code, out), (0, ""), err)
+        self.assertEqual(actions, [
+            approve("Fixture.triple", V(self.t1)),
+            edit("Fixture.triple_triple", V(self.t2), norm(edited),
+                 "adds the hypothesis the statement skips",
+                 [{"item": "`Fixture.triple_triple_one`", "why": "renamed"}]),
+            write("Fixture.e", norm(written))])
+        # The reason of a no may come on a line of its own, and run over several paragraphs.
+        self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "junk",
+                                 "why": "`triple 2` is the junk value.\n\nIt is `6` only by luck."}])
+
+    def test_answer_may_come_in_a_code_block_with_rules_between_its_items(self):
+        q = self.ask("Fixture.triple", "Fixture.e")
+        written = review(says="e")
+        code, out, err, actions, noes = self.answer(
+            q, "```markdown\n", item(1, "Fixture.triple", "APPROVE"), "---\n\n",
+            item(2, "Fixture.e", "WRITE", block=written), "```\n")
+        self.assertEqual((code, out), (0, ""), err)
+        self.assertEqual(actions, [approve("Fixture.triple", V(self.t1)), write("Fixture.e", norm(written))])
+
+    def test_answer_reads_an_error_cell_that_has_commas(self):
+        q = self.ask("Fixture.triple")
+        cells = error_cells("edge-cases", "the statement says `n < 3`, where the source says `n ≤ 3`, so 3 is left out")
+        code, out, err, actions, noes = self.answer(q, item(1, "Fixture.triple", "NO", "CATEGORY: edge-cases   WHY: x",
+                                                            cells=cells))
+        # The WHY of the item is the reason of the no, not the cell's.
+        self.assertEqual((code, out, noes), (0, "", [{"decl": "Fixture.triple", "category": "edge-cases", "why": "x"}]))
+
+    def test_answer_leaves_out_a_text_no_comment_could_hold(self):
+        # `post` refuses a whole file for one action longer than a comment, so the answer does not hand it one.
+        q = self.ask("Fixture.triple", "Fixture.triple_triple")
+        huge = review(says="x" * review_site.COMMENT_CAP)
+        code, out, err, actions, noes = self.answer(q, item(1, "Fixture.triple", "EDIT", "NOTE: n", block=huge),
+                                                    item(2, "Fixture.triple_triple", "APPROVE"))
+        self.assertEqual(actions, [approve("Fixture.triple_triple", V(self.t2))])
+        self.assertRegex(out, r"^not filed: Fixture\.triple: .*characters, and a comment holds 60,000")
+
+    def test_answer_keeps_a_review_whole(self):
+        q = self.ask("Fixture.triple")
+        for why, (text, whole) in BLOCKS.items():
+            with self.subTest(why=why):
+                code, out, err, actions, noes = self.answer(q, item(1, "Fixture.triple", "EDIT", "NOTE: n", block=text))
+                self.assertEqual(code, 0, err)
+                if whole:  # the text reaches `post` as it was, whatever fences and lines it holds
+                    self.assertEqual(actions, [edit("Fixture.triple", V(self.t1), norm(text), "n")])
+                else:
+                    self.assertEqual(actions, [])
+                    self.assertRegex(out, r"^not filed: Fixture\.triple: .*cut short")
+        # A heading like an item's inside the text is the text's, not an item's.
+        text = review(says="### 3. Something\nlooks like an item, and is not")
+        code, out, err, actions, noes = self.answer(q, item(1, "Fixture.triple", "EDIT", "NOTE: n", block=text))
+        self.assertEqual((out, actions), ("", [edit("Fixture.triple", V(self.t1), norm(text), "n")]))
+
+    def test_answer_matches_items_by_number_and_name(self):
+        q = self.ask("Fixture.triple", "Fixture.triple_triple", "Fixture.e")
+        code, out, err, actions, noes = self.answer(
+            q, item(1, "Fixture.triple", "APPROVE"),
+            item(9, "Fixture.nope", "APPROVE"),  # a name that is not in the question
+            item(2, "Fixture.e", "WRITE", block=review()),  # the question's item 2 is another
+            item(5, "Fixture.triple_triple", "APPROVE"))  # and this one's number is 2
+        self.assertEqual((code, actions), (0, [approve("Fixture.triple", V(self.t1))]))
+        for want in (r"not filed: Fixture\.nope: .*not in the question",
+                     r"not filed: Fixture\.e: .*item 2 .*Fixture\.triple_triple",
+                     r"not filed: Fixture\.triple_triple: .*numbers it 2",
+                     r"not filed: Fixture\.triple_triple: .*no item 2",  # nothing answered item 2 of the question
+                     r"not filed: Fixture\.e: .*no item 3"):
+            self.assertRegex(out, want)
+        self.assertNotIn("not filed: Fixture.triple:", out)
+        # An item twice is not guessed at: neither is filed.
+        code, out, err, actions, noes = self.answer(q, item(1, "Fixture.triple", "APPROVE"),
+                                                    item(1, "Fixture.triple", "APPROVE"))
+        self.assertEqual(actions, [])
+        self.assertRegex(out, r"not filed: Fixture\.triple: .*item 1 .*twice")
+
+    def test_the_instructions_examples_are_answers_it_reads(self):
+        # The format the instructions show Astra is the format the answer is read in: each of their examples, given a
+        # heading of the question (a declaration with a review for the first two, none for the third), is filed as
+        # what it says.
+        names = ["Fixture.triple", "Fixture.triple_triple", "Fixture.e", "Fixture.triple_two"]
+        q = self.ask(*names)
+        head = Path(q).read_text(encoding="utf-8").split(self.GUIDE.strip())[0]
+        examples = re.findall(r"(?ms)^```\n### [^\n]*\n(.*?)^```$", head)
+        self.assertEqual([re.search(r"^VERDICT: (\w+)", x, re.M)[1] for x in examples],
+                         ["APPROVE", "EDIT", "WRITE", "NO"])
+        code, out, err, actions, noes = self.answer(
+            q, *(f"### {k}. {name}\n{body}\n" for k, (name, body) in enumerate(zip(names, examples), 1)))
+        self.assertEqual((code, out), (0, ""), err)
+        self.assertEqual([next(iter(a)) for a in actions], ["approve", "edit", "write"])
+        self.assertEqual([n["decl"] for n in noes], ["Fixture.triple_two"])
+        self.assertIn(noes[0]["category"], AXES)
+
+    def test_what_astra_answer_writes_is_what_post_takes(self):
+        # Voyager's drafts are posted first and the site does not show them yet: Astra approves the one, and edits the
+        # other, of the texts the question showed, and `post` takes both against the drafts, as well as an edit of the
+        # site's own text.
+        draft, drafted_d = review(says="e, as Voyager wrote it"), review(says="d, as Voyager edited it")
+        drafts = self.jsonl(write("Fixture.e", draft), edit("Fixture.d", V(self.t4), drafted_d, "says more"),
+                            name="voyager.jsonl")
+        q = self.ask("Fixture.triple", "Fixture.triple_triple", "Fixture.e", "Fixture.d", drafts=drafts)
+        edited, redrafted = review(says="triple twice, said better"), review(says="d, edited again")
+        actions = self.dir / "actions.jsonl"
+        code, out, err, rows, noes = self.answer(
+            q, item(1, "Fixture.triple", "APPROVE"),
+            item(2, "Fixture.triple_triple", "EDIT", "NOTE: says it better",
+                 "DROPPED: `Fixture.triple_triple_one` — renamed", block=edited),
+            item(3, "Fixture.e", "APPROVE"), item(4, "Fixture.d", "EDIT", "NOTE: and again", block=redrafted))
+        self.assertEqual((code, out), (0, ""), err)
+        self.assertEqual(rows[2], approve("Fixture.e", V(draft)))
+        self.assertEqual(rows[3], edit("Fixture.d", V(drafted_d), norm(redrafted), "and again"))
+        code, out, err = self.cli("post", str(actions), "--agent", "Codex, GPT-6 Astra", "--commit", self.commit[:12],
+                                  "--drafts", drafts, "--dry-run")
+        self.assertEqual(code, 0, err)
+        for line in (f"Approve: Fixture.triple — {V(self.t1)} — {CELLS_LINE}",
+                     f"Edit: Fixture.triple_triple — {V(self.t2)} — {CELLS_LINE} — says it better",
+                     "Dropped: `Fixture.triple_triple_one` — renamed",
+                     f"Approve: Fixture.e — {V(draft)} — {CELLS_LINE}",
+                     f"Edit: Fixture.d — {V(drafted_d)} — {CELLS_LINE} — and again"):
+            self.assertIn(line, out)
+        self.assertIn(norm(edited), out)
+        self.assertIn(norm(redrafted), out)
+        # Without the drafts, `post` refuses them: the versions are the drafts', which the site does not show.
+        code, out, err = self.cli("post", str(actions), "--agent", "Codex, GPT-6 Astra", "--commit", self.commit[:12],
+                                  "--dry-run")
+        self.assertEqual(code, 1)
+        self.assertIn("no draft is given", err)  # for the approval of e
+        self.assertIn(V(drafted_d), err)  # for the edit of d: the version it names is not the site's
+
+    def test_answer_usage_errors(self):
+        q = self.ask("Fixture.triple")
+        good = self.dir / "good.md"
+        good.write_text(item(1, "Fixture.triple", "APPROVE"), encoding="utf-8")
+        empty, not_a_question, odd_question = (self.dir / x for x in ("empty.md", "not_a_question.txt", "odd.txt"))
+        empty.write_text("\n \n", encoding="utf-8")
+        not_a_question.write_text("Review these.\n\n### 1. Fixture.triple\n", encoding="utf-8")
+        odd_question.write_text('<!-- astra-question {"items": 3} -->\n', encoding="utf-8")
+        here, there = ["--out", str(self.dir / "o.jsonl"), "--noes", str(self.dir / "n.jsonl")], \
+            ["--out", str(self.dir / "no" / "o.jsonl"), "--noes", str(self.dir / "n.jsonl")]
+        cases = {"no answer file": [str(self.dir / "no.md"), "--question", q, *here],
+                 "an empty answer": [str(empty), "--question", q, *here],
+                 "no question file": [str(good), "--question", str(self.dir / "no.txt"), *here],
+                 "a question that is none": [str(good), "--question", str(not_a_question), *here],
+                 "a question whose items are none": [str(good), "--question", str(odd_question), *here],
+                 "files it cannot write": [str(good), "--question", q, *there]}
+        for why, argv in cases.items():
+            with self.subTest(why=why):
+                code, out, err = self.cli("astra-answer", *argv)
+                self.assertEqual((code, out), (2, ""), err)
+                self.assertTrue(err.startswith("error:"), err)
+        self.assertFalse((self.dir / "o.jsonl").exists())
+        self.assertFalse((self.dir / "n.jsonl").exists())
+        for argv in (["astra-answer", str(good), "--question", q, "--out", "x"],  # --noes
+                     ["astra-answer", str(good), "--out", "x", "--noes", "y"]):  # --question
+            with self.subTest(argv=argv[-2]):
+                self.assertEqual(self.cli(*argv)[0], 2)
+
+    def test_both_commands_are_in_the_help(self):
+        code, out, err = self.cli("--help")
+        self.assertEqual((code, err), (0, ""))
+        for want in ("astra-question NAME... --tauceti", "astra-answer ANSWER --question"):
+            self.assertIn(want, out)
 
 
 class YesTests(Case):

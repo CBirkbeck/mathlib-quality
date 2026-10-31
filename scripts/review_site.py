@@ -18,6 +18,22 @@ Voyager's full-statement test, the red team's correctness audit (mathlib-quality
       [--note TEXT]          TEXT (default: "Reviews of declarations checked at Tau Ceti <SHA, 12 digits>.").
       [--drafts FILE]        Checks first, and posts nothing unless every action passes. --dry-run prints the
       [--dry-run]            comments instead
+  astra-question NAME... --tauceti CHECKOUT --out FILE [--drafts FILE]
+                             the question to put to GPT-6 Astra, in a `codex exec` call that has no file access, about
+                             at most 12 of Tau Ceti's own declarations, whole in one file: the instructions (look for
+                             errors in the Lean first and fill the eight cells; only then approve, edit or write the
+                             standard review), the section `guide` prints, and for each declaration, numbered, its kind,
+                             its Lean at the commit the site shows (`git -C CHECKOUT show COMMIT:PATH`: CHECKOUT must
+                             have that commit, else exit 2), up to 12 of the statements it rests on, and the standard
+                             review it has now with its version: the text of its last write or edit in DRAFTS if it has
+                             one there, else the site's
+  astra-answer ANSWER --question QFILE --out ACTIONS --noes NOES
+                             Astra's answer to such a question, as the ACTIONS (below) that `post` takes, approvals,
+                             edits and writes, and as NOES, a JSONL of {"decl", "category", "why"}, a no each, for
+                             `no`. The versions are those the question showed, never the answer's. It never guesses: an
+                             item it cannot read, whose cells are not all eight, that has an ERROR cell but is not a
+                             NO, that is not one of the question's (by number and name), or whose lines do not fit
+                             its verdict, is printed as `not filed: NAME: WHY` and left out
   no WHYFILE --agent A       a problem, "not correctly stated", as its own issue, with the reasons
       --decl NAME            in WHYFILE; the site must be at SHA. Prints `issue <number> <url>`
       --commit SHA --category AXIS [--involvement I] [--dry-run]
@@ -41,6 +57,17 @@ draft's; a declaration written or edited twice in the file; an action longer tha
 that each review is of the version that was checked. A long batch goes in several comments, split between actions, each
 of at most COMMENT_CAP characters.
 
+Astra answers each item of a question, as the instructions in the question say, with its number and name, the eight
+cells, a verdict, and the lines the verdict takes:
+
+  ### N. NAME
+  CELLS: object=checked, convention=checked, ..., choice=n/a, ..., naming=checked   (a cell may be `ERROR: WHY`)
+  VERDICT: APPROVE          nothing more
+  VERDICT: EDIT             NOTE: WHAT IT ADDS, any DROPPED: ITEM — WHY, and the whole new text in a block,
+                            ~~~review ... ~~~
+  VERDICT: WRITE            the block alone (for a declaration the question showed no standard review of)
+  VERDICT: NO               CATEGORY: AXIS   WHY: THE ERROR (and an ERROR cell, which no other verdict has)
+
 A is the agent, "TOOL, MODEL[, session S]" ("Voyager, claude-fable-5-1"): the reviews show on the
 site as that AI agent's, via the account `gh` is signed in as. MODEL is the model exactly as the
 harness names it ("claude-opus-5-5", "GPT-6 Astra"), never its family ("Opus", "GPT-6"), which is
@@ -50,8 +77,9 @@ this only checks, formats and posts. `no` runs evidence-store through `uvx`; I, 
 relation to Tau Ceti (outsider, contributor, author), is read from Tau Ceti's history when not
 given.
 
-Exit codes: 0 done; 1 refused (a name, a version or a commit the site does not have, or an action not
-complete, with the reasons on stderr); 2 error.
+Exit codes: 0 done; 1 refused (a name, a version or a commit the site does not have, an action not
+complete, or a question of more than 12 declarations or of one that is not Tau Ceti's own, with the reasons on
+stderr); 2 error (a checkout without the commit the site shows, among them).
 """
 import argparse
 import hashlib
@@ -93,6 +121,44 @@ GUIDE_BEGIN, GUIDE_END = "<!-- standard-review:begin -->", "<!-- standard-review
 #: A GitHub comment holds 65,536 characters; a longer batch goes in several comments.
 COMMENT_CAP = 60000
 LIBRARY = "TauCetiProject/TauCeti"
+#: What the site's kind codes (a node's second column, an entry's `k`) stand for (its web/data.js).
+KINDS = {"t": "theorem", "d": "definition", "s": "structure", "c": "class", "n": "inductive", "i": "instance",
+         "a": "axiom", "o": "opaque"}
+#: A question to Astra holds at most QUESTION_MAX declarations, and shows at most RESTS_MAX statements that one rests
+#: on.
+QUESTION_MAX = RESTS_MAX = 12
+#: Over this many bytes a question is longer than `codex exec` takes in one argument, which is how gate.sh passes it
+#: (Linux limits an argument to 131,072 bytes).
+QUESTION_WARN = 120_000
+#: What `astra-answer` leaves of a comment for the agent line and the note `post` puts before the actions, so that it
+#: files no action that `post` would refuse as longer than a comment.
+ROOM = 1000
+#: What a question says where a declaration has no standard review, and where the site shows no statement of one.
+NO_REVIEW = "(no standard review yet: write one)"
+NO_STATEMENT = "(the site shows no statement)"
+#: The first line of a question, round a JSON object that names its items (their number, name and the version of the
+#: review each shows): `astra-answer` takes the version of an approval or an edit from it, and never from the answer.
+QUESTION_OPEN, QUESTION_CLOSE = "<!-- astra-question ", " -->"
+#: What an answer to an item can be, and the lines each takes besides its cells and its verdict.
+VERDICTS = {"APPROVE": set(), "EDIT": {"NOTE", "DROPPED", "BLOCK"}, "WRITE": {"BLOCK"}, "NO": {"CATEGORY", "WHY"}}
+#: What each verdict needs besides its cells and its verdict.
+NEEDS = {"APPROVE": set(), "EDIT": {"NOTE", "BLOCK"}, "WRITE": {"BLOCK"}, "NO": {"CATEGORY", "WHY"}}
+#: What the lines of an item are called in its problems ("an APPROVE takes no NOTE", "an EDIT needs a NOTE").
+PARTS = {"BLOCK": f"`{OPEN}` block of the whole text", "NOTE": "NOTE", "DROPPED": "DROPPED line",
+         "CATEGORY": "CATEGORY", "WHY": "WHY"}
+ARTICLE = {"APPROVE": "an APPROVE", "EDIT": "an EDIT", "WRITE": "a WRITE", "NO": "a NO"}
+#: The heading of an item of an answer, `### 3. Name`, as a question numbers its items (any level of heading, and `3)`).
+ITEM_HEADING = re.compile(r"^ {0,3}#{1,6}[ \t]*(\d+)[ \t]*[.)][ \t]*(.*?)[ \t]*$")
+#: A rule between the items, or the fence of a code block that holds the whole answer: no line of an item.
+RULE = re.compile(r"^(?:-{3,}|\*{3,}|_{3,}|`{3,}[\w+-]*)$")
+#: A line of an item that starts one of its fields; the label may be in bold. A NOTE, a DROPPED line and a WHY go on
+#: over the lines after them.
+FIELD = re.compile(r"^(?:[-*+][ \t]+)?(?:\*\*|__)?(CELLS|VERDICT|NOTE|DROPPED|CATEGORY|WHY)(?:\*\*|__)?[ \t]*:"
+                   r"(?:\*\*|__)?[ \t]*(.*?)[ \t]*$", re.I)
+#: What a CATEGORY line holds: the check, and the WHY if it comes on the same line.
+CATEGORY_LINE = re.compile(r"^([^\s,;]+)[,;]?\s*(?:WHY\s*:\s*(.*))?$", re.I | re.S)
+#: Where a cell starts in a CELLS line: the name of a check, at the start or after a comma, and `=`.
+CELL_KEY = re.compile(r"(?:^|,)[ \t]*(" + "|".join(AXES[:-1]) + r")[ \t]*=[ \t]*", re.I)
 
 
 def die(msg, code):
@@ -136,14 +202,38 @@ def fnv(name, shards):
     return h % shards
 
 
-def node_of(meta, name):
+def reader():
+    """``get`` that reads each file of the site once: a question meets the same module's file again and again."""
+    seen = {}
+
+    def read(path):
+        if path not in seen:
+            seen[path] = get(path)
+        return seen[path]
+
+    return read
+
+
+def id_of(meta, name, read=None):
+    """The site's id of the declaration ``name`` (its place in nodes/<k>.json), or None if it has no such declaration.
+    ``read`` reads a file of the site (default `get`)."""
+    ids = [r[0] for r in (read or get)(f"names/{fnv(name, meta['shards']['names'])}.json") if r[1] == name]
+    return ids[0] if ids else None
+
+
+def node_at(meta, i, read=None):
+    """The site's row for the declaration with id ``i`` in nodes/<k>.json: [name, kind, flags, module index, title, two
+    states, the ids of what it rests on, ...]. None if there is none."""
+    n = meta["shards"]["nodes"]
+    rows = (read or get)(f"nodes/{i // n}.json")
+    return rows[i % n] if i % n < len(rows) else None
+
+
+def node_of(meta, name, read=None):
     """The site's row for ``name`` in nodes/<k>.json: [name, kind, flags, module index, ...]. None if it has no such
     declaration."""
-    ids = [r[0] for r in get(f"names/{fnv(name, meta['shards']['names'])}.json") if r[1] == name]
-    if not ids:
-        return None
-    n = meta["shards"]["nodes"]
-    return get(f"nodes/{ids[0] // n}.json")[ids[0] % n]
+    i = id_of(meta, name, read)
+    return None if i is None else node_at(meta, i, read)
 
 
 def on_site(meta, name):
@@ -264,9 +354,9 @@ def need_standard(meta):
     return n
 
 
-def standard_of(meta, name):
+def standard_of(meta, name, read=None):
     """The standard review the site shows for ``name`` (its entry in standard/<k>.json), or None while it has none."""
-    return get(f"standard/{fnv(name, need_standard(meta))}.json").get(name)
+    return (read or get)(f"standard/{fnv(name, need_standard(meta))}.json").get(name)
 
 
 def earlier_form(v):
@@ -628,6 +718,562 @@ def cmd_post(a):
           f"{'' if len(comments) == 1 else 's'}{' (dry run)' if a.dry_run else ''}", file=sys.stderr)
 
 
+# --- Astra's review: the question, and its answer ---------------------------------------------------------------
+
+#: What Astra is told: it is given no file, so the question holds everything. The names in braces are filled in. The
+#: four examples are each an item of an answer, which `astra-answer` reads (a test files them).
+INSTRUCTIONS = """\
+You are reviewing {count} declaration{s} of Tau Ceti, a Lean 4 library of mathematics, for the Tau Ceti review site. You
+cannot open files or the web: everything you need is in this message.
+
+The site asks one question of a declaration: is it correctly stated? It is when it says what it should: it is the
+intended notion, or states the intended result, as its name, its docstring and the literature say. The question is not
+whether its proof is right, which Lean checks.
+
+For each declaration below, in this order:
+
+1. Look for errors in the Lean first. Read its source and the statements it rests on, work out what it should say, and
+   run the eight checks of the site's rubric against that:
+
+   | check | it passes when |
+   |---|---|
+   | `object` | it is the intended notion, or states the intended result, and not a different one |
+   | `convention` | it follows the source's conventions: normalisation, indexing, signs, and the instances it picks up |
+   | `edge-cases` | it decides degenerate and boundary inputs as the source does |
+   | `junk` | no default value outside the intended domain changes what it means |
+   | `vacuous` | it is neither vacuous nor trivial |
+   | `choice` | it makes no arbitrary choice where the intended object is canonical |
+   | `generality` | it is as general as the source |
+   | `naming` | its name and docstring do not mislead |
+
+   Give each check a cell: `checked` (you made the check and found nothing wrong), `n/a` (the check cannot fail for this
+   declaration, such as `choice` where nothing is chosen) or `ERROR: <why>` (you found an error).
+
+2. If any cell is an ERROR, answer `VERDICT: NO`, with the line `CATEGORY: <check>   WHY: <the error>`. The category
+   is the check that fails, or `other`. The people who decide whether to fix it read the WHY: at most about 120 words of
+   plain sentences. First say what is wrong: which hypothesis, term or claim, what it says and what it should say. Then
+   give the evidence: a case where it fails, or the source it disagrees with, and the Lean names involved. Check first
+   that it is not just Lean's convention: a definition may take an odd value where the classical notion is undefined
+   (`x / 0 = 0`), and is correctly stated when it agrees with the classical notion under the hypotheses the results
+   built on it assume. A no approves, edits and writes nothing.
+
+3. Otherwise read its current standard review, which the definition below describes, and check it against what you
+   found: what it says against the signature, hypothesis by hypothesis; its references and tests; its Lean subtleties.
+   Then answer
+   - `VERDICT: APPROVE`, if it is right and complete;
+   - `VERDICT: EDIT`, if something is missing, wrong or unclear: a hypothesis it skips, a subtlety it misses, a
+     sentence a mathematician would misread. Not to reword it. Give a `NOTE:` that says what the edit adds or changes,
+     and the whole new text. The new text keeps every reference, test and Check of the text it replaces, unless a
+     `DROPPED: <item> — <why>` line says which it drops, and why (the item is how its bullet starts: a test's Lean
+     name in backticks, a Check's tag, a reference's author and title);
+   - `VERDICT: WRITE`, if the declaration shows "{no_review}": give the whole text.
+
+Answer in this format, an item for each declaration, in the order given. For an approval:
+
+```
+### 1. TauCeti.Foo.bar
+CELLS: {cells}
+VERDICT: APPROVE
+```
+
+For an edit:
+
+```
+### 2. TauCeti.Foo.baz
+CELLS: {cells}
+VERDICT: EDIT
+NOTE: adds the hypothesis `0 < n`, which the statement has and the text skips
+DROPPED: `TauCeti.Foo.baz_one` — renamed `TauCeti.Foo.baz_uno` in Tau Ceti
+~~~review
+## What it says
+<the whole new text, in the three parts of the definition below>
+
+## References and tests
+- <a reference, a test or a Check on each line>
+
+## Lean subtleties
+None.
+~~~
+```
+
+For a declaration with no standard review yet, a write:
+
+```
+### 3. TauCeti.Foo.qux
+CELLS: {cells_all}
+VERDICT: WRITE
+~~~review
+## What it says
+<the whole text, in the three parts of the definition below>
+
+## References and tests
+- <a reference, a test or a Check on each line>
+
+## Lean subtleties
+None.
+~~~
+```
+
+And for an error, a no:
+
+```
+### 4. TauCeti.Foo.quux
+CELLS: {cells_error}
+VERDICT: NO
+CATEGORY: object   WHY: {why}
+```
+
+The rules of the format:
+
+- Each heading is the number and the name of the declaration's item below, exactly as given.
+- Every item has all eight cells, as `check=cell`, in the order of the table, apart at commas. A NO has at least one
+  ERROR cell, and its CATEGORY is the check of one of them, or `other`; the other verdicts have none.
+- A declaration shown with a standard review is answered APPROVE, EDIT or NO; one shown with "{no_review}", WRITE or
+  NO.
+- An APPROVE has nothing after its VERDICT line. An EDIT has its NOTE, any DROPPED lines, and the text; a WRITE has the
+  text, and nothing else. The text is in a block that starts with a `~~~review` line and ends with the last `~~~` line
+  of the item, in the three parts of the definition below, none empty.
+- Plain text, exactly as shown: no other lines, no bold or other markup on CELLS, VERDICT, NOTE, DROPPED, CATEGORY or
+  WHY, nothing before the first item or after the last.
+- If you cannot tell whether a declaration is correctly stated, leave its item out rather than guess.
+
+The site's definition of a standard review follows, then the declarations."""
+
+
+#: The reason of the no in the instructions' example (a case from AI-REVIEWS.md).
+EXAMPLE_WHY = ("`TauCeti.Foo.quux` states `∑ i ∈ range n, i = n * (n + 1) / 2`, but `range n` stops at `n - 1`, so "
+               "the right side should be `n * (n - 1) / 2`: at `n = 1` the sum is `0` and the right side `1`.")
+
+
+def instructions(count):
+    """The instructions to Astra for a question about ``count`` declarations."""
+    every = ", ".join(f"{x}=checked" for x in RUBRIC)
+    return INSTRUCTIONS.format(
+        count=count, s="" if count == 1 else "s", no_review=NO_REVIEW, why=EXAMPLE_WHY, cells_all=every,
+        cells=every.replace("choice=checked", "choice=n/a"),
+        cells_error=every.replace("object=checked", "object=ERROR: the sum is over `range n`, which stops at `n - 1`")
+        .replace("choice=checked", "choice=n/a"))
+
+
+def git(checkout, *args):
+    """``git -C CHECKOUT ARGS`` (bytes); exit 2 if git cannot run."""
+    try:
+        return subprocess.run(["git", "-C", checkout, *args], capture_output=True)
+    except OSError as e:
+        die(f"error: cannot run git ({e})", 2)
+
+
+def need_commit(checkout, commit):
+    """Exit 2 unless ``checkout`` is a git checkout that has ``commit``, the one the site shows Tau Ceti at."""
+    if not os.path.isdir(checkout):
+        die(f"error: --tauceti {checkout} is not a directory: give the git checkout of Tau Ceti", 2)
+    if not re.fullmatch(r"[0-9a-f]{7,64}", commit):
+        die(f"error: the commit the site shows, {commit!r}, is no git hash", 2)
+    r = git(checkout, "cat-file", "-e", f"{commit}^{{commit}}")
+    if r.returncode:
+        die(f"error: {checkout} does not have commit {commit[:12]}, the one the site shows Tau Ceti at: fetch it "
+            f"(git -C {checkout} fetch origin {commit}) and ask again. git says: "
+            + r.stderr.decode("utf-8", "replace").strip(), 2)
+
+
+def source_lines(checkout, commit, path, files):
+    """The lines of the Lean file ``path`` as the checkout has it at ``commit`` (`git -C CHECKOUT show COMMIT:PATH`),
+    without their line ends; each file is read once, into ``files``."""
+    if path not in files:
+        r = git(checkout, "show", f"{commit}:{path}")
+        if r.returncode:
+            die(f"error: cannot read {path} at {commit[:12]} in {checkout}: "
+                + r.stderr.decode("utf-8", "replace").strip(), 2)
+        try:
+            files[path] = r.stdout.decode("utf-8").replace("\r\n", "\n").split("\n")
+        except UnicodeDecodeError as e:
+            die(f"error: {path} at {commit[:12]} is not UTF-8: {e}", 2)
+    return files[path]
+
+
+def fenced(text, info=""):
+    """``text`` in a code fence long enough to hold it: longer than any run of backticks in it."""
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return f"{fence}{info}\n{text}\n{fence}"
+
+
+def module_file(node, read):
+    """The file of the site that lists the entries of the module of ``node``: m/<mi>.json for Tau Ceti's own
+    declarations, u/<mi>.json for any other; None for a declaration in no module."""
+    return read(f"{'m' if node[2] & 1 else 'u'}/{node[3]}.json") if node[3] >= 0 else None
+
+
+def entry_in(file, i):
+    """The entry of the declaration with id ``i`` in a module's file, or None."""
+    return next((e for e in (file or {}).get("decls", []) if e.get("id") == i), None)
+
+
+def rests_on(meta, node, read):
+    """What ``node`` rests on that a question shows: the lines `name: statement` of the first RESTS_MAX of the ids the
+    node lists, in its order, and how many more there are."""
+    ids = node[7] if len(node) > 7 else []
+    total = max(len(ids), node[9] if len(node) > 9 and isinstance(node[9], int) else 0)
+    lines = []
+    for i in ids[:RESTS_MAX]:
+        row = node_at(meta, i, read)
+        if row is not None:
+            entry = entry_in(module_file(row, read), i) or {}
+            lines.append(f"{row[0]}: {one_line(entry.get('sig') or entry.get('stmt') or '') or NO_STATEMENT}")
+    return lines, total - min(len(ids), RESTS_MAX)
+
+
+def asked_about(meta, name, read):
+    """What a question needs of ``name``, one of Tau Ceti's own declarations: the site's node and entry for it and where
+    its Lean is (module file, first and last line); or, as a second value, why the site cannot give them."""
+    i = id_of(meta, name, read)
+    node = None if i is None else node_at(meta, i, read)
+    if node is None:
+        return None, "the site has no page for it"
+    if not node[2] & 1:
+        return None, "it is not one of Tau Ceti's own declarations: a question gives the Lean of Tau Ceti's"
+    file = module_file(node, read)
+    entry = entry_in(file, i)
+    line = (entry or {}).get("line")
+    if not (entry and (file or {}).get("path") and isinstance(line, list) and len(line) == 2
+            and all(isinstance(x, int) for x in line)):
+        return None, "the site gives no source file and lines for it"
+    return {"name": name, "node": node, "entry": entry, "path": file["path"], "start": line[0], "end": line[1]}, ""
+
+
+def drafts_of(path):
+    """The text of the draft of each declaration in DRAFTS (a JSONL of actions): that of its last write or edit. {} for
+    no file."""
+    out = {}
+    for d in read_actions(path) if path else []:
+        text = d["fields"].get("text")
+        if d["kind"] != "approve" and isinstance(d["decl"], str) and isinstance(text, str) and text.strip():
+            out[d["decl"]] = text
+    return out
+
+
+def item_text(n, it):
+    """Item ``n`` of a question, for the declaration ``it``."""
+    out = [f"### {n}. {it['name']}", f"Kind: {KINDS.get(it['node'][1], 'declaration')}",
+           f"Source: {it['path']}, lines {it['start']} to {it['end']}, at Tau Ceti {it['commit'][:12]}:",
+           fenced(it["source"], "lean"), ""]
+    if it["rests"]:
+        out += ["Rests on:", *(f"- {x}" for x in it["rests"])]
+        out += [f"- (and {it['more']} more)"] if it["more"] > 0 else []
+    else:
+        out.append("Rests on: nothing the site lists.")
+    out.append("")
+    if it["version"]:
+        out += ["Current standard review:", f"Version: {it['version']}", OPEN, normalize(it["text"]), CLOSE]
+    else:
+        out.append(f"Current standard review: {NO_REVIEW}")
+    return "\n".join(out)
+
+
+def question_text(items, guide):
+    """The question file: the line `astra-answer` reads, the instructions, the guide's section, and the items."""
+    names = [{"n": n, "name": it["name"], "version": it["version"]} for n, it in enumerate(items, 1)]
+    head = QUESTION_OPEN + json.dumps({"spec": "astra-question/1", "items": names}, ensure_ascii=False) + QUESTION_CLOSE
+    return "\n\n".join([head, instructions(len(items)), guide, "## The declarations",
+                        *(item_text(n, it) for n, it in enumerate(items, 1))]) + "\n"
+
+
+def cmd_astra_question(a):
+    names = a.names
+    if len(names) > QUESTION_MAX:
+        die(f"refused: {len(names)} declarations for one question, and it holds at most {QUESTION_MAX}: ask about them "
+            "in several questions", 1)
+    twice = sorted({n for n in names if names.count(n) > 1})
+    if twice:
+        die("refused: " + "; ".join(f"{n} is given twice" for n in twice), 1)
+    drafted = drafts_of(a.drafts)
+    read = reader()
+    meta = read("meta.json")
+    need_standard(meta)
+    commit = meta["library"]["commit"]
+    items, problems = [], []
+    for name in names:
+        it, why = asked_about(meta, name, read)
+        if it is None:
+            problems.append(f"{name}: {why}")
+            continue
+        review = standard_of(meta, name, read)
+        text = drafted.get(name)
+        it.update(commit=commit, from_draft=text is not None,
+                  text=text if text is not None else (review or {}).get("text", ""),
+                  version=version_of(text) if text is not None else (review or {}).get("version"))
+        it["rests"], it["more"] = rests_on(meta, it["node"], read)
+        items.append(it)
+    if problems:
+        die("refused, and no question was written:\n" + "\n".join("- " + p for p in problems), 1)
+    need_commit(a.tauceti, commit)
+    files = {}
+    for it in items:
+        lines = source_lines(a.tauceti, commit, it["path"], files)
+        if not 1 <= it["start"] <= it["end"] <= len(lines):
+            die(f"error: the site puts {it['name']} at lines {it['start']} to {it['end']} of {it['path']}, which has "
+                f"{len(lines)} at {commit[:12]}", 2)
+        it["source"] = "\n".join(lines[it["start"] - 1:it["end"]])
+    text = question_text(items, guide_section())
+    write_file(a.out, text)
+    size = len(text.encode("utf-8"))
+    drafts, none = sum(it["from_draft"] for it in items), sum(not it["version"] for it in items)
+    print(f"wrote {a.out}: {len(items)} declaration{'' if len(items) == 1 else 's'}, {size:,} bytes ({drafts} with a "
+          f"draft's review, {len(items) - drafts - none} with the site's, {none} with none)", file=sys.stderr)
+    if size > QUESTION_WARN:
+        print(f"warning: the question is {size:,} bytes, and gate.sh passes it to `codex exec` as one argument, which "
+              "Linux limits to 131,072 bytes: ask about fewer declarations at a time", file=sys.stderr)
+
+
+def write_file(path, text):
+    """``text`` as the file ``path``, UTF-8 with `\\n` line ends; exit 2 if it cannot be written."""
+    try:
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+    except OSError as e:
+        die(f"error: cannot write {path}: {e}", 2)
+
+
+def read_question(path):
+    """The items a question file asks about, {number: (name, the version of the review it showed, or None)}, from the
+    first line `astra-question` wrote; exit 2 for a file it did not write."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            first = f.readline().rstrip("\n")
+    except (OSError, UnicodeDecodeError) as e:
+        die(f"error: cannot read {path}: {e}", 2)
+    try:
+        if not (first.startswith(QUESTION_OPEN) and first.endswith(QUESTION_CLOSE)):
+            raise ValueError("it has no first line of its items")
+        spec = json.loads(first[len(QUESTION_OPEN):-len(QUESTION_CLOSE)])
+        items = {i["n"]: (i["name"], i["version"]) for i in spec["items"]}
+        if spec["spec"] != "astra-question/1" or not items or len(items) != len(spec["items"]) or not all(
+                isinstance(n, int) and isinstance(name, str) and (version is None or isinstance(version, str))
+                for n, (name, version) in items.items()):
+            raise ValueError("its items are not as `astra-question` writes them")
+    except (ValueError, KeyError, TypeError) as e:
+        die(f"error: {path} is not a question written by `astra-question` ({e})", 2)
+    return items
+
+
+def bare(name):
+    """A name as a heading of an answer writes it: without the backticks or asterisks round it."""
+    return name.strip().strip("*` ")
+
+
+def answer_items(text, pairs):
+    """The items of an answer, [(number, name, the lines after its heading)]: each starts with a heading `### 3. Name`,
+    and the text before the first one is no item's. In a `~~~review` block a line like a heading is the text's, unless
+    it is one the question has (``pairs``, its numbers and names). The block is told by its fences: inside it a
+    `~~~lean` line opens a fence of the text's, and a `~~~` line closes the innermost, or the block itself."""
+    items, current, depth = [], None, None  # depth: None outside a block, else how many fences of the text are open
+    for line in text.split("\n"):
+        m = ITEM_HEADING.match(line)
+        if m and (depth is None or (int(m[1]), bare(m[2])) in pairs):
+            current, depth = [], None
+            items.append((int(m[1]), bare(m[2]), current))
+            continue
+        if current is None:
+            continue
+        current.append(line)
+        s = line.strip()
+        if depth is None:
+            depth = 0 if s == OPEN else None
+        elif s == CLOSE:
+            depth = depth - 1 if depth else None
+        elif s.startswith(CLOSE):
+            depth += 1
+    return items
+
+
+def parse_cells(value):
+    """The cells of a CELLS line: ({check: "checked" | "na" | "error"}, why it is not all eight checks, each with a
+    cell). A cell is `checked`, `n/a` (or `na`) or `ERROR` with its reason, which may hold commas: the next cell starts
+    at the next comma and check name."""
+    marks = list(CELL_KEY.finditer(value))
+    if not marks or marks[0].start() != 0:
+        return {}, ["the CELLS line starts with the first check, and gives all eight as `check=cell`, apart at commas"]
+    states, problems = {}, []
+    for m, after in zip(marks, marks[1:] + [None]):
+        axis, raw = m[1].lower(), value[m.end():after.start() if after else len(value)].strip()
+        word = raw.strip("*`. ").lower()
+        if axis in states:
+            problems.append(f"cells: `{axis}` comes twice")
+        elif word in CELL_STATES:
+            states[axis] = CELL_STATES[word]
+        elif re.match(r"error\b", word):
+            states[axis] = "error"
+        else:
+            states[axis] = None
+            problems.append(f"cells: `{axis}` is {raw!r}, and a cell is `checked`, `n/a` or `ERROR: <why>`")
+    missing = [x for x in RUBRIC if x not in states]
+    return states, problems + ([f"cells: every check needs a cell; missing {', '.join(missing)}"] if missing else [])
+
+
+def item_fields(body):
+    """What the lines of an item hold, as ({field: [its values]}, the text of its `~~~review` block or None, whether
+    it has one, the problems in reading it). The block starts at the first `~~~review` line and ends at the last `~~~`
+    line, as the intake reads a block, so that the text may hold fences of its own."""
+    problems, text = [], None
+    opens = [k for k, line in enumerate(body) if line.strip() == OPEN]
+    rest = body
+    if opens:
+        closes = [k for k in range(opens[0] + 1, len(body)) if body[k].strip() == CLOSE]
+        if closes:
+            text, rest = "\n".join(body[opens[0] + 1:closes[-1]]), body[:opens[0]] + [""] + body[closes[-1] + 1:]
+        else:
+            rest = body[:opens[0]]
+            problems.append(f"the `{OPEN}` block is not closed: it ends at the last line `{CLOSE}`")
+    fields, current = {}, None
+    for line in rest:
+        s = line.strip()
+        if not s or RULE.match(s):
+            if current == "WHY":  # a reason may run over several paragraphs
+                fields["WHY"][-1] += ("" if s else "\n")
+            else:
+                current = None
+            continue
+        m = FIELD.match(s)
+        if m is None:
+            if current:
+                fields[current][-1] += ("\n" if current == "WHY" else " ") + s
+            elif not any(p.startswith("cannot read") for p in problems):
+                problems.append(f"cannot read the line `{s[:60]}`")
+            continue
+        key, value = m[1].upper(), m[2]
+        if key == "CATEGORY":
+            c = CATEGORY_LINE.match(value)
+            if c is None:
+                problems.append("cannot read the CATEGORY line: it is `CATEGORY: <check>   WHY: <the error>`")
+                current = None
+                continue
+            fields.setdefault("CATEGORY", []).append(bare(c[1]).lower())
+            if c[2] is not None:
+                fields.setdefault("WHY", []).append(c[2])
+            current = "WHY" if c[2] is not None else None
+        else:
+            fields.setdefault(key, []).append(value)
+            current = key if key in ("NOTE", "DROPPED", "WHY") else None
+    return fields, text, bool(opens), problems
+
+
+def judge_item(name, body, version):
+    """What to file for the item ``name`` of an answer, whose lines after its heading are ``body``, when the question
+    showed it the review of version ``version`` (None: it showed none): ("action", the row for `post`), ("no", its row
+    for the noes) or ("not filed", why). It files nothing it has to guess: the cells are all eight and none an ERROR but
+    a NO's, the verdict has the lines it takes and no other, and an approval or an edit has a review to approve or
+    edit."""
+    fields, text, has_block, problems = item_fields(body)
+    for key, values in fields.items():
+        if len(values) > 1 and key != "DROPPED":
+            problems.append(f"{key} comes more than once")
+    states = {}
+    if "CELLS" not in fields:
+        problems.append("no CELLS line: give the eight checks as `check=cell`")
+    else:
+        states, bad = parse_cells(fields["CELLS"][0])
+        problems += bad
+    verdict = None
+    if "VERDICT" not in fields:
+        problems.append("no VERDICT line: APPROVE, EDIT, WRITE or NO")
+    else:
+        verdict = fields["VERDICT"][0].strip("*`_. ").upper()
+        if verdict not in VERDICTS:
+            problems.append(f"VERDICT is {fields['VERDICT'][0]!r}, and a verdict is APPROVE, EDIT, WRITE or NO")
+            verdict = None
+    note = " ".join(fields.get("NOTE", [""])[0].split())
+    why = (fields.get("WHY") or [""])[0].strip()
+    category = (fields.get("CATEGORY") or [""])[0]
+    if verdict:
+        given = {k for k in fields if k not in ("CELLS", "VERDICT")} | ({"BLOCK"} if has_block else set())
+        given -= {"NOTE"} if verdict == "EDIT" and not note else set()  # an empty NOTE is none
+        given -= {"WHY"} if verdict == "NO" and not why else set()
+        problems += [f"{ARTICLE[verdict]} takes no {PARTS[x]}" for x in sorted(given - VERDICTS[verdict])]
+        problems += [f"{ARTICLE[verdict]} needs a {PARTS[x]}" for x in sorted(NEEDS[verdict] - given)]
+        if verdict in ("APPROVE", "EDIT") and version is None:
+            problems.append(f"the question showed no standard review to {verdict.lower()}: it asks for a WRITE")
+        if verdict == "WRITE" and version is not None:
+            problems.append(f"the question showed a standard review (version {version}): approve it, edit it, or "
+                            "say NO")
+        errors = [x for x in RUBRIC if states.get(x) == "error"]
+        if verdict == "NO":
+            if not errors:
+                problems.append("a NO needs an ERROR cell: the cells say there is no error")
+            if category and category not in AXES:
+                problems.append(f"CATEGORY {category!r} is none of the checks ({', '.join(RUBRIC)}) or `other`")
+            elif category and category != "other" and errors and category not in errors:
+                problems.append(f"CATEGORY {category} is not the check of an ERROR cell ({', '.join(errors)}): give "
+                                "the check that failed, or `other`")
+        elif errors:
+            problems.append(f"{', '.join(errors)} is an ERROR, which {ARTICLE[verdict]} cannot have: an error is a NO")
+    dropped = []
+    for d in fields.get("DROPPED", []) if verdict == "EDIT" else []:
+        parts = FIELD_SEP.split(d, maxsplit=1)
+        if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+            dropped.append({"item": parts[0].strip(), "why": parts[1].strip()})
+        else:
+            problems.append(f"DROPPED needs `<item> — <why>`, and this is {d!r}")
+    if problems or verdict is None:
+        return "not filed", "; ".join(problems)
+    if verdict == "NO":
+        return "no", {"decl": name, "category": category, "why": why}
+    cells = {x: states[x] for x in RUBRIC}
+    body_text = normalize(text or "")
+    row = {"APPROVE": {"approve": name, "version": version, "cells": cells},
+           "EDIT": {"edit": name, "parent": version, "cells": cells, "note": note, "dropped": dropped,
+                    "text": body_text},
+           "WRITE": {"write": name, "cells": cells, "text": body_text}}[verdict]
+    kind = verdict.lower()
+    # What `post` would refuse of it, the version's being current aside (it refuses the whole file for one such action).
+    act = {"line": 0, "kind": kind, "decl": name, "fields": {k: v for k, v in row.items() if k != kind}}
+    more = action_problems(act, lambda n: "", lambda n: version, {})
+    if not more and len(lines_of(act)) > COMMENT_CAP - ROOM:
+        more = [f"its lines are {len(lines_of(act)):,} characters, and a comment holds {COMMENT_CAP:,}"]
+    return ("not filed", "; ".join(more)) if more else ("action", row)
+
+
+def cmd_astra_answer(a):
+    expected = read_question(a.question)
+    try:
+        with open(a.answer, encoding="utf-8-sig") as f:
+            text = f.read()
+    except (OSError, UnicodeDecodeError) as e:
+        die(f"error: cannot read {a.answer}: {e}", 2)
+    if not text.strip():
+        die(f"error: {a.answer} is empty", 2)
+    numbered = {name: n for n, (name, _) in expected.items()}
+    got, not_filed = {}, []  # the bodies of the items that match the question's, by number; and what is left out
+    for n, name, body in answer_items(text, {(n, name) for n, (name, _) in expected.items()}):
+        label = name or f"item {n}"
+        if n in expected and expected[n][0] == name:
+            got.setdefault(n, []).append(body)
+        elif n in expected:
+            not_filed.append((label, f"item {n} of the question is {expected[n][0]}, not {name or 'nothing'}"))
+        elif name in numbered:
+            not_filed.append((label, f"the question numbers it {numbered[name]}, not {n}"))
+        else:
+            not_filed.append((label, "it is not in the question"))
+    actions, noes = [], []
+    for n in sorted(expected):
+        name, version = expected[n]
+        if n not in got:
+            not_filed.append((name, f"the answer has no item {n} for it"))
+        elif len(got[n]) > 1:
+            not_filed.append((name, f"the answer has item {n} twice, and it does not guess which is meant"))
+        else:
+            kind, row = judge_item(name, got[n][0], version)
+            if kind == "not filed":
+                not_filed.append((name, row))
+            else:
+                (actions if kind == "action" else noes).append(row)
+    for path, rows in ((a.out, actions), (a.noes, noes)):
+        write_file(path, "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows))
+    for label, why in not_filed:
+        print(f"not filed: {label}: {why}")
+    print(f"{len(actions)} action{'' if len(actions) == 1 else 's'} in {a.out}, "
+          f"{len(noes)} no{'' if len(noes) == 1 else 'es'} in {a.noes}, {len(not_filed)} not filed", file=sys.stderr)
+
+
 def cmd_no(a):
     if a.category not in AXES:
         die("error: --category is one of " + ", ".join(AXES), 2)
@@ -688,6 +1334,18 @@ def main(argv):
     q.add_argument("--drafts", default="")
     q.add_argument("--dry-run", action="store_true")
     q.set_defaults(fn=cmd_post)
+    q = sub.add_parser("astra-question")
+    q.add_argument("names", nargs="+")
+    q.add_argument("--tauceti", required=True)
+    q.add_argument("--drafts", default="")
+    q.add_argument("--out", required=True)
+    q.set_defaults(fn=cmd_astra_question)
+    q = sub.add_parser("astra-answer")
+    q.add_argument("answer")
+    q.add_argument("--question", required=True)
+    q.add_argument("--out", required=True)
+    q.add_argument("--noes", required=True)
+    q.set_defaults(fn=cmd_astra_answer)
     q = sub.add_parser("no")
     q.add_argument("why")
     q.add_argument("--agent", required=True)
