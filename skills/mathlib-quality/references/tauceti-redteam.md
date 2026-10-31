@@ -95,6 +95,11 @@ For each declaration, every category. The tools named are the lean-lsp MCP's unl
   distinctive constants, and the concept's names in docstrings. A hit elsewhere is a
   duplicate candidate; prove agreement (`rfl`, `ext`) in a scratch file importing both
   modules to confirm it.
+- **`rfl` is not speed.** Agreement by `rfl` shows the two give the same values, not that
+  they unfold or compile the same. A definition that is run, by compiled code (a tactic, a
+  `Decidable` instance, `#eval`) or by the kernel (`decide`, a proof by reduction), may be
+  written its way for speed. Before calling it a duplicate to replace, find how each is run
+  and time both (a Mathlib reviewer on a red-team PR, 2026-10-30).
 - **Other roadmaps' objects.** When a file builds an object (a group, a ring, a space, a
   functor), grep for other constructions of the same object before accepting this one.
 - **General-purpose results.** A statement mentioning only Mathlib notions, which Mathlib
@@ -180,6 +185,7 @@ audit) or `lean_multi_attempt` at a position in the file. Paste the probe verbat
 | junk-value vacuity | the statement at the junk input, proved by the junk | `compiles` |
 | Mathlib duplicate | `example <binders> : <statement> := <MathlibDecl> …` (or a one-line `simpa using`) | `compiles` |
 | Tau Ceti duplicate | `example : <statement> := <other decl> …`, or `example : defA = defB := rfl` / by `ext` | `compiles` |
+| duplicate of a definition that is run | the agreement probe above, and in `evidence` the times of both: the tests or callers that run it (`lake env lean <test>`, several runs each) or a benchmark (`#eval` with `set_option profiler true`, `decide` on a large case) | `compiles` |
 | redundant hypothesis, strong typeclass | the statement without it, or under the weaker class, with a proof | `compiles` |
 | long or slow proof, naming, api, docs | the measurement: line count, profiler time, the name, the grep | `measured` |
 
@@ -261,6 +267,7 @@ finding wrong, record it `refuted`: a loss, but an honest one.
 | overstated name or docstring | If the statement is what is wanted, fix the name or docstring; otherwise strengthen the statement to match and prove it. |
 | Mathlib duplicate | Delete it and point every use at the Mathlib declaration. Keep a specialisation only if it has consumers and saves them real work, as a one-line derivation. |
 | Tau Ceti duplicate | Keep the canonical copy — the more general; if equally general, the one with more consumers; if tied, the older. Delete the other, repoint its uses, and move any API it had that the canonical copy lacks. |
+| duplicate of a definition that is run | Replace it only if the replacement is no slower, compiled and in the kernel: give the times before and after in the PR. A helper used once is inlined, with a comment saying what it computes, rather than kept as a wrapper. |
 | redundant hypothesis, strong typeclass | Remove or weaken it, and update every call site. |
 | long proof | Search for a replacement first; otherwise `Skill(mathlib-quality:decompose-proof)`. |
 | slow proof | `Skill(mathlib-quality:buzz)`. |
@@ -269,6 +276,10 @@ finding wrong, record it `refuted`: a loss, but an honest one.
 | missing characteristic API | Add a lemma only where it replaces unfolding in an existing proof, and say so; otherwise it is new material — record it `needs-human`. |
 | misplaced material | Move it to its canonical home and update imports. |
 | docs, hygiene | Fix them in the file's `chore` PR, alongside `/cleanup`. |
+
+In every fix, write only what the elaborator needs: no type ascription such as `(1 : ℤ)` that
+it can do without. Delete each one and recompile to check. Reviewers notice the ascriptions
+LLMs add for no reason (the same review, 2026-10-30).
 
 ## 5. The pattern sweep
 
