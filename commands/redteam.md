@@ -1,6 +1,6 @@
 ---
 name: redteam
-description: The Tau Ceti red team — an adversarial loop that audits the library file by file for wrong definitions, vacuous or mis-stated theorems, needless hypotheses, duplication of Mathlib or of other roadmaps, and code smells; confirms every big finding in Lean with a second opinion from gpt-6-astra; fixes what it finds in PRs and sees them through review to merge; says yes on the Tau Ceti review site to every declaration it audits and finds correctly stated (what it finds wrong, it fixes); and keeps the scoreboard and the common-errors list for improving the rubrics. One round per invocation; loop it with /loop.
+description: The Tau Ceti red team — an adversarial loop that audits the library file by file for wrong definitions, vacuous or mis-stated theorems, needless hypotheses, duplication of Mathlib or of other roadmaps, and code smells; confirms every big finding in Lean with a second opinion from gpt-6-astra; fixes what it finds in PRs and sees them through review to merge; on the Tau Ceti review site, approves, edits or writes the standard review of every declaration it audits and finds correctly stated (what it finds wrong, it fixes); and keeps the scoreboard and the common-errors list for improving the rubrics. One round per invocation; loop it with /loop.
 ---
 
 # /redteam — the Tau Ceti red team
@@ -70,7 +70,7 @@ R6  HUNT     otherwise — unless --max-queue (default 10) topics of confirmed f
 
 **Its outputs are PRs to `TauCetiProject/TauCeti` that change only files under `TauCeti/`,
 replies on those PRs' own threads, claims under `refs/tauceti-claims/`, the ledger, and its
-yeses on the Tau Ceti review site, comments on the site's bulk issue (R6 steps 8–10).**
+reviews on the Tau Ceti review site, comments on the site's bulk issue (R6 steps 8–10).**
 Nothing else. In particular, never:
 
 - open issues anywhere, or touch TauCetiRoadmap, the intentions board, TauCetiReview,
@@ -100,7 +100,7 @@ as a finding, status `needs-human`, and it reaches the user through the report.
 - The helpers, resolved once per round:
   ```bash
   RT="${CLAUDE_PLUGIN_ROOT:-$(ls -d ~/.claude/plugins/cache/*/mathlib-quality/*/ 2>/dev/null | sort -V | tail -1)}/scripts/redteam.py"
-  RS="$(dirname "$RT")/review_site.py"      # what the review site's answers say (R6 step 8)
+  RS="$(dirname "$RT")/review_site.py"      # the standard reviews on the review site (R6 step 8)
   python3 "$RT" --help
   ```
   Run it from the TauCeti checkout. Its ledger is `$REDTEAM_LEDGER`, default
@@ -133,8 +133,16 @@ the newest scoreboard exactly as `/taupr` does (`statusCheckRollup` context `bui
 review binds only to the `head_sha` it names; never trust labels).
 
 Then `python3 "$RT" sync` (marks findings `landed` or `rejected` as their PRs merge or
-close), `python3 "$RT" tally`, and `python3 "$RT" reviews`, which posts the yeses the review
+close), `python3 "$RT" tally`, and `python3 "$RT" reviews`, which posts the reviews the review
 site can now take (R6 step 10; it never stops the round).
+
+**Re-review** each declaration `reviews` names to re-review: its standard review changed after
+your audit decided on it, or someone wrote one where you meant to write the first. Its file is as
+you audited it, so the Lean review stands; what needs reviewing is the text. Read it
+(`python3 "$RS" standard --json <full names>`), check it against your audit as R6 step 8 does, and
+record a new decision for each, in step 8's shape, with `python3 "$RT" yes @update.json`:
+`{"file": "<path>", "yes": {"<full name>": {"cells": {…}, "approve": "<version>"}}}`. The script
+checks it as it checks an audit, and the next `reviews` posts it.
 
 **Parked PRs** are left alone by R1–R4 and not counted against the cap: one labelled
 `review-budget-spent`, or whose findings are all `refuted` or `needs-human`. Name each in
@@ -281,30 +289,43 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
    problem you say.** If Astra disagrees and you keep the finding, write the resolution.
 7. **Sweep the pattern.** For each confirmed CRITICAL or MAJOR, grep the library for the same
    shape and record each hit as `suspected` in its own file — those files are hunted next.
-8. **Choose the yeses.** The Tau Ceti review site asks one question of each declaration: is
-   it correctly stated? The audit has answered it, and the red team says only yes: what it
-   finds wrong it fixes (R5), so it never leaves a no. A yes goes to each declaration whose
-   `correctness` cell is `ok` and which has no confirmed CRITICAL finding, and no confirmed
-   MAJOR finding that its name or docstring claims more than it proves or that its
-   assumptions exclude cases they cover; never to anything a red-team PR wrote or restated,
-   since the red team does not review its own work. Every yes counts, however many answers
-   the declaration already has. Its reasons are evidence, on one line, and say only what the
-   answers already there do not (`python3 "$RS" reviews <full names>` lists them): the checks
-   you ran, a second source that states it as Lean does. With nothing to add they are `""`
-   (reference section 7).
+8. **Review on the site.** The Tau Ceti review site asks one question of each declaration: is
+   it correctly stated? The audit has answered it, and the red team never says no there: what
+   it finds wrong it fixes (R5). It reviews each declaration whose `correctness` cell is `ok`
+   and which has no confirmed CRITICAL finding, and no confirmed MAJOR finding that its name or
+   docstring claims more than it proves or that its assumptions exclude cases they cover; never
+   anything a red-team PR wrote or restated, since the red team does not review its own work.
+   For each, record two things (reference section 7):
+   - **The site's eight cells**: `object`, `convention`, `edge-cases`, `junk`, `vacuous`,
+     `choice`, `generality`, `naming`, each `checked`, or `na` where the check cannot fail.
+     They are the site's checks, not your eight categories (AI-REVIEWS.md step 3 says what each
+     asks): mark each from what your audit examined, never by renaming a category.
+   - **One decision on its standard review**, the one text the site shows for it, a reading
+     guide for a mathematician who does not read Lean. Read the text, its version and its open
+     noes with `python3 "$RS" standard --json <full names>`; an open no may name an error your
+     audit must answer first. **Approve** it if it is right and complete; **edit** it if
+     something is missing, wrong or unclear, never just to reword it; **write** one if there is
+     none, as for a declaration new since the site's commit. `python3 "$RS" guide` says what the
+     text is, and the site's AI-REVIEWS.md has the rules, which are yours.
+
+   Approve even when others have: each approval is one more review of the Lean.
 9. **Record** with the script: each finding (`python3 "$RT" finding @f.json`), then the audit
    with the full matrix, your `"model"` (exactly as your harness names it, `claude-opus-5-5` or
    `GPT-6 Astra`, never a family like `Opus` or `GPT-6`: the site shows it) and the `"yes"` of step 8,
-   `{"<full name>": "<reasons>"}` (`python3 "$RT" audit @audit.json`). **The script refuses a
-   win without compiled evidence and an Astra verdict, an audit with any declaration or
-   category missing, and a yes where a correctness check failed.** A refusal means a step was
-   skipped: do it.
-10. **Post the yeses**: `python3 "$RT" reviews`. They go up as one comment on the site's bulk
+   `{"<full name>": {"cells": {…}, "approve": "<version>"}}`, or `"write": "<text>"`, or
+   `"edit": "<parent version>"` with its `"note"`, `"dropped"` and `"text"`
+   (`python3 "$RT" audit @audit.json`). **The script refuses a win without compiled evidence and
+   an Astra verdict, an audit with any declaration or category missing, a yes where a
+   correctness check failed, and a yes the site would refuse: cells not all eight, no decision
+   or more than one, a text without its three parts.** A refusal means a step was skipped: do it.
+10. **Post the reviews**: `python3 "$RT" reviews`. They go up as one comment on the site's bulk
    issue once the site shows the file exactly as you audited it. The site follows Tau Ceti's
    `docgen` commit, up to a day behind `main`, so a file added or changed since then waits,
    and R0 posts it in the round after the site catches up; if the file changes again first,
-   its yeses are dropped. The site never limits the hunt: audit any file on `main`, whether or
-   not the site has it yet.
+   its reviews are dropped. Each goes up only against the text it was decided on: if the
+   standard review has changed since, or someone has written one where you wrote the first, it
+   waits for R0's re-review. The site never limits the hunt: audit any file on `main`, whether
+   or not the site has it yet.
 11. **Release the claim.**
 
 ## Severity, wins and losses
@@ -334,8 +355,8 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
 | "They are equal by `rfl`, so one can replace the other" | `rfl` shows equal values, not equal speed. If the definition is run, by compiled code or by the kernel, time both and replace it only if the new one is no slower. |
 | "A type ascription makes it clearer" | Write only what the elaborator needs. Delete the ascription and recompile; keep it only if that fails. |
 | "This needs an issue, a roadmap change or a rubric PR" | Out of bounds. Record it `needs-human`; the report carries it to the user. |
-| "It is wrong; leave a no on the review site" | The red team fixes what it finds: a PR (R5), not a no. It says only yes, and only where every correctness check passed. |
-| "Others already said yes; skip it" | Say yes too: every answer counts. Leave out only the reasons that repeat theirs. |
+| "It is wrong; leave a no on the review site" | The red team fixes what it finds: a PR (R5), not a no. It reviews on the site only where every correctness check passed. |
+| "Others already approved its standard review; skip it" | Approve too: each approval is one more review of the Lean. Edit only to add what is missing or make it clearer. |
 
 ## Running it continuously
 
@@ -378,9 +399,9 @@ clone, commit and push it.
 ## Reference
 
 - `references/tauceti-redteam.md` — checklist per category, evidence recipes, Astra prompts,
-  the fix playbook, the ledger's records, its yeses on the review site
+  the fix playbook, the ledger's records, its reviews on the review site
 - `references/tauceti.md` — review mechanics, claims, `--force-with-lease`, merge policy
 - `commands/taupr.md` — the worker loop R1–R4 come from
 - `scripts/redteam.py` — queue, claims, ledger, score (`--help`)
-- `scripts/review_site.py` — yeses on the Tau Ceti review site (`--help`)
+- `scripts/review_site.py` — standard reviews on the Tau Ceti review site (`--help`)
 - Upstream: TauCeti `AGENTS.md`, `COORDINATION.md`; TauCetiReview `rubrics/`
