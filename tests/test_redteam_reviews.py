@@ -399,6 +399,11 @@ class ReviewsTests(Case):
         self.assertIn(f"Write: TauCeti.Foo.two — {CELLS_LINE}", lines)
         self.assertEqual([(r["state"], r["site"], r["decls"]) for r in self.rows()],
                          [("posted", self.c2, ["TauCeti.Foo.one", "TauCeti.Foo.three", "TauCeti.Foo.two"])])
+        # The comment `post` made is named, for the round's report, and kept in the ledger: the intake's reply to it on
+        # the bulk issue says what it refused, if anything.
+        url = f"https://github.com/{review_site.REPO}/issues/1#issuecomment-1"
+        self.assertIn(f"{FILE}: posted 1 approval, 1 write, 1 edit in {url}", out)
+        self.assertEqual(self.rows()[0]["comments"], [url])
         # A later round posts nothing more.
         self.assertEqual(self.cli("reviews")[0], 0)
         self.assertEqual((len(self.gh.bodies), len(self.rows())), (1, 1))
@@ -439,8 +444,8 @@ class ReviewsTests(Case):
         self.assertEqual(len(self.rows()), 1)
 
     def test_an_entry_the_site_would_refuse_waits_for_re_review(self):
-        # One recorded under laxer checks, or a line edited by hand: `post` refuses a whole comment for one such action,
-        # so it waits for a re-review, and the rest of the file goes up.
+        # One recorded under laxer checks, or a line edited by hand: `post` refuses all of a file's actions for one such
+        # action, so it waits for a re-review, and the rest of the file goes up.
         v_one, v_three = self.version("TauCeti.Foo.one"), self.version("TauCeti.Foo.three")
         self.append("audits", {"file": FILE, "matrix": MATRIX, "model": MODEL,
                                "yes": {"TauCeti.Foo.one": {"cells": {a: s for a, s in CELLS.items() if a != "junk"},
@@ -456,6 +461,36 @@ class ReviewsTests(Case):
         self.assertEqual(self.states(), {("posted", "TauCeti.Foo.three"), ("re-review", "TauCeti.Foo.one"),
                                          ("re-review", "TauCeti.Foo.two")})
         self.assertIn("junk", out)
+
+    def test_an_entry_the_intake_would_refuse_for_its_text_waits_for_re_review(self):
+        # `post` refuses what the intake's check would, against the text the site shows: an edit that changes nothing,
+        # an item of that text lost without saying why, a test that is no declaration. Each waits for a re-review, and
+        # the rest of the file goes up.
+        v_one, v_three, v_four = (self.version(n) for n in ("TauCeti.Foo.one", "TauCeti.Foo.three", "TauCeti.Foo.four"))
+        nope = TEXT_TWO.replace("§1.\n", "§1.\n- `TauCeti.Foo.nope` — a test that is not there\n")
+        self.audit({"TauCeti.Foo.one": {"cells": CELLS, "approve": v_one},
+                    "TauCeti.Foo.two": {"cells": CELLS, "write": nope},
+                    "TauCeti.Foo.three": {"cells": CELLS, "edit": v_three, "note": "says it again", "text": TEXT_THREE},
+                    "TauCeti.Foo.four": {"cells": CELLS, "edit": v_four, "note": "another source",
+                                         "text": TEXT_FOUR.replace("Fixture documentation, §1.", "Stacks, Tag 0BSC.")}})
+        code, out, err = self.cli("reviews")
+        self.assertEqual(code, 0, err)
+        [post] = self.posts
+        self.assertEqual(post["actions"], [{"approve": "TauCeti.Foo.one", "version": v_one, "cells": CELLS}])
+        self.assertEqual(self.states(), {("posted", "TauCeti.Foo.one"), ("re-review", "TauCeti.Foo.two"),
+                                         ("re-review", "TauCeti.Foo.three"), ("re-review", "TauCeti.Foo.four")})
+        for name, why in (("TauCeti.Foo.two", "the test `TauCeti.Foo.nope` is not a declaration that exists"),
+                          ("TauCeti.Foo.three", "the edit changes nothing"),
+                          ("TauCeti.Foo.four", 'the edit drops the reference "Fixture documentation, §1."')):
+            self.assertIn(f"{name} waits for a re-review: {why}", out)
+        # Re-reviewed, with a test the site has, the write goes up.
+        code, out, err = self.cli("yes", self.json_file({"file": FILE, "model": MODEL, "yes": {"TauCeti.Foo.two": {
+            "cells": CELLS, "write": nope.replace("TauCeti.Foo.nope", "TauCeti.Foo.one")}}}))
+        self.assertEqual(code, 0, err)
+        code, out, err = self.cli("reviews")
+        self.assertEqual(code, 0, err)
+        self.assertEqual([a.get("write") is not None for a in self.posts[-1]["actions"]], [True])
+        self.assertIn(f"{FILE}: posted 1 write in https://github.com/{review_site.REPO}/issues/1#issuecomment-2", out)
 
     def test_rows_written_before_settle_their_audits(self):
         # Under 0.81, a row of the reviews ledger settled the whole audit, and named no declarations.
@@ -511,7 +546,7 @@ class ReReviewTests(Case):
         self.cli("reviews")
         self.assertEqual((self.posts, len(self.states())), ([], 3))  # all three wait for a re-review
         v_one, v_three = self.version("TauCeti.Foo.one"), self.version("TauCeti.Foo.three")
-        code, out, err = self.cli("yes", self.json_file({"file": FILE, "yes": {
+        code, out, err = self.cli("yes", self.json_file({"file": FILE, "model": MODEL, "yes": {
             "TauCeti.Foo.one": {"cells": CELLS, "approve": v_one},
             "TauCeti.Foo.three": {"cells": CELLS, "edit": v_three, "note": "says where the sum is taken",
                                   "text": EDIT_THREE}}}))
@@ -536,7 +571,8 @@ class ReReviewTests(Case):
                     "TauCeti.Foo.three": {"cells": CELLS, "approve": self.version("TauCeti.Foo.three")}})
 
         def update(name):
-            return self.json_file({"file": FILE, "yes": {name: {"cells": CELLS, "approve": self.version(name)}}})
+            return self.json_file({"file": FILE, "model": MODEL, "yes": {name: {"cells": CELLS,
+                                                                                 "approve": self.version(name)}}})
 
         # Before `reviews` has looked, nothing waits for a re-review.
         code, out, err = self.cli("yes", update("TauCeti.Foo.one"))
@@ -548,7 +584,7 @@ class ReReviewTests(Case):
                           ("TauCeti.Foo.four", "TauCeti.Foo.four"),  # audited, with no review in the audit
                           ("TauCeti.Foo.five", "TauCeti.Foo.five")):  # not in the audit at all
             with self.subTest(name):
-                code, out, err = self.cli("yes", self.json_file({"file": FILE, "yes": {
+                code, out, err = self.cli("yes", self.json_file({"file": FILE, "model": MODEL, "yes": {
                     name: {"cells": CELLS, "approve": "dd83c85a488e22c8"}}}))
                 self.assertEqual(code, 1, err)
                 self.assertIn(why, err)
@@ -564,18 +600,37 @@ class ReReviewTests(Case):
         fine = {"cells": CELLS, "approve": self.version("TauCeti.Foo.one")}
         without_junk = {a: s for a, s in CELLS.items() if a != "junk"}
         for update, why in (
-                ({"file": FILE, "yes": {"TauCeti.Foo.one": {"cells": without_junk, "approve": fine["approve"]}}},
-                 "junk"),
-                ({"file": FILE, "yes": {"TauCeti.Foo.one": {"cells": CELLS}}}, "TauCeti.Foo.one"),
-                ({"file": FILE, "yes": {"TauCeti.Foo.five": fine}}, "TauCeti.Foo.five"),
-                ({"file": "TauCeti/Other.lean", "yes": {"TauCeti.Other.zero": fine}}, "TauCeti/Other.lean"),
-                ({"file": FILE, "yes": {}}, "yes"),
-                ({"file": FILE, "yes": {"TauCeti.Foo.one": fine}, "model": "GPT-6 Astra"}, "model")):
+                ({"file": FILE, "model": MODEL,
+                  "yes": {"TauCeti.Foo.one": {"cells": without_junk, "approve": fine["approve"]}}}, "junk"),
+                ({"file": FILE, "model": MODEL, "yes": {"TauCeti.Foo.one": {"cells": CELLS}}}, "TauCeti.Foo.one"),
+                ({"file": FILE, "model": MODEL, "yes": {"TauCeti.Foo.five": fine}}, "TauCeti.Foo.five"),
+                ({"file": "TauCeti/Other.lean", "model": MODEL, "yes": {"TauCeti.Other.zero": fine}},
+                 "TauCeti/Other.lean"),
+                ({"file": FILE, "model": MODEL, "yes": {}}, "yes"),
+                ({"file": FILE, "model": MODEL, "yes": {"TauCeti.Foo.one": fine}, "session": "7"}, "session")):
             with self.subTest(why=why):
                 code, out, err = self.cli("yes", self.json_file(update))
                 self.assertEqual(code, 1, err)
                 self.assertIn(why, err)
                 self.assertEqual(self.rows(), before)
+
+    def test_yes_needs_the_model_that_audited(self):
+        # The reviews go up under the audit's model, so only that model re-reviews: an update says which model made it,
+        # exactly as the harness names it, and another is refused rather than filed under the audit's.
+        self.audit({"TauCeti.Foo.one": {"cells": CELLS, "approve": STALE}})
+        self.cli("reviews")  # it waits for a re-review
+        before = self.rows()
+        fine = {"TauCeti.Foo.one": {"cells": CELLS, "approve": self.version("TauCeti.Foo.one")}}
+        for model in (None, "", "GPT-6 Astra", "Claude-Opus-5-5", "claude-opus-5", "Opus"):
+            with self.subTest(model=model):
+                update = {"file": FILE, "yes": fine, **({} if model is None else {"model": model})}
+                code, out, err = self.cli("yes", self.json_file(update))
+                self.assertEqual(code, 1, err)
+                self.assertIn("model", err)
+                self.assertEqual(self.rows(), before)
+        code, out, err = self.cli("yes", self.json_file({"file": FILE, "model": MODEL, "yes": fine}))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.rows()[-1]["state"], "re-reviewed")
 
 
 if __name__ == "__main__":

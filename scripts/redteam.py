@@ -7,14 +7,14 @@
   finding   record a finding, or a change to one (validated; a win needs its evidence)
   audit     record a finished file audit (validated; every declaration needs a verdict
             in every category), with its reviews for the review site: for each declaration
-            whose correctness checks passed, the site's eight cells and one decision on its
-            standard review (approve, write or edit)
+            against which no finding a site check covers stands (R6 step 8), the site's eight
+            cells and one decision on its standard review (approve, write or edit)
   sync      mark findings landed or rejected once their PRs merge or close
   reviews   post this agent's reviews on the Tau Ceti review site once the site shows each
             file as it was audited; drop those whose file changed first, and name for a
             re-review those whose standard review has changed since they were decided
-  yes       record a re-review: new decisions for the declarations of this agent's audit
-            of a file that `reviews` names to re-review
+  yes       record a re-review, made by the audit's model: new decisions for the declarations
+            of this agent's audit of a file that `reviews` names to re-review
   whoami    this agent's id: its PRs carry it, so each agent tends and counts only its own
   astra     ask gpt-6-astra through the Codex CLI, for machines without the chatgpt-math MCP
   tally     the scoreboard: wins, losses, landed fixes, coverage, recurring patterns
@@ -473,9 +473,11 @@ def cmd_audit(a):
 
 def yes_problems(row, matrix, known):
     """An audit's yeses (R6 step 8): {full name: the site's eight cells and one decision on the declaration's standard
-    review}, each for a declaration of the matrix whose correctness checks passed, against which no CRITICAL finding
-    stands, nor any finding one of the site's checks covers (COVERED), and each one that `review_site.py post` takes
-    (`entry_problems`); and the model that audited, which names the reviewer. A finding stands unless it was refuted."""
+    review}, each for a declaration of the matrix whose correctness cell is `ok`, against which no CRITICAL finding
+    stands, nor any finding one of the site's checks covers (COVERED) by its category or by the column whose cell cites
+    it, and each one that `review_site.py post` takes (`entry_problems`); and the model that audited, which names the
+    reviewer. A finding stands unless it was refuted; the correctness cell is `ok` all the same, and cites no finding,
+    refuted or not."""
     yes, bad = row.get("yes") or {}, []
     if not isinstance(yes, dict):
         return ["'yes' maps each full name to the site's eight cells and one decision on its standard review"]
@@ -531,6 +533,20 @@ def action_of(name, entry):
             "dropped": entry.get("dropped", []), "text": entry.get("text")}
 
 
+def post_action(name, entry):
+    """``entry``, the yes of ``name``, which makes one decision, as `review_site.py`'s checks take an action of
+    `post`: its line (none), its kind, its declaration and its other fields."""
+    kind, row = decision(entry), action_of(name, entry)
+    return {"line": 0, "kind": kind, "decl": name, "fields": {k: v for k, v in row.items() if k != kind}}
+
+
+def tests_of(entry):
+    """The tests the text of ``entry`` lists, a write's or an edit's: the bullets of its Part 2 that start with a Lean
+    name in backticks, as the site reads them (`review_site.items`). None for an approval."""
+    text = {"write": entry.get("write"), "edit": entry.get("text")}.get(decision(entry))
+    return review_site.items(text).tests if isinstance(text, str) else []
+
+
 def entry_problems(name, entry):
     """Why ``entry``, the yes of ``name``, is not one that `review_site.py post` takes, as `post` checks it: the eight
     cells, one decision with the keys it has (ENTRY_KEYS), a version of 8 to 16 hex digits, a text in the three parts,
@@ -546,8 +562,7 @@ def entry_problems(name, entry):
                 "parent's version, a note and the text), not %s" % (" and ".join(given) or "none")]
     bad = ["`%s` is not a key of %s, which has %s" % (k, kind, ", ".join(sorted(ENTRY_KEYS[kind])))
            for k in entry if k not in ENTRY_KEYS[kind]]
-    row = action_of(name, entry)
-    act = {"line": 0, "kind": kind, "decl": name, "fields": {k: v for k, v in row.items() if k != kind}}
+    act = post_action(name, entry)
     given = act["fields"].get("version", act["fields"].get("parent"))
     shown = given.strip().lower() if isinstance(given, str) else None  # any well-formed version passes here
     bad += review_site.action_problems(act, lambda n: "", lambda n: shown, {})
@@ -623,8 +638,10 @@ def cmd_reviews(a):
     follows Tau Ceti's docgen commit, behind main, so a file added or changed since then waits. If the file changes
     again before the site reaches the audited commit, its yeses are dropped: they were about a version the site never
     shows. Each goes up as it was decided, against the standard review the site shows now: one decided against another
-    text, a first text where there is one now, or one `post` would refuse, is not posted, and waits for a re-review
-    (`yes`)."""
+    text, a first text where there is one now, or one `post` would refuse (its fields, or what the site's check says of
+    its text against the text the site shows: `review_site.site_problems`), is not posted, and waits for a re-review
+    (`yes`). The comments `post` makes are printed, and kept in the ledger: the intake's reply to each, on the site's
+    bulk issue, says what it recorded and what it refused."""
     d = ledger_dir()
     pull(d)
     owner = owner_id(a.repo)
@@ -668,7 +685,8 @@ def cmd_reviews(a):
             print("%s: dropped, %s" % (au["file"], why))
             dropped += 1
             continue
-        shown = standard_now(sorted(pending))
+        # The tests the texts list are read too: the site has no page for one that is no declaration.
+        shown = standard_now(sorted(set(pending).union(*(tests_of(e) for e in pending.values()))))
         if shown is None:
             waiting += 1
             continue
@@ -677,8 +695,11 @@ def cmd_reviews(a):
             if shown.get(n) is None:
                 left.append(n)
                 continue
-            # `post` refuses a whole comment for one action it cannot take: one recorded under laxer checks waits too.
-            why = "; ".join(entry_problems(n, e)) or stale(e, shown[n].get("version"))
+            # `post` refuses all of a file's actions for one it cannot take: one recorded under laxer checks waits too,
+            # and so does one whose text the intake would refuse against the text the site shows.
+            why = ("; ".join(entry_problems(n, e)) or stale(e, shown[n].get("version"))
+                   or "; ".join(review_site.site_problems(post_action(n, e), shown[n], {},
+                                                          lambda t: shown.get(t) is not None)))
             if why:
                 redo[n] = why
             else:
@@ -698,9 +719,10 @@ def cmd_reviews(a):
                 print("%s: not posted, tried again next round: %s" % (au["file"], p.stderr.strip()))
                 waiting += 1
             else:
-                settle(au, "posted", [x[decision(x)] for x in actions])
+                urls = p.stdout.split()  # `post` prints the url of each comment it made
+                settle(au, "posted", [x[decision(x)] for x in actions], comments=urls)
                 posted += 1
-                print("%s: posted %s" % (au["file"], counted(actions)))
+                print("%s: posted %s%s" % (au["file"], counted(actions), " in " + ", ".join(urls) if urls else ""))
         if redo:
             settle(au, "re-review", redo)
             again[au["file"]] += sorted(redo)
@@ -712,8 +734,8 @@ def cmd_reviews(a):
     push(d, "redteam: reviews, %d posted" % posted)
     again = {f: sorted(ns) for f, ns in again.items() if ns}
     if again:
-        print("To re-review: read each text (review_site.py standard --json NAME...), then record a decision on it "
-              "(redteam.py yes @update.json):")
+        print("To re-review: read each text (review_site.py standard --json NAME...), then record a decision on it, "
+              "as the model that audited (redteam.py yes @update.json):")
         for f, ns in sorted(again.items()):
             print("  %s: %s" % (f, ", ".join(ns)))
     print("review site at %s: %d files posted, %d waiting, %d dropped, %d declarations to re-review"
@@ -723,18 +745,18 @@ def cmd_reviews(a):
 def cmd_yes(a):
     """New decisions for the yes of this agent's newest audit of a file, after a re-review (R0): `reviews` posts them
     once the site shows the file as audited. Each is for a declaration `reviews` holds for a re-review, and they are
-    checked as the audit's are."""
+    checked as the audit's are. They go up under the audit's model, so the update names the model that made it, exactly
+    as its harness names it, and only the audit's is taken."""
     d = ledger_dir()
     pull(d)
     owner = owner_id(a.repo)
     row = load_arg_json(a.json)
     if not isinstance(row, dict) or not row.get("file") or not row.get("yes"):
-        die('an update needs "file" and "yes": {"file": "<path>", "yes": {"<full name>": {"cells": {...}, '
-            '"approve" | "write" | "edit": ...}}}', 1)
-    extra = sorted(set(row) - {"file", "yes"})
+        die('an update needs "file", "model" and "yes": {"file": "<path>", "model": "<the model that re-reviewed>", '
+            '"yes": {"<full name>": {"cells": {...}, "approve" | "write" | "edit": ...}}}', 1)
+    extra = sorted(set(row) - {"file", "model", "yes"})
     if extra:
-        die("an update has only \"file\" and \"yes\", not %s: the reviews go up under the audit's model"
-            % ", ".join(extra), 1)
+        die("an update has only \"file\", \"model\" and \"yes\", not %s" % ", ".join(extra), 1)
     au = newest_audits(d, owner).get(row["file"])
     if au is None:
         die("no audit of %s by this agent (%s): a re-review replaces decisions of an audit" % (row["file"], owner), 1)
@@ -742,6 +764,11 @@ def cmd_yes(a):
         au["file"], au["main"])]
     _, states = yes_states(au, rows)
     bad = []
+    model, audited = str(row.get("model") or "").strip(), str(au.get("model") or "").strip()
+    if model != audited:
+        bad.append("the update's \"model\" is %s, and the audit's is %r: the reviews go up under the audit's model, so "
+                   "only that model re-reviews them, named exactly as its harness names it"
+                   % (repr(model) if model else "missing", audited))
     for n in row["yes"] if isinstance(row["yes"], dict) else []:
         if states.get(n) != "re-review":
             why = (NOT_WAITING.get(states[n], "its state is %s" % states[n]) if n in states
@@ -897,8 +924,10 @@ def main():
     au.add_argument("--ref", default="origin/main")
     sub.add_parser("sync", help="mark findings landed or rejected once their PRs merge or close")
     sub.add_parser("reviews", help="post this agent's reviews on the review site where it shows the file as audited")
-    y = sub.add_parser("yes", help="record a re-review: new decisions for declarations `reviews` names to re-review")
-    y.add_argument("json", help='{"file": <path>, "yes": {<full name>: <decision>}} as JSON, or @path to a JSON file')
+    y = sub.add_parser("yes", help="record a re-review, made by the audit's model: new decisions for declarations "
+                                   "`reviews` names to re-review")
+    y.add_argument("json", help='{"file": <path>, "model": <the audit\'s model>, "yes": {<full name>: <decision>}} as '
+                                'JSON, or @path to a JSON file')
     sub.add_parser("whoami", help="print this agent's id (kept in <checkout>/.mathlib-quality/redteam-owner)")
     q = sub.add_parser("astra", help="ask gpt-6-astra through the Codex CLI; prints the answer")
     q.add_argument("question", help="a file holding the question (or @file)")
