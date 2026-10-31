@@ -967,6 +967,8 @@ class AstraQuestionTests(AstraCase):
                      "DROPPED:", *AXES):
             self.assertIn(want, text[:guide])
         self.assertIn("Write nothing after your last item", text[:guide])
+        self.assertIn("do not wrap it", text[:guide])
+        self.assertNotIn("the next line is not part of it", text)
         self.assertNotIn(review_site.GUIDE_BEGIN, text)  # the section, not its markers
         one, two = self.items(text)
         self.assertTrue(one.startswith("### 1. Fixture.triple_two\n"))
@@ -1158,13 +1160,14 @@ class AstraAnswerTests(AstraCase):
         q = self.ask("Fixture.triple", "Fixture.triple_triple", "Fixture.triple_two", "Fixture.d", "Fixture.e")
         edited, written = review(says="triple twice, said better"), review(says="e")
         why = "`triple 0 = 0`, not 6, so the statement needs `n ≠ 0`."
+        wrapped = why.replace("not 6, ", "not 6,\n")  # as it comes when a model wraps its line
         code, out, err, actions, noes = self.answer(
             q, "Here are my reviews.\n\n",
             item(1, "Fixture.triple", "APPROVE"),
             item(2, "Fixture.triple_triple", "EDIT", "NOTE: adds the hypothesis the statement skips",
                  "DROPPED: `Fixture.triple_triple_one` — renamed `Fixture.triple_triple_uno` in Tau Ceti",
                  "DROPPED: Check *test_one* -- no longer in the roadmap", block=edited),
-            item(3, "Fixture.triple_two", "NO", f"CATEGORY: edge-cases   WHY: {why}",
+            item(3, "Fixture.triple_two", "NO", f"CATEGORY: edge-cases   WHY: {wrapped}",
                  cells=error_cells("edge-cases", "it fails at 0")),
             item(4, "Fixture.d", "APPROVE", cells=ANSWER_CELLS.replace(", naming=checked", "")),  # a cell is missing
             item(5, "Fixture.e", "WRITE", block=written))
@@ -1237,14 +1240,14 @@ class AstraAnswerTests(AstraCase):
             ("a write with a DROPPED line", "Fixture.e", e("WRITE", "DROPPED: x — y", block=ok), "DROPPED"),
             ("a write without a text", "Fixture.e", e("WRITE"), "~~~review"),
             ("a DROPPED line with no why", "Fixture.triple", t("EDIT", "NOTE: n", "DROPPED: `x`", block=ok), "DROPPED"),
-            ("a verdict whose name is in lower case", "Fixture.triple", t(None, "verdict: APPROVE"), "VERDICT"),
+            ("a verdict whose name is in lower case", "Fixture.triple", t(None, "verdict: APPROVE"), "capitals"),
             ("cells whose name is in lower case", "Fixture.triple",
-             f"### 1. Fixture.triple\ncells: {ANSWER_CELLS}\nVERDICT: APPROVE\n", "CELLS"),
+             f"### 1. Fixture.triple\ncells: {ANSWER_CELLS}\nVERDICT: APPROVE\n", "capitals"),
             ("a reason whose name is in lower case", "Fixture.triple",
-             t("NO", "CATEGORY: junk", "Why: x", cells=error_cells("junk")), "WHY"),
-            ("a note whose name is in lower case", "Fixture.triple", t("EDIT", "note: n", block=ok), "NOTE"),
+             t("NO", "CATEGORY: junk", "Why: x", cells=error_cells("junk")), "capitals"),
+            ("a note whose name is in lower case", "Fixture.triple", t("EDIT", "note: n", block=ok), "capitals"),
             ("a reason in lower case on the line of the category", "Fixture.triple",
-             t("NO", "CATEGORY: junk   why: x", cells=error_cells("junk")), "CATEGORY"),
+             t("NO", "CATEGORY: junk   why: x", cells=error_cells("junk")), "capitals"),
             ("a NO with a text", "Fixture.triple",
              t("NO", "CATEGORY: junk   WHY: x", cells=error_cells("junk"), block=ok), "~~~review"),
         ]
@@ -1276,7 +1279,7 @@ class AstraAnswerTests(AstraCase):
             "#### 2. Fixture.triple_triple\r\n"
             f"CELLS: {ANSWER_CELLS}\r\n"
             "VERDICT: **EDIT**\r\n"
-            "NOTE: adds the hypothesis the statement skips\r\n"
+            "NOTE: adds the hypothesis\r\n  the statement skips\r\n"  # a note over two lines
             "DROPPED:  `Fixture.triple_triple_one`  —  renamed\r\n"
             "~~~review\r\n" + edited.replace("\n", "\r\n") + "~~~\r\n\r\n"
             f"### 3) Fixture.e\r\nCELLS: {ANSWER_CELLS}\r\nVERDICT: WRITE.\r\n"
@@ -1284,7 +1287,8 @@ class AstraAnswerTests(AstraCase):
             "---\r\n\r\n"  # a rule between the items
             "### 4. Fixture.triple_two\r\n"
             f"**CELLS:** {error_cells('junk')}\r\n**VERDICT:** NO\r\n"
-            "**CATEGORY:** `junk`\r\n**WHY:** `triple 2` is the junk value.\r\n")
+            "**CATEGORY:** `junk`\r\n**WHY:** `triple 2` is the junk\r\nvalue.\r\n\r\n"
+            "It is `6` only by luck.\r\n")
         code, out, err, actions, noes = self.answer(q, answer)
         self.assertEqual((code, out), (0, ""), err)
         self.assertEqual(actions, [
@@ -1293,21 +1297,22 @@ class AstraAnswerTests(AstraCase):
                  "adds the hypothesis the statement skips",
                  [{"item": "`Fixture.triple_triple_one`", "why": "renamed"}]),
             write("Fixture.e", norm(written))])
-        # The reason of a no may come on a line of its own.
+        # The reason of a no may come on a line of its own, and go on to a second line; a second paragraph is not it.
         self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "junk",
                                  "why": "`triple 2` is the junk value."}])
 
-    def test_a_sentence_after_a_nos_reason_is_not_in_it(self):
+    def test_a_sentence_after_a_nos_reason_is_in_it_only_if_directly_under_it(self):
         q = self.ask("Fixture.triple", "Fixture.triple_two")
         why, remark = "`triple 0 = 0`, but it should be undefined.", "Let me know if you want me to expand on this."
-        for gap in ("\n", ""):  # after a blank line, and on the very next line
+        # After a blank line the reason has ended; on the very next line it goes on (a reason is wrapped over lines).
+        for gap, want in (("\n", why), ("", f"{why} {remark}")):
             with self.subTest(blank_line=bool(gap)):
                 no = item(2, "Fixture.triple_two", "NO", f"CATEGORY: junk   WHY: {why}", cells=error_cells("junk"))
                 code, out, err, actions, noes = self.answer(q, item(1, "Fixture.triple", "APPROVE"),
                                                             no.rstrip("\n") + "\n" + gap + remark + "\n")
                 self.assertEqual((code, out), (0, ""), err)
                 self.assertEqual(actions, [approve("Fixture.triple", V(self.t1))])
-                self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "junk", "why": why}])
+                self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "junk", "why": want}])
 
     def test_a_sentence_after_the_last_item_leaves_it_filed(self):
         q = self.ask("Fixture.e", "Fixture.triple")
@@ -1336,20 +1341,21 @@ class AstraAnswerTests(AstraCase):
                 self.assertEqual(actions, [approve("Fixture.triple", V(self.t1))])
                 self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "junk", "why": why}])
 
-    def test_prose_that_starts_like_a_field_but_not_in_capitals_is_left_out(self):
+    def test_prose_that_starts_like_a_field_but_not_in_capitals_is_no_field(self):
         q = self.ask("Fixture.triple", "Fixture.triple_two")
-        why = "`triple 2` is the junk value."
+        why, prose = "`triple 2` is the junk value.", ["Note: it is so for every n.", "Why this matters: it is silent."]
         for gap in ("", "\n"):  # under the line, and after a blank line
             with self.subTest(blank_line=bool(gap)):
                 yes = item(1, "Fixture.triple", "APPROVE").rstrip("\n") + "\n" + gap
                 yes += "Note: this follows the docstring.\n\n"
                 no = item(2, "Fixture.triple_two", "NO", f"CATEGORY: junk   WHY: {why}", cells=error_cells("junk"))
-                no = no.rstrip("\n") + "\n" + gap + "Note: it is so for every n.\n" + gap
-                no += "Why this matters: the junk value is silent.\n"
+                no = no.rstrip("\n") + "\n" + gap + prose[0] + "\n" + prose[1] + "\n"
                 code, out, err, actions, noes = self.answer(q, yes, no)
                 self.assertEqual((code, out), (0, ""), err)  # not "an APPROVE takes no NOTE", not "a NO takes no NOTE"
-                self.assertEqual(actions, [approve("Fixture.triple", V(self.t1))])
-                self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "junk", "why": why}])
+                self.assertEqual(actions, [approve("Fixture.triple", V(self.t1))])  # a verdict is one line
+                # Directly under a reason such lines are more of it, like any prose; after a blank line, they are not.
+                self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "junk",
+                                         "why": why if gap else " ".join([why, *prose])}])
 
     def test_an_echoed_version_line_is_left_out(self):
         q = self.ask("Fixture.triple")
@@ -1363,13 +1369,14 @@ class AstraAnswerTests(AstraCase):
         q = self.ask("Fixture.triple", "Fixture.triple_triple", "Fixture.e", "Fixture.triple_two")
         edited, written = review(says="triple twice, better"), review(says="e")
         answer = (
-            f"### 1. Fixture.triple\nCELLS: {ANSWER_CELLS}\nThis matches the docstring.\nVERDICT: APPROVE\n\n"
+            f"### 1. Fixture.triple\nCELLS: {ANSWER_CELLS}\nThis matches the docstring.\nVERDICT: APPROVE\n"
+            "It is fine.\n\n"
             f"### 2. Fixture.triple_triple\nI looked at it again.\nCELLS: {ANSWER_CELLS}\nVERDICT: EDIT\n"
-            "Here is what it lacks:\nNOTE: says more\nIt keeps every bullet.\n"
+            "Here is what it lacks:\nNOTE: says more\n"
             f"~~~review\n{edited}~~~\nThat is the new text.\n\n"
             f"### 3. Fixture.e\nCELLS: {ANSWER_CELLS}\n---\nVERDICT: WRITE\n~~~review\n{written}~~~\n\n"
             f"### 4. Fixture.triple_two\nCELLS: {error_cells('junk')}\nVERDICT: NO\nThe error is clear.\n"
-            "CATEGORY: junk   WHY: it is junk.\n")
+            "CATEGORY: junk\nbecause of the value\nWHY: it is junk.\n")
         code, out, err, actions, noes = self.answer(q, answer)
         self.assertEqual((code, out), (0, ""), err)
         self.assertEqual(actions, [approve("Fixture.triple", V(self.t1)),
@@ -1377,24 +1384,135 @@ class AstraAnswerTests(AstraCase):
                                    write("Fixture.e", norm(written))])
         self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "junk", "why": "it is junk."}])
 
-    def test_a_field_is_one_line_with_its_name_in_capitals(self):
-        q = self.ask("Fixture.triple_triple", "Fixture.triple_two", "Fixture.triple")
+    def test_a_reason_as_the_guide_wraps_it_is_read_whole(self):
+        # The example reason of AI-REVIEWS.md ("Reasons for a no"), wrapped where the guide wraps it.
+        q = self.ask("Fixture.triple_two")
+        lines = ["`TauCeti.Foo.bar` states `∑ i ∈ range n, i = n * (n + 1) / 2`, but `range n` stops at `n - 1`, "
+                 "so the", "right side should be `n * (n - 1) / 2`: at `n = 1` the sum is `0` and the right side `1`."]
+        shapes = {"on the line of the category": ["CATEGORY: object   WHY: " + lines[0], lines[1]],
+                  "on a line of its own": ["CATEGORY: object", "WHY: " + lines[0], lines[1]]}
+        for how, rows in shapes.items():
+            with self.subTest(how=how):
+                answer = f"### 1. Fixture.triple_two\nCELLS: {error_cells('object')}\nVERDICT: NO\n" + "\n".join(rows)
+                code, out, err, actions, noes = self.answer(q, answer + "\n")
+                self.assertEqual((code, out), (0, ""), err)
+                self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "object", "why": " ".join(lines)}])
+
+    def test_a_note_and_a_dropped_reason_that_wrap_are_read_whole(self):
+        q = self.ask("Fixture.triple_triple")
         edited = review(says="triple twice, better")
         answer = (
-            f"### 1. Fixture.triple_triple\nCELLS: {ANSWER_CELLS}\nVERDICT: EDIT\nNOTE: adds the hypothesis\n"
-            "  the statement skips\nDROPPED: `x` — renamed\nin Tau Ceti\n"
-            f"~~~review\n{edited}~~~\n\n"
-            f"### 2. Fixture.triple_two\nCELLS: {error_cells('junk')}\nVERDICT: NO\n"
-            "CATEGORY: junk   WHY: the first line\nand the second\n\n"
-            f"### 3. Fixture.triple\nCELLS: {ANSWER_CELLS}\nverdict: APPROVE\n")
+            f"### 1. Fixture.triple_triple\nCELLS: {ANSWER_CELLS}\nVERDICT: EDIT\n"
+            "NOTE: adds the hypothesis `0 < n`, which the statement has,\n"
+            "  and the text skips; and names the test by its new name\n"
+            "DROPPED: `Fixture.triple_triple_one` — renamed in Tau Ceti\n"
+            "to `Fixture.triple_triple_uno`\n"
+            "DROPPED: Check *test_one* --\n"
+            "no longer in the roadmap\n"
+            f"~~~review\n{edited}~~~\n")
         code, out, err, actions, noes = self.answer(q, answer)
-        self.assertEqual(code, 0, err)
-        # What goes on over the next line is not the field's: not a note's, a dropped item's, or a reason's.
-        self.assertEqual(actions, [edit("Fixture.triple_triple", V(self.t2), norm(edited), "adds the hypothesis",
-                                        [{"item": "`x`", "why": "renamed"}])])
-        self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "junk", "why": "the first line"}])
-        # And a name in lower case is no field: the verdict of the third is missing, and it says so.
-        self.assertEqual(out.splitlines(), ["not filed: Fixture.triple: no VERDICT line: APPROVE, EDIT, WRITE or NO"])
+        self.assertEqual((code, out), (0, ""), err)
+        note = ("adds the hypothesis `0 < n`, which the statement has, and the text skips; "
+                "and names the test by its new name")
+        dropped = [{"item": "`Fixture.triple_triple_one`", "why": "renamed in Tau Ceti to `Fixture.triple_triple_uno`"},
+                   {"item": "Check *test_one*", "why": "no longer in the roadmap"}]
+        self.assertEqual(actions, [edit("Fixture.triple_triple", V(self.t2), norm(edited), note, dropped)])
+
+    def test_a_list_under_a_reason_joins_it_only_without_a_blank_line(self):
+        q = self.ask("Fixture.triple_two")
+        head = "The statement is wrong in two ways:"
+        bullets = ["- it says `<` where the source has `≤`", "- it drops `0 < n`"]
+        # What the rule gives: the lines directly under the reason, markers and all, joined by a space.
+        for gap, want in (("", " ".join([head, *bullets])), ("\n", head)):
+            with self.subTest(blank_line=bool(gap)):
+                no = item(1, "Fixture.triple_two", "NO", f"CATEGORY: object   WHY: {head}", cells=error_cells("object"))
+                code, out, err, actions, noes = self.answer(q, no.rstrip("\n") + "\n" + gap + "\n".join(bullets) + "\n")
+                self.assertEqual((code, out), (0, ""), err)
+                self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "object", "why": want}])
+
+    def test_a_reason_ends_at_a_blank_line_a_rule_a_fence_a_heading_or_a_version_line(self):
+        q = self.ask("Fixture.triple_two")
+        why = "`triple 2` is the junk value."
+        no = lambda *rows: (f"### 1. Fixture.triple_two\nCELLS: {error_cells('junk')}\nVERDICT: NO\n"
+                            + "\n".join(rows) + "\n")
+        stops = ("", "   ", "---", "***", "___", "```", "```markdown", "~~~", "# Notes", "### Summary",
+                 "Version: ffffffffffffffff", "version: ffffffffffffffff")
+        for stop in stops:  # what comes after one of these is not the reason, directly under it or not
+            with self.subTest(stop=stop):
+                code, out, err, actions, noes = self.answer(q, no(f"CATEGORY: junk   WHY: {why}", stop, "And so on."))
+                self.assertEqual((code, out), (0, ""), err)
+                self.assertEqual(noes, [{"decl": "Fixture.triple_two", "category": "junk", "why": why}])
+        for more in ("Note: it is so.", "Why: it is silent.", "- a point", "> a quote", "#not-a-heading",
+                     "Versions: many", "NOTES: plural", "  indented"):  # and these go on with it
+            with self.subTest(more=more):
+                code, out, err, actions, noes = self.answer(q, no(f"CATEGORY: junk   WHY: {why}", more))
+                self.assertEqual((code, out), (0, ""), err)
+                self.assertEqual([n["why"] for n in noes], [f"{why} {more.strip()}"])
+        # An echoed Version line between two lines of a reason ends it, and what follows is left out.
+        code, out, err, actions, noes = self.answer(
+            q, no("CATEGORY: junk   WHY: first part", "Version: ffffffffffffffff", "second part"))
+        self.assertEqual([n["why"] for n in noes], ["first part"])
+        # A verdict, the cells and a category are one line each: what is under them is left out.
+        code, out, err, actions, noes = self.answer(q, no("CATEGORY: junk", "because of the value", "WHY: it is junk."))
+        self.assertEqual((code, out, [n["why"] for n in noes]), (0, "", ["it is junk."]))
+
+    def test_a_name_in_lower_case_is_no_field_and_the_reason_says_so(self):
+        q = self.ask("Fixture.triple", "Fixture.triple_two", "Fixture.triple_triple", "Fixture.e")
+        edited = review(says="triple twice, better")
+        answer = (
+            f"### 1. Fixture.triple\nCELLS: {ANSWER_CELLS}\nVerdict: APPROVE\n\n"
+            f"### 2. Fixture.triple_two\ncells: {error_cells('junk')}\nVERDICT: NO\nCATEGORY: junk   WHY: x\n\n"
+            f"### 3. Fixture.triple_triple\nCELLS: {ANSWER_CELLS}\nVERDICT: EDIT\nNote: says more\n"
+            f"~~~review\n{edited}~~~\n\n"
+            f"### 4. Fixture.e\ncells: {ANSWER_CELLS}\n")
+        code, out, err, actions, noes = self.answer(q, answer)
+        self.assertEqual((code, actions, noes), (0, [], []))
+        want = [r"^not filed: Fixture\.triple: no VERDICT line \(field names must be in capitals; "
+                r"this item has `Verdict: APPROVE`\): APPROVE, EDIT, WRITE or NO$",
+                r"^not filed: Fixture\.triple_two: no CELLS line \(field names must be in capitals; "
+                r"this item has `cells: object=",
+                r"^not filed: Fixture\.triple_triple: an EDIT needs a NOTE \(field names must be in capitals; "
+                r"this item has `Note: says more`\)$",
+                # The cells are said to be in lower case; the verdict is not there in any case, and no hint is made up.
+                r"^not filed: Fixture\.e: no CELLS line \(field names must be in capitals; this item has `cells: "
+                r".*; no VERDICT line: APPROVE, EDIT, WRITE or NO$"]
+        self.assertEqual(len(out.splitlines()), 4, out)
+        for line, pattern in zip(out.splitlines(), want):
+            self.assertRegex(line, pattern)
+
+    def test_lines_after_a_blank_line_change_nothing(self):
+        # A blank line ends a field, so what comes after one is left out, wherever in an answer it comes and whatever
+        # it is: prose, a field's name in another case, a rule, a fence, a heading, a Version line. (Not inside a
+        # review's block; and not a `~~~` line after one, which the block runs on to: it ends at the item's last.)
+        q = self.ask("Fixture.triple", "Fixture.triple_triple", "Fixture.e", "Fixture.triple_two")
+        edited, written = review(says="triple twice, better"), review(says="e")
+        plain = (item(1, "Fixture.triple", "APPROVE")
+                 + item(2, "Fixture.triple_triple", "EDIT", "NOTE: says more", "DROPPED: `x` — gone", block=edited)
+                 + item(3, "Fixture.e", "WRITE", block=written)
+                 + item(4, "Fixture.triple_two", "NO", "CATEGORY: junk   WHY: it is junk.", cells=error_cells("junk")))
+        base = self.answer(q, plain)
+        self.assertEqual((base[0], base[1]), (0, ""))
+        self.assertEqual(len(base[3]), 3)
+        rows, inside, opened = plain.split("\n"), set(), None
+        for i, row in enumerate(rows):  # the lines of a review's text, and its fences
+            if row == "~~~review":
+                opened = i
+            elif row == "~~~" and opened is not None:
+                inside.update(range(opened + 1, i + 1))
+                opened = None
+        asides = ["I hope this helps.", "Note: it is so for every n.", "Why this matters: it is silent.", "---", "```",
+                  "### Summary", "Version: ffffffffffffffff", "> a quote", "- a point", "cells: lower case",
+                  "verdict: approve"]
+        places = [k for k in range(len(rows) + 1) if k not in inside]
+        for i in places:  # all of them together, at every place of the answer
+            with self.subTest(at=i):
+                self.assertEqual(self.answer(q, "\n".join(rows[:i] + [""] + asides + rows[i:])), base)
+        # and each alone, where a line could be run on: after a verdict, a note, a dropped reason and a reason
+        runs_on = ("VERDICT", "NOTE", "DROPPED", "CATEGORY")
+        for i in (k + 1 for k, row in enumerate(rows) if row.split(":")[0] in runs_on):
+            for aside in asides:
+                with self.subTest(after=rows[i - 1][:20], aside=aside):
+                    self.assertEqual(self.answer(q, "\n".join(rows[:i] + ["", aside] + rows[i:])), base)
 
     def test_answer_may_come_in_a_code_block_with_rules_between_its_items(self):
         q = self.ask("Fixture.triple", "Fixture.e")
