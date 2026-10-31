@@ -340,7 +340,8 @@ An audit: `{"file": "<path>", "matrix": {"(file)": {…}, "<declaration>": {"cor
   decision or more than one, a text without its three parts.
 
 `python3 "$RT" reviews` writes `reviews/<owner>.jsonl`, a line for each state it gives an audit's
-declarations, which the line names (`"decls"`): `"posted"`, with the site's commit; `"re-review"`;
+declarations, which the line names (`"decls"`): `"posted"`, with the site's commit and the URLs of
+the comments `post` made (`"comments"`); `"re-review"`;
 `"left out"`, for a name the site has no page for; or `"dropped"`, with why. `python3 "$RT" yes`
 adds a `"re-reviewed"` line with the new decisions (`"yes"`), which `reviews` posts next.
 
@@ -364,9 +365,10 @@ covers stands, of any severity, unless it was refuted:
 and against which no CRITICAL finding of any kind stands. With such a finding standing, that check
 of the site fails, a failed check has no cell, and the red team files no no: the declaration
 waits until its fix lands and a later audit finds it clean. A finding counts whether it is the
-finding's own category or the cell that cites it (one defect, one finding). Findings in `reuse`,
-`proof`, `api` and `hygiene` say nothing about whether it is correctly stated, and do not hold it
-back. The script refuses a yes that breaks this.
+finding's own category or the cell that cites it (one defect, one finding). The `correctness`
+cell itself must be `ok`: one that cites a finding holds the declaration back, refuted or not.
+Findings in `reuse`, `proof`, `api` and `hygiene` say nothing about whether it is correctly
+stated, and do not hold it back. The script refuses a yes that breaks this.
 
 **One standard review per declaration.** The site shows one text for each declaration, its
 standard review: a reading guide for a mathematician who does not read Lean, in three parts.
@@ -402,19 +404,26 @@ the process and its rules. For each declaration it reviews (R6 step 8), the audi
 ```
 
 **When they go up.** The site follows Tau Ceti's `docgen` commit, up to a day behind `main`.
-`python3 "$RT" reviews` posts an audit's reviews, as one comment on the site's bulk issue, once
-the site shows the file exactly as audited (the same blob): at once if the file has not changed
-since the site's commit, otherwise in the round after the site catches up. If the file changes
-again before then, they are dropped, since they describe a version the site never shows. Names
-the site has no page for (`private` declarations, anonymous instances) are left out. Nothing
-here limits the hunt: any file on `main` is audited, on the site or not.
+`python3 "$RT" reviews` posts an audit's reviews, in one or more comments on the site's bulk issue
+(`post` splits a long batch), once the site shows the file exactly as audited (the same blob): at
+once if the file has not changed since the site's commit, otherwise in the round after the site
+catches up. If the file changes again before then, they are dropped, since they describe a version
+the site never shows. Names the site has no page for (`private` declarations, anonymous instances)
+are left out. `reviews` prints the URL of each comment it posts, for the round's line, and keeps
+them in the ledger: the intake can still refuse a line, and its reply to the comment on issue #1
+says why. Nothing here limits the hunt: any file on `main` is audited, on the site or not.
 
 **Re-review.** `reviews` reads each standard review again before it posts. A decision made
-against a text that has changed since, or a write where there is a text now, is not posted (nor
-is one the site would refuse, which would hold back the whole comment): the ledger marks it
-`re-review`, and `reviews` names it in every round until R0 re-reviews it. R0 reads the current
-text, checks it against the audit, and records a new decision with
-`python3 "$RT" yes @update.json`, `{"file": "<path>", "yes": {"<full name>": {…}}}`, which the
-script checks as it checks an audit's. It takes only the declarations `reviews` names to
-re-review, and refuses one already posted, or one the audit has no review of. An audit recorded
-before 0.82.0, whose yeses were reasons, is dropped: the site takes standard-review approvals now.
+against a text that has changed since, or a write where there is a text now, is not posted; nor is
+one `post` would refuse, which would hold back the file's other reviews: a field it lacks, or what
+the site's check says of its text against the text the site shows (an edit that changes nothing,
+or that leaves out a reference, test or Check without a `dropped` entry that names it; a test that
+is no declaration). The ledger marks it `re-review`, and `reviews` names it, with why, in every
+round until R0 re-reviews it. R0 reads the current text, checks it against the audit, and records
+a new decision with `python3 "$RT" yes @update.json`,
+`{"file": "<path>", "model": "<your exact model>", "yes": {"<full name>": {…}}}`, which the script
+checks as it checks an audit's. The reviews go up under the audit's model, so it refuses an update
+whose `"model"` is not the audit's, exactly as the harness names it. It takes only the declarations
+`reviews` names to re-review, and refuses one already posted, or one the audit has no review of. An
+audit recorded before 0.82.0, whose yeses were reasons, is dropped: the site takes standard-review
+approvals now.

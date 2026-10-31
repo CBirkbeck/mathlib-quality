@@ -757,13 +757,22 @@ read Lean. The site's
 [AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) is
 the process, and its rules are yours.
 
+**Once, at the start of this section**, in a Bash call of its own, clear an earlier run's review
+files and fetch the helper. Never run it again in this run: it would delete this run's drafts, or
+a question Astra is answering.
+
 ```bash
-# The helper at origin/main, like this file; the plugin's copy if the clone is missing.
-RS=/tmp/voyager-review_site.py
-git -C ~/Documents/GitHub/mathlib-quality show origin/main:scripts/review_site.py > "$RS" 2>/dev/null ||
-  cp "${CLAUDE_PLUGIN_ROOT:-$(ls -d ~/.claude/plugins/cache/*/mathlib-quality/*/ | sort -V | tail -1)}/scripts/review_site.py" "$RS"
 rm -f /tmp/voyager-review-*                  # the review files of an earlier run (not the helper)
-python3 "$RS" guide                          # what a standard review is: its three parts and its rules
+# The helper at origin/main, like this file; the plugin's copy if the clone is missing.
+git -C ~/Documents/GitHub/mathlib-quality show origin/main:scripts/review_site.py > /tmp/voyager-review_site.py 2>/dev/null ||
+  cp "${CLAUDE_PLUGIN_ROOT:-$(ls -d ~/.claude/plugins/cache/*/mathlib-quality/*/ | sort -V | tail -1)}/scripts/review_site.py" /tmp/voyager-review_site.py
+```
+
+Every later command calls the helper by its path, `/tmp/voyager-review_site.py`, as below: a shell
+variable does not last from one Bash call to the next.
+
+```bash
+python3 /tmp/voyager-review_site.py guide    # what a standard review is: its three parts and its rules
 ```
 
 Every file of these reviews has an absolute path under `/tmp`, as below: `gate.sh` may run `codex
@@ -784,31 +793,32 @@ writing or editing a text approves it. An error is what AI-REVIEWS.md calls one:
 checks failing, or a roadmap Check that fails or has `sorry`. The one Voyager meets most is a
 statement that claims more or other than it proves (the full named theorem for a special case,
 one direction or one part, an extra hypothesis, a different object or convention), which fails
-`object`, `generality` or `naming`. The no's reasons say what is wrong, where it fails or which
-source it disagrees with, and the Lean names involved; its category is the check that fails, or
-`other`. A no that an open no already makes can say just that (`as #N`), and anything more.
+`object`, `convention`, `generality` or `naming`. The no's reasons say what is wrong, where it
+fails or which source it disagrees with, and the Lean names involved; its category is the check
+that fails, or `other`. A no that an open no already makes can say just that (`as #N`), and
+anything more.
 
-**Then the standard review.** Read each with `python3 "$RS" standard <names>`: its text and
-version, who approved it, and the noes still open (an open no may name an error your review must
-answer).
-- **None yet:** write one, following `python3 "$RS" guide`. Your full-statement comparison has
-  what its first part needs. You may draft them in subagents, ten declarations each, giving each
-  the comparison and the Lean source; a draft cites only references from that comparison, the
-  docstring or the roadmap. Check every draft against the Lean before it goes in: writing it
-  approves it.
+**Then the standard review.** Read each with `python3 /tmp/voyager-review_site.py standard <names>`:
+its text and version, who approved it, and the noes still open (an open no may name an error your
+review must answer).
+- **None yet:** write one, following `python3 /tmp/voyager-review_site.py guide`. Your
+  full-statement comparison has what its first part needs. You may draft them in subagents, ten
+  declarations each, giving each the comparison and the Lean source; a draft cites only
+  references from that comparison, the docstring or the roadmap. Check every draft against the
+  Lean before it goes in: writing it approves it.
 - **One there:** approve it if it is right and complete; edit it if something is missing, wrong or
   unclear (a hypothesis it skips, the source you compared it with, a subtlety it misses), never
   just to reword it.
 
 **Post your actions.** Write them to `/tmp/voyager-review-voyager.jsonl`, an action a line
-(`python3 "$RS" --help` gives the three, `approve`, `write` and `edit`; build the lines with
-`json.dumps`, since a text holds newlines), then post them, and each no with its reasons in
-`/tmp/voyager-review-why.md`:
+(`python3 /tmp/voyager-review_site.py --help` gives the three, `approve`, `write` and `edit`; build
+the lines with `json.dumps`, since a text holds newlines), then post them, and each no with its
+reasons in `/tmp/voyager-review-why.md`:
 
 ```bash
-python3 "$RS" post /tmp/voyager-review-voyager.jsonl --agent "Voyager, <your exact model>" --commit <docgen sha> \
-  --note "Checked in Voyager's full-statement test for the update of <date>: <link to the post>."
-python3 "$RS" no /tmp/voyager-review-why.md --agent "Voyager, <your exact model>" --decl <name> \
+python3 /tmp/voyager-review_site.py post /tmp/voyager-review-voyager.jsonl --agent "Voyager, <your exact model>" \
+  --commit <docgen sha> --note "Checked in Voyager's full-statement test for the update of <date>: <link to the post>."
+python3 /tmp/voyager-review_site.py no /tmp/voyager-review-why.md --agent "Voyager, <your exact model>" --decl <name> \
   --commit <docgen sha> --category <axis>
 ```
 
@@ -817,8 +827,12 @@ python3 "$RS" no /tmp/voyager-review-why.md --agent "Voyager, <your exact model>
   refuses: the site shows it beside each approval.
 - `post` checks the whole file against the site first, and posts nothing if any action is wrong (a
   name the site has no page for, a version that is not the one it shows, cells that are not all
-  eight, a text without its three parts), with the reasons. Fix those lines, or take them out and
-  name them in the run log, and post again. Each no is its own issue.
+  eight, a text without its three parts, a write where the site shows a review, an edit that
+  changes nothing or leaves out a reference, test or Check without a `dropped` entry, a test that
+  is no declaration), with the reasons. Fix those lines, or take them out and name them in the run
+  log, and post again. Each no is its own issue.
+- `post` prints the URL of each comment it posts: name them in the run log. The intake can still
+  refuse a line; its reply to the comment on issue #1 says why.
 
 **Astra's review.** Astra cannot open files, so `astra-question` gives it each declaration's Lean
 at the site's commit, the statements it rests on, and its standard review: your draft where you
@@ -829,16 +843,16 @@ as one argument, which Linux caps at 131,072 bytes. If `astra-question` warns th
 too long, split it again.
 
 ```bash
-python3 "$RS" astra-question <at most 8 names> --tauceti <the TauCeti clone> \
+python3 /tmp/voyager-review_site.py astra-question <at most 8 names> --tauceti <the TauCeti clone> \
   --drafts /tmp/voyager-review-voyager.jsonl --out /tmp/voyager-review-q-<k>.txt
 ~/.claude3/voyager/gate.sh ask /tmp/voyager-review-q-<k>.txt /tmp/voyager-review-a-<k>.md
                                                   # GATE_SERVED_BY=…, GATE_PENDING or GATE_UNAVAILABLE
-python3 "$RS" astra-answer /tmp/voyager-review-a-<k>.md --question /tmp/voyager-review-q-<k>.txt \
+python3 /tmp/voyager-review_site.py astra-answer /tmp/voyager-review-a-<k>.md --question /tmp/voyager-review-q-<k>.txt \
   --out /tmp/voyager-review-actions-<k>.jsonl --noes /tmp/voyager-review-noes-<k>.jsonl
-python3 "$RS" post /tmp/voyager-review-actions-<k>.jsonl --drafts /tmp/voyager-review-voyager.jsonl \
+python3 /tmp/voyager-review_site.py post /tmp/voyager-review-actions-<k>.jsonl --drafts /tmp/voyager-review-voyager.jsonl \
   --agent "<Astra's agent>" --commit <docgen sha> --note "Asked by Voyager for the update of <date>: <link to the post>."
-python3 "$RS" no /tmp/voyager-review-why.md --agent "<Astra's agent>" --decl <decl> --commit <docgen sha> \
-  --category <category>
+python3 /tmp/voyager-review_site.py no /tmp/voyager-review-why.md --agent "<Astra's agent>" --decl <decl> \
+  --commit <docgen sha> --category <category>
 ```
 
 - **`--drafts` only after your own `post` succeeded.** Give it, to `astra-question` and to Astra's
@@ -860,6 +874,13 @@ python3 "$RS" no /tmp/voyager-review-why.md --agent "<Astra's agent>" --decl <de
   never filed as an approval.
 - File a no for each line of `/tmp/voyager-review-noes-<k>.jsonl` (`{"decl", "category", "why"}`),
   under Astra's agent: its `why` goes in `/tmp/voyager-review-why.md`.
+- **Astra's lines and noes are filed exactly as `astra-answer` wrote them.** If `post` refuses some
+  of Astra's actions, take the refused lines out of `/tmp/voyager-review-actions-<k>.jsonl`, name
+  them in the run log with `post`'s reasons, and post the rest. Never change a version, a cell, a
+  text or a reason, and never post your own judgement under Astra's agent: a stale version means
+  Astra reviewed an older text, so leave that declaration for the next run.
+- Name in the run log the URL of each comment Astra's `post` prints, as for yours: the intake can
+  still refuse a line, and its reply on issue #1 says why.
 - Skip a `post` whose actions file is empty: it refuses one.
 
 **Order and failure.** All of this comes after the post and the state DM. A failure here never

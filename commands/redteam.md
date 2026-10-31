@@ -137,13 +137,18 @@ close), `python3 "$RT" tally`, and `python3 "$RT" reviews`, which posts the revi
 site can now take (R6 step 10; it never stops the round).
 
 **Re-review** each declaration `reviews` names to re-review: its standard review changed after
-your audit decided on it, or someone wrote one where you meant to write the first. Its file is as
-you audited it, so the Lean review stands; what needs reviewing is the text. Read it
+your audit decided on it, someone wrote one where you meant to write the first, or its entry is
+one `post` would refuse (`reviews` says why: a field it lacks, or what the site's check says of
+its text against the text the site shows, such as an edit that changes nothing or leaves out a
+reference without saying why, or a test that is no declaration). Its file is as you audited it,
+so the Lean review stands; what needs reviewing is the text. Read it
 (`python3 "$RS" standard --json <full names>`), check it against your audit as R6 step 8 does, and
 record a new decision for each, in step 8's shape, with `python3 "$RT" yes @update.json`:
-`{"file": "<path>", "yes": {"<full name>": {"cells": {…}, "approve": "<version>"}}}`. The script
-checks it as it checks an audit, and takes only the declarations `reviews` names to re-review:
-it refuses one already posted, or one the audit has no review of. The next `reviews` posts it.
+`{"file": "<path>", "model": "<your exact model>", "yes": {"<full name>": {"cells": {…}, "approve": "<version>"}}}`.
+The reviews go up under the audit's model, so only that model re-reviews them: the script refuses
+an update whose `"model"` is not the audit's, exactly as the harness names it. It checks the
+update as it checks an audit, and takes only the declarations `reviews` names to re-review: it
+refuses one already posted, or one the audit has no review of. The next `reviews` posts it.
 
 **Parked PRs** are left alone by R1–R4 and not counted against the cap: one labelled
 `review-budget-spent`, or whose findings are all `refuted` or `needs-human`. Name each in
@@ -292,15 +297,20 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
    shape and record each hit as `suspected` in its own file — those files are hunted next.
 8. **Review on the site.** The Tau Ceti review site asks one question of each declaration: is
    it correctly stated? The audit has answered it, and the red team never says no there: what
-   it finds wrong it fixes (R5). So it reviews a declaration only when no finding that one of
-   the site's eight checks covers stands against it: no `correctness` finding (the site's
-   `object`, `convention`, `edge-cases`, `junk`, `vacuous` and `choice`), no `generality`
-   finding (`generality`), and no `naming` or `docs` finding (`naming`), of any severity, unless
-   it was refuted; and no CRITICAL finding of any kind. With one standing, that check of the
-   site fails, and a failed check has no cell: the declaration waits until its fix lands and a
-   later audit finds it clean. Findings in `reuse`, `proof`, `api` and `hygiene` do not hold it
-   back. Never review anything a red-team PR wrote or restated, since the red team does not
-   review its own work. For each declaration it reviews, record two things (reference section 7):
+   it finds wrong it fixes (R5). So it reviews a declaration only when
+   - its `correctness` cell is `ok`: one that cites a finding holds it back, refuted or not;
+   - no other finding that one of the site's eight checks covers stands against it, of any
+     severity (a finding stands unless it was refuted): none in `correctness` (the site's
+     `object`, `convention`, `edge-cases`, `junk`, `vacuous` and `choice`), `generality`
+     (`generality`), or `naming` or `docs` (`naming`), whether that is the finding's own category
+     or the column whose cell cites it;
+   - and no CRITICAL finding of any kind stands against it.
+
+   With one standing, that check of the site fails, and a failed check has no cell: the
+   declaration waits until its fix lands and a later audit finds it clean. Findings in `reuse`,
+   `proof`, `api` and `hygiene` do not hold it back. Never review anything a red-team PR wrote or
+   restated, since the red team does not review its own work. For each declaration it reviews,
+   record two things (reference section 7):
    - **The site's eight cells**: `object`, `convention`, `edge-cases`, `junk`, `vacuous`,
      `choice`, `generality`, `naming`, each `checked`, or `na` where the check cannot fail.
      They are the site's checks, not your eight categories ([AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) step 3
@@ -321,18 +331,20 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
    `{"<full name>": {"cells": {…}, "approve": "<version>"}}`, or `"write": "<text>"`, or
    `"edit": "<parent version>"` with its `"note"`, `"dropped"` and `"text"`
    (`python3 "$RT" audit @audit.json`). **The script refuses a win without compiled evidence and
-   an Astra verdict, an audit with any declaration or category missing, a yes where a
-   correctness check failed or over a finding that a site check covers (step 8), and a yes the
-   site would refuse: cells not all eight, no decision or more than one, a text without its
+   an Astra verdict, an audit with any declaration or category missing, a yes whose
+   `correctness` cell is not `ok` or over a finding that a site check covers (step 8), and a yes
+   the site would refuse: cells not all eight, no decision or more than one, a text without its
    three parts.** A refusal means a step was skipped: do it.
-10. **Post the reviews**: `python3 "$RT" reviews`. They go up as one comment on the site's bulk
-   issue once the site shows the file exactly as you audited it. The site follows Tau Ceti's
-   `docgen` commit, up to a day behind `main`, so a file added or changed since then waits,
-   and R0 posts it in the round after the site catches up; if the file changes again first,
-   its reviews are dropped. Each goes up only against the text it was decided on: if the
-   standard review has changed since, or someone has written one where you wrote the first, it
-   waits for R0's re-review. The site never limits the hunt: audit any file on `main`, whether
-   or not the site has it yet.
+10. **Post the reviews**: `python3 "$RT" reviews`. They go up in one or more comments on the
+   site's bulk issue (`post` splits a long batch) once the site shows the file exactly as you
+   audited it. The site follows Tau Ceti's `docgen` commit, up to a day behind `main`, so a file
+   added or changed since then waits, and R0 posts it in the round after the site catches up; if
+   the file changes again first, its reviews are dropped. Each goes up only against the text it
+   was decided on: if the standard review has changed since, someone has written one where you
+   wrote the first, or `post` would refuse it, it waits for R0's re-review. `reviews` prints the
+   URL of each comment it posts: name them in the round's line. The intake can still refuse a
+   line; its reply to the comment on issue #1 says why. The site never limits the hunt: audit
+   any file on `main`, whether or not the site has it yet.
 11. **Release the claim.**
 
 ## Severity, wins and losses
