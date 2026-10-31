@@ -335,8 +335,9 @@ An audit: `{"file": "<path>", "matrix": {"(file)": {…}, "<declaration>": {"cor
   `GPT-6 Astra`; the script refuses a family such as `Opus` or `GPT-6`, since the site shows the model
   beside each approval), and the reviews for the review site, `{"<full name>": {"cells": {…},
   "approve" | "write" | "edit": …}}` (section 7). The script refuses a yes for a declaration whose
-  correctness cell is not `ok`, or against which a CRITICAL finding stands, and one the site would
-  refuse: cells not all eight, no decision or more than one, a text without its three parts.
+  correctness cell is not `ok`, or against which a CRITICAL finding stands, or a finding that one of
+  the site's checks covers (section 7), and one the site would refuse: cells not all eight, no
+  decision or more than one, a text without its three parts.
 
 `python3 "$RT" reviews` writes `reviews/<owner>.jsonl`, a line for each state it gives an audit's
 declarations, which the line names (`"decls"`): `"posted"`, with the site's commit; `"re-review"`;
@@ -351,16 +352,34 @@ declaration, and the red team records the answer there as its AI reviews (R6 ste
 **It never says no**: what it finds wrong it fixes (R5), and the fix landing changes the
 declaration, so any earlier review of it goes stale by itself.
 
+**Which declarations.** Only those against which no finding that one of the site's eight checks
+covers stands, of any severity, unless it was refuted:
+
+| the audit's findings in | the site's checks that cover them |
+|---|---|
+| `correctness` | `object`, `convention`, `edge-cases`, `junk`, `vacuous`, `choice` |
+| `generality` | `generality` |
+| `naming`, `docs` | `naming` |
+
+and against which no CRITICAL finding of any kind stands. With such a finding standing, that check
+of the site fails, a failed check has no cell, and the red team files no no: the declaration
+waits until its fix lands and a later audit finds it clean. A finding counts whether it is the
+finding's own category or the cell that cites it (one defect, one finding). Findings in `reuse`,
+`proof`, `api` and `hygiene` say nothing about whether it is correctly stated, and do not hold it
+back. The script refuses a yes that breaks this.
+
 **One standard review per declaration.** The site shows one text for each declaration, its
 standard review: a reading guide for a mathematician who does not read Lean, in three parts.
 AI agents approve it, edit it, or write the first one, and leave no reasons of their own.
-`python3 "$RS" guide` prints what the text must be; the site's AI-REVIEWS.md has the process and
-its rules. For each declaration it reviews (R6 step 8), the audit records:
+`python3 "$RS" guide` prints what the text must be; the site's
+[AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) has
+the process and its rules. For each declaration it reviews (R6 step 8), the audit records:
 
 - **the cells**: the site's eight checks, `object`, `convention`, `edge-cases`, `junk`,
   `vacuous`, `choice`, `generality` and `naming`, each `"checked"`, or `"na"` where the check
   cannot fail. The approval shows them on the site. Mark each from what the audit examined
-  (AI-REVIEWS.md step 3 says what each asks); they are not the audit's categories renamed;
+  ([AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) step 3 says what each asks);
+  they are not the audit's categories renamed;
 - **one decision**, against the text `python3 "$RS" standard --json <full names>` shows now:
   `"approve"`, its version; `"edit"`, that version as the parent, with a `"note"` on what the
   edit adds or changes, `"dropped"` (each reference, test or Check of the text it leaves out,
@@ -393,8 +412,9 @@ here limits the hunt: any file on `main` is audited, on the site or not.
 **Re-review.** `reviews` reads each standard review again before it posts. A decision made
 against a text that has changed since, or a write where there is a text now, is not posted (nor
 is one the site would refuse, which would hold back the whole comment): the ledger marks it
-`re-review`, and `reviews` names it in every round until R0 re-reviews it. R0
-reads the current text, checks it against the audit, and records a new decision with
+`re-review`, and `reviews` names it in every round until R0 re-reviews it. R0 reads the current
+text, checks it against the audit, and records a new decision with
 `python3 "$RT" yes @update.json`, `{"file": "<path>", "yes": {"<full name>": {…}}}`, which the
-script checks as it checks an audit's. An audit recorded before 0.82.0, whose yeses were reasons,
-is dropped: the site takes standard-review approvals now.
+script checks as it checks an audit's. It takes only the declarations `reviews` names to
+re-review, and refuses one already posted, or one the audit has no review of. An audit recorded
+before 0.82.0, whose yeses were reasons, is dropped: the site takes standard-review approvals now.

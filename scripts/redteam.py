@@ -13,7 +13,8 @@
   reviews   post this agent's reviews on the Tau Ceti review site once the site shows each
             file as it was audited; drop those whose file changed first, and name for a
             re-review those whose standard review has changed since they were decided
-  yes       record a re-review: new decisions for the yes of this agent's audit of a file
+  yes       record a re-review: new decisions for the declarations of this agent's audit
+            of a file that `reviews` names to re-review
   whoami    this agent's id: its PRs carry it, so each agent tends and counts only its own
   astra     ask gpt-6-astra through the Codex CLI, for machines without the chatgpt-math MCP
   tally     the scoreboard: wins, losses, landed fixes, coverage, recurring patterns
@@ -66,6 +67,13 @@ ENTRY_KEYS = {"approve": {"cells", "approve"}, "write": {"cells", "write"},
               "edit": {"cells", "edit", "note", "dropped", "text"}}
 #: Why `reviews` drops the yeses of an audit recorded before 0.82.0, which were reasons.
 OLD_FORM = "the site takes standard-review approvals now"
+#: The audit's categories whose findings one of the site's eight checks covers, and the checks: while such a finding
+#: stands against a declaration that check fails, and the red team leaves no no, so the declaration gets no review.
+COVERED = {"correctness": "object, convention, edge-cases, junk, vacuous and choice", "generality": "generality",
+           "naming": "naming", "docs": "naming"}
+#: Why `yes` takes no new decision for a declaration of the audit that is not waiting for a re-review, by its state.
+NOT_WAITING = {"posted": "its review was posted already", "left out": "the site has no page for it",
+               "dropped": "its review was dropped", None: "its decision waits to be posted, not for a re-review"}
 
 MODS = r"(?:(?:private|protected|public|noncomputable|partial|unsafe|nonrec|scoped|local)\s+)*"
 ATTRS = r"(?:@\[[^\]]*\]\s*)*"
@@ -465,9 +473,9 @@ def cmd_audit(a):
 
 def yes_problems(row, matrix, known):
     """An audit's yeses (R6 step 8): {full name: the site's eight cells and one decision on the declaration's standard
-    review}, each for a declaration of the matrix whose correctness checks passed and against which no CRITICAL finding
-    stands, and each one that `review_site.py post` takes (`entry_problems`); and the model that audited, which names
-    the reviewer."""
+    review}, each for a declaration of the matrix whose correctness checks passed, against which no CRITICAL finding
+    stands, nor any finding one of the site's checks covers (COVERED), and each one that `review_site.py post` takes
+    (`entry_problems`); and the model that audited, which names the reviewer. A finding stands unless it was refuted."""
     yes, bad = row.get("yes") or {}, []
     if not isinstance(yes, dict):
         return ["'yes' maps each full name to the site's eight cells and one decision on its standard review"]
@@ -486,6 +494,18 @@ def yes_problems(row, matrix, known):
         elif any((known.get(i) or {}).get("severity") == "CRITICAL" and known[i].get("status") != "refuted"
                  for v in cells.values() for i in cell_ids(v) or []):
             bad.append("yes for %s, which a CRITICAL finding stands against" % name)
+        else:
+            covered = {}  # the findings standing against it that a check of the site covers, and that check
+            for column, v in cells.items():
+                for i in cell_ids(v) or []:
+                    f = known.get(i) or {}
+                    check = COVERED.get(f.get("category")) or COVERED.get(column)
+                    if check and f.get("status") != "refuted":
+                        covered[i] = check
+            if covered:
+                bad.append("yes for %s, against which %s stands: the site checks for that (%s), so it gets no review "
+                           "until its fix lands and a later audit finds it clean"
+                           % (name, ", ".join(sorted(covered)), "; ".join(sorted(set(covered.values())))))
         if " " in name.strip():
             bad.append("yes for %s: give its full name" % name)
         bad += ["yes for %s: %s" % (name, p) for p in entry_problems(name, entry)]
@@ -702,7 +722,8 @@ def cmd_reviews(a):
 
 def cmd_yes(a):
     """New decisions for the yes of this agent's newest audit of a file, after a re-review (R0): `reviews` posts them
-    once the site shows the file as audited. They are checked as the audit's are."""
+    once the site shows the file as audited. Each is for a declaration `reviews` holds for a re-review, and they are
+    checked as the audit's are."""
     d = ledger_dir()
     pull(d)
     owner = owner_id(a.repo)
@@ -717,7 +738,16 @@ def cmd_yes(a):
     au = newest_audits(d, owner).get(row["file"])
     if au is None:
         die("no audit of %s by this agent (%s): a re-review replaces decisions of an audit" % (row["file"], owner), 1)
-    bad = yes_problems({"yes": row["yes"], "model": au.get("model")}, au.get("matrix") or {}, findings(d))
+    rows = [x for x in read_jsonl(d, "reviews") if x.get("owner") == owner and (x.get("file"), x.get("main")) == (
+        au["file"], au["main"])]
+    _, states = yes_states(au, rows)
+    bad = []
+    for n in row["yes"] if isinstance(row["yes"], dict) else []:
+        if states.get(n) != "re-review":
+            why = (NOT_WAITING.get(states[n], "its state is %s" % states[n]) if n in states
+                   else "the audit of %s has no review of it" % au["file"])
+            bad.append("%s: %s; `yes` takes only a declaration `reviews` names to re-review" % (n, why))
+    bad += yes_problems({"yes": row["yes"], "model": au.get("model")}, au.get("matrix") or {}, findings(d))
     if bad:
         die("re-review of %s not recorded (%d problems):\n  - %s" % (row["file"], len(bad), "\n  - ".join(bad[:60])), 1)
     append(d, "reviews", owner, {"file": au["file"], "main": au["main"], "state": "re-reviewed", "yes": row["yes"],
@@ -867,7 +897,7 @@ def main():
     au.add_argument("--ref", default="origin/main")
     sub.add_parser("sync", help="mark findings landed or rejected once their PRs merge or close")
     sub.add_parser("reviews", help="post this agent's reviews on the review site where it shows the file as audited")
-    y = sub.add_parser("yes", help="record a re-review: new decisions for the yes of this agent's audit of a file")
+    y = sub.add_parser("yes", help="record a re-review: new decisions for declarations `reviews` names to re-review")
     y.add_argument("json", help='{"file": <path>, "yes": {<full name>: <decision>}} as JSON, or @path to a JSON file')
     sub.add_parser("whoami", help="print this agent's id (kept in <checkout>/.mathlib-quality/redteam-owner)")
     q = sub.add_parser("astra", help="ask gpt-6-astra through the Codex CLI; prints the answer")

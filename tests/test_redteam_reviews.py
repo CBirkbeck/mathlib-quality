@@ -312,6 +312,55 @@ class YesTests(Case):
                 self.assertNotEqual(redteam.yes_problems(row, matrix, known), [])
         self.assertEqual(redteam.yes_problems({"model": MODEL, "yes": {"TauCeti.Foo.four": fine}}, matrix, known), [])
 
+    def test_no_review_over_a_finding_a_site_check_covers(self):
+        # The site's checks cover the audit's correctness findings (object ... choice), its generality findings
+        # (generality), and its naming and docs findings (naming). With one standing that check fails, a failed check
+        # has no cell, and the red team leaves no no: the declaration gets no review until a later audit finds it clean.
+        fine = {"cells": CELLS, "approve": "dd83c85a488e22c8"}
+
+        def finding(category, status, severity="MINOR"):
+            return {"id": "RT-1", "category": category, "severity": severity, "status": status}
+
+        cases = {  # what: (the column of the matrix that cites it, the finding, whether the review is refused)
+            "a generality finding": ("generality", finding("generality", "confirmed"), True),
+            "a MAJOR generality finding in a PR": ("generality", finding("generality", "pr-open", "MAJOR"), True),
+            "a naming finding": ("naming", finding("naming", "confirmed"), True),
+            "a docs finding": ("docs", finding("docs", "confirmed"), True),
+            "a suspected docs finding": ("docs", finding("docs", "suspected"), True),
+            "a naming finding whose fix landed": ("naming", finding("naming", "landed"), True),
+            "a correctness finding another check cites": ("api", finding("correctness", "confirmed"), True),
+            "a reuse finding the naming check cites": ("naming", finding("reuse", "confirmed", "MAJOR"), True),
+            "a refuted generality finding": ("generality", finding("generality", "refuted"), False),
+            "a reuse finding": ("reuse", finding("reuse", "confirmed", "MAJOR"), False),
+            "a proof finding": ("proof", finding("proof", "confirmed"), False),
+            "an api finding": ("api", finding("api", "confirmed"), False),
+            "a hygiene finding": ("hygiene", finding("hygiene", "confirmed", "NIT"), False),
+        }
+        for what, (column, f, refused) in cases.items():
+            with self.subTest(what):
+                matrix = {**MATRIX, "TauCeti.Foo.one": {**MATRIX["TauCeti.Foo.one"], column: "F:RT-1"}}
+                problems = redteam.yes_problems({"model": MODEL, "yes": {"TauCeti.Foo.one": fine}}, matrix,
+                                                {"RT-1": f})
+                self.assertEqual(problems != [], refused, problems)
+                self.assertTrue(all("TauCeti.Foo.one" in p for p in problems), problems)
+
+    def test_the_audit_refuses_a_review_over_a_finding_of_the_ledger(self):
+        f = {"id": "RT-20261031-a1b2c3", "file": FILE, "decl": "TauCeti.Foo.two", "category": "generality",
+             "severity": "MINOR", "status": "confirmed", "claim": "the hypothesis `h` is never used",
+             "pattern": "redundant-hypothesis", "rubric": "generality"}
+        code, out, err = self.cli("finding", self.json_file(f, "finding.json"))
+        self.assertEqual(code, 0, err)
+        matrix = {**MATRIX, "TauCeti.Foo.two": {**MATRIX["TauCeti.Foo.two"], "generality": "F:" + f["id"]}}
+        fine = {"cells": CELLS, "approve": "dd83c85a488e22c8"}
+        code, out, err = self.cli("audit", self.json_file({"file": FILE, "matrix": matrix, "model": MODEL,
+                                                           "yes": {"TauCeti.Foo.two": fine}}), "--ref", self.c2)
+        self.assertEqual(code, 1)
+        self.assertIn("TauCeti.Foo.two", err)
+        self.assertEqual(self.rows("audits"), [])
+        code, out, err = self.cli("audit", self.json_file({"file": FILE, "matrix": matrix, "model": MODEL,
+                                                           "yes": {"TauCeti.Foo.one": fine}}), "--ref", self.c2)
+        self.assertEqual(code, 0, err)
+
     def test_the_audit_refuses_a_yes_it_could_not_post(self):
         for yes in ({"TauCeti.Foo.one": "Correctly stated."},
                     {"TauCeti.Foo.one": {"cells": {a: s for a, s in CELLS.items() if a != "naming"},
@@ -482,8 +531,35 @@ class ReReviewTests(Case):
         self.assertEqual((code, len(self.posts)), (0, 1))
         self.assertIn("TauCeti.Foo.four", out)
 
+    def test_yes_takes_only_declarations_waiting_for_a_re_review(self):
+        self.audit({"TauCeti.Foo.one": {"cells": CELLS, "approve": STALE},
+                    "TauCeti.Foo.three": {"cells": CELLS, "approve": self.version("TauCeti.Foo.three")}})
+
+        def update(name):
+            return self.json_file({"file": FILE, "yes": {name: {"cells": CELLS, "approve": self.version(name)}}})
+
+        # Before `reviews` has looked, nothing waits for a re-review.
+        code, out, err = self.cli("yes", update("TauCeti.Foo.one"))
+        self.assertEqual(code, 1, err)
+        self.assertIn("TauCeti.Foo.one", err)
+        self.cli("reviews")  # one now waits for a re-review, and three is posted
+        rows = self.rows()
+        for name, why in (("TauCeti.Foo.three", "posted"),  # posted already
+                          ("TauCeti.Foo.four", "TauCeti.Foo.four"),  # audited, with no review in the audit
+                          ("TauCeti.Foo.five", "TauCeti.Foo.five")):  # not in the audit at all
+            with self.subTest(name):
+                code, out, err = self.cli("yes", self.json_file({"file": FILE, "yes": {
+                    name: {"cells": CELLS, "approve": "dd83c85a488e22c8"}}}))
+                self.assertEqual(code, 1, err)
+                self.assertIn(why, err)
+                self.assertEqual(self.rows(), rows)
+        code, out, err = self.cli("yes", update("TauCeti.Foo.one"))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(self.rows()), len(rows) + 1)
+
     def test_yes_command_refuses_what_it_could_not_post(self):
         self.audit({"TauCeti.Foo.one": {"cells": CELLS, "approve": STALE}})
+        self.cli("reviews")  # it waits for a re-review
         before = self.rows()
         fine = {"cells": CELLS, "approve": self.version("TauCeti.Foo.one")}
         without_junk = {a: s for a, s in CELLS.items() if a != "junk"}

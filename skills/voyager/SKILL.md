@@ -157,7 +157,8 @@ general-purpose agent with:
 
 The agent needs the Zulip env vars, an authenticated `gh`, and the npm `codex` CLI on PATH
 (the significance gate runs through it, not through an MCP — see §4). Give it `Bash`, `Read`,
-`Grep`, `Glob`. It does **not** need write access to any repository — Voyager never commits
+`Grep`, `Glob`, and `Agent` for the drafting subagents of §8. It does **not** need write access to
+any repository — Voyager never commits
 anything. Its reviews (§8), and Astra's, are comments and issues on the review site, which any
 signed-in `gh` can make.
 
@@ -761,8 +762,12 @@ the process, and its rules are yours.
 RS=/tmp/voyager-review_site.py
 git -C ~/Documents/GitHub/mathlib-quality show origin/main:scripts/review_site.py > "$RS" 2>/dev/null ||
   cp "${CLAUDE_PLUGIN_ROOT:-$(ls -d ~/.claude/plugins/cache/*/mathlib-quality/*/ | sort -V | tail -1)}/scripts/review_site.py" "$RS"
+rm -f /tmp/voyager-review-*                  # the review files of an earlier run (not the helper)
 python3 "$RS" guide                          # what a standard review is: its three parts and its rules
 ```
+
+Every file of these reviews has an absolute path under `/tmp`, as below: `gate.sh` may run `codex
+exec` from another directory, where a relative path would name another file.
 
 **What to cover.** Every candidate whose statement you compared, announced or not: a correctly
 labelled special case is reviewed too, though it gets no bullet. Nothing for a candidate dropped
@@ -773,12 +778,15 @@ for anything you did not read at the window's commit.
 read its standard review: the statement, a definition's value, and the statements of what it
 rests on. Run the eight checks of AI-REVIEWS.md step 3, `object`, `convention`, `edge-cases`,
 `junk`, `vacuous`, `choice`, `generality` and `naming`, and give each a cell: `checked`, or `na`
-where it cannot fail. **On an error, file a no and approve nothing**, not even a text of your own,
-since writing or editing a text approves it. An error is a statement that claims more or other
-than it proves: the full named theorem for a special case, one direction or one part, an extra
-hypothesis, a different object or convention. Its `why.md` says what is claimed, what is stated,
-and the source you compared it with; its category is the check that fails, or `other`. A no that
-an open no already makes can say just that (`as #N`), and anything more.
+where it cannot fail. Run the roadmap's Checks of the target it formalises too, if it lists any
+(step 4). **On an error, file a no and approve nothing**, not even a text of your own, since
+writing or editing a text approves it. An error is what AI-REVIEWS.md calls one: any of the eight
+checks failing, or a roadmap Check that fails or has `sorry`. The one Voyager meets most is a
+statement that claims more or other than it proves (the full named theorem for a special case,
+one direction or one part, an extra hypothesis, a different object or convention), which fails
+`object`, `generality` or `naming`. The no's reasons say what is wrong, where it fails or which
+source it disagrees with, and the Lean names involved; its category is the check that fails, or
+`other`. A no that an open no already makes can say just that (`as #N`), and anything more.
 
 **Then the standard review.** Read each with `python3 "$RS" standard <names>`: its text and
 version, who approved it, and the noes still open (an open no may name an error your review must
@@ -792,14 +800,16 @@ answer).
   unclear (a hypothesis it skips, the source you compared it with, a subtlety it misses), never
   just to reword it.
 
-**Post your actions.** Write them to `voyager.jsonl`, an action a line (`python3 "$RS" --help`
-gives the three, `approve`, `write` and `edit`; build the lines with `json.dumps`, since a text
-holds newlines), then post them:
+**Post your actions.** Write them to `/tmp/voyager-review-voyager.jsonl`, an action a line
+(`python3 "$RS" --help` gives the three, `approve`, `write` and `edit`; build the lines with
+`json.dumps`, since a text holds newlines), then post them, and each no with its reasons in
+`/tmp/voyager-review-why.md`:
 
 ```bash
-python3 "$RS" post voyager.jsonl --agent "Voyager, <your exact model>" --commit <docgen sha> \
+python3 "$RS" post /tmp/voyager-review-voyager.jsonl --agent "Voyager, <your exact model>" --commit <docgen sha> \
   --note "Checked in Voyager's full-statement test for the update of <date>: <link to the post>."
-python3 "$RS" no why.md --agent "Voyager, <your exact model>" --decl <name> --commit <docgen sha> --category <axis>
+python3 "$RS" no /tmp/voyager-review-why.md --agent "Voyager, <your exact model>" --decl <name> \
+  --commit <docgen sha> --category <axis>
 ```
 
 - `<your exact model>` is the model you run as, exactly as your harness names it
@@ -819,14 +829,24 @@ as one argument, which Linux caps at 131,072 bytes. If `astra-question` warns th
 too long, split it again.
 
 ```bash
-python3 "$RS" astra-question <at most 8 names> --tauceti <the TauCeti clone> --drafts voyager.jsonl --out q-<k>.txt
-~/.claude3/voyager/gate.sh ask q-<k>.txt a-<k>.md        # GATE_SERVED_BY=…, GATE_PENDING or GATE_UNAVAILABLE
-python3 "$RS" astra-answer a-<k>.md --question q-<k>.txt --out astra-<k>.jsonl --noes noes-<k>.jsonl
-python3 "$RS" post astra-<k>.jsonl --drafts voyager.jsonl --agent "<Astra's agent>" --commit <docgen sha> \
-  --note "Asked by Voyager for the update of <date>: <link to the post>."
-python3 "$RS" no why.md --agent "<Astra's agent>" --decl <decl> --commit <docgen sha> --category <category>
+python3 "$RS" astra-question <at most 8 names> --tauceti <the TauCeti clone> \
+  --drafts /tmp/voyager-review-voyager.jsonl --out /tmp/voyager-review-q-<k>.txt
+~/.claude3/voyager/gate.sh ask /tmp/voyager-review-q-<k>.txt /tmp/voyager-review-a-<k>.md
+                                                  # GATE_SERVED_BY=…, GATE_PENDING or GATE_UNAVAILABLE
+python3 "$RS" astra-answer /tmp/voyager-review-a-<k>.md --question /tmp/voyager-review-q-<k>.txt \
+  --out /tmp/voyager-review-actions-<k>.jsonl --noes /tmp/voyager-review-noes-<k>.jsonl
+python3 "$RS" post /tmp/voyager-review-actions-<k>.jsonl --drafts /tmp/voyager-review-voyager.jsonl \
+  --agent "<Astra's agent>" --commit <docgen sha> --note "Asked by Voyager for the update of <date>: <link to the post>."
+python3 "$RS" no /tmp/voyager-review-why.md --agent "<Astra's agent>" --decl <decl> --commit <docgen sha> \
+  --category <category>
 ```
 
+- **`--drafts` only after your own `post` succeeded.** Give it, to `astra-question` and to Astra's
+  `post`, only when the `post` of `/tmp/voyager-review-voyager.jsonl` above succeeded and the file
+  exists. Otherwise leave it out of both: Astra then reviews the texts the site shows, and its
+  approvals name their versions, not those of drafts the site never received.
+- `astra-question` refuses the whole question, with the reasons, if a name is not one of Tau Ceti's
+  own with its source on the site: leave those names out, name them in the run log, and ask again.
 - **After the significance gate, one question at a time.** `gate.sh ask` stops a running call when
   asked a different question, so never ask while the gate call (§4) or another review question is
   pending. On `GATE_PENDING`, run the same `ask` again, as in §4 (Bash timeout 600000, never
@@ -838,8 +858,8 @@ python3 "$RS" no why.md --agent "<Astra's agent>" --decl <decl> --commit <docgen
 - `astra-answer` files only what it can read without guessing, and prints each item it leaves out
   as `not filed: <name>: <why>`: name them in the run log. An answer without the eight cells is
   never filed as an approval.
-- File a no for each line of `noes-<k>.jsonl` (`{"decl", "category", "why"}`), under Astra's agent:
-  its `why` goes in `why.md`.
+- File a no for each line of `/tmp/voyager-review-noes-<k>.jsonl` (`{"decl", "category", "why"}`),
+  under Astra's agent: its `why` goes in `/tmp/voyager-review-why.md`.
 - Skip a `post` whose actions file is empty: it refuses one.
 
 **Order and failure.** All of this comes after the post and the state DM. A failure here never

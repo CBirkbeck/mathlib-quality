@@ -142,7 +142,8 @@ you audited it, so the Lean review stands; what needs reviewing is the text. Rea
 (`python3 "$RS" standard --json <full names>`), check it against your audit as R6 step 8 does, and
 record a new decision for each, in step 8's shape, with `python3 "$RT" yes @update.json`:
 `{"file": "<path>", "yes": {"<full name>": {"cells": {…}, "approve": "<version>"}}}`. The script
-checks it as it checks an audit, and the next `reviews` posts it.
+checks it as it checks an audit, and takes only the declarations `reviews` names to re-review:
+it refuses one already posted, or one the audit has no review of. The next `reviews` posts it.
 
 **Parked PRs** are left alone by R1–R4 and not counted against the cap: one labelled
 `review-budget-spent`, or whose findings are all `refuted` or `needs-human`. Name each in
@@ -291,22 +292,27 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
    shape and record each hit as `suspected` in its own file — those files are hunted next.
 8. **Review on the site.** The Tau Ceti review site asks one question of each declaration: is
    it correctly stated? The audit has answered it, and the red team never says no there: what
-   it finds wrong it fixes (R5). It reviews each declaration whose `correctness` cell is `ok`
-   and which has no confirmed CRITICAL finding, and no confirmed MAJOR finding that its name or
-   docstring claims more than it proves or that its assumptions exclude cases they cover; never
-   anything a red-team PR wrote or restated, since the red team does not review its own work.
-   For each, record two things (reference section 7):
+   it finds wrong it fixes (R5). So it reviews a declaration only when no finding that one of
+   the site's eight checks covers stands against it: no `correctness` finding (the site's
+   `object`, `convention`, `edge-cases`, `junk`, `vacuous` and `choice`), no `generality`
+   finding (`generality`), and no `naming` or `docs` finding (`naming`), of any severity, unless
+   it was refuted; and no CRITICAL finding of any kind. With one standing, that check of the
+   site fails, and a failed check has no cell: the declaration waits until its fix lands and a
+   later audit finds it clean. Findings in `reuse`, `proof`, `api` and `hygiene` do not hold it
+   back. Never review anything a red-team PR wrote or restated, since the red team does not
+   review its own work. For each declaration it reviews, record two things (reference section 7):
    - **The site's eight cells**: `object`, `convention`, `edge-cases`, `junk`, `vacuous`,
      `choice`, `generality`, `naming`, each `checked`, or `na` where the check cannot fail.
-     They are the site's checks, not your eight categories (AI-REVIEWS.md step 3 says what each
-     asks): mark each from what your audit examined, never by renaming a category.
+     They are the site's checks, not your eight categories ([AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) step 3
+     says what each asks): mark each from what your audit examined, never by renaming a category.
    - **One decision on its standard review**, the one text the site shows for it, a reading
      guide for a mathematician who does not read Lean. Read the text, its version and its open
      noes with `python3 "$RS" standard --json <full names>`; an open no may name an error your
      audit must answer first. **Approve** it if it is right and complete; **edit** it if
      something is missing, wrong or unclear, never just to reword it; **write** one if there is
      none, as for a declaration new since the site's commit. `python3 "$RS" guide` says what the
-     text is, and the site's AI-REVIEWS.md has the rules, which are yours.
+     text is, and the site's [AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) has the
+     rules, which are yours.
 
    Approve even when others have: each approval is one more review of the Lean.
 9. **Record** with the script: each finding (`python3 "$RT" finding @f.json`), then the audit
@@ -316,8 +322,9 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
    `"edit": "<parent version>"` with its `"note"`, `"dropped"` and `"text"`
    (`python3 "$RT" audit @audit.json`). **The script refuses a win without compiled evidence and
    an Astra verdict, an audit with any declaration or category missing, a yes where a
-   correctness check failed, and a yes the site would refuse: cells not all eight, no decision
-   or more than one, a text without its three parts.** A refusal means a step was skipped: do it.
+   correctness check failed or over a finding that a site check covers (step 8), and a yes the
+   site would refuse: cells not all eight, no decision or more than one, a text without its
+   three parts.** A refusal means a step was skipped: do it.
 10. **Post the reviews**: `python3 "$RT" reviews`. They go up as one comment on the site's bulk
    issue once the site shows the file exactly as you audited it. The site follows Tau Ceti's
    `docgen` commit, up to a day behind `main`, so a file added or changed since then waits,
@@ -355,7 +362,7 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
 | "They are equal by `rfl`, so one can replace the other" | `rfl` shows equal values, not equal speed. If the definition is run, by compiled code or by the kernel, time both and replace it only if the new one is no slower. |
 | "A type ascription makes it clearer" | Write only what the elaborator needs. Delete the ascription and recompile; keep it only if that fails. |
 | "This needs an issue, a roadmap change or a rubric PR" | Out of bounds. Record it `needs-human`; the report carries it to the user. |
-| "It is wrong; leave a no on the review site" | The red team fixes what it finds: a PR (R5), not a no. It reviews on the site only where every correctness check passed. |
+| "It is wrong; leave a no on the review site" | The red team fixes what it finds: a PR (R5), not a no. It reviews on the site only a declaration against which no finding that a site check covers stands. |
 | "Others already approved its standard review; skip it" | Approve too: each approval is one more review of the Lean. Edit only to add what is missing or make it clearer. |
 
 ## Running it continuously
