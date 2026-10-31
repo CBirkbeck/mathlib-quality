@@ -30,10 +30,12 @@ Voyager's full-statement test, the red team's correctness audit (mathlib-quality
   astra-answer ANSWER --question QFILE --out ACTIONS --noes NOES
                              Astra's answer to such a question, as the ACTIONS (below) that `post` takes, approvals,
                              edits and writes, and as NOES, a JSONL of {"decl", "category", "why"}, a no each, for
-                             `no`. The versions are those the question showed, never the answer's. It never guesses: an
-                             item it cannot read, whose cells are not all eight, that has an ERROR cell but is not a
-                             NO, that is not one of the question's (by number and name), or whose lines do not fit
-                             its verdict, is printed as `not filed: NAME: WHY` and left out
+                             `no`. The versions are those the question showed, never the answer's. It reads the
+                             fields of an item (below) and its `~~~review` block, and nothing else: any other line is
+                             left out, and joins no field. It never guesses: an item that lacks a field it needs, whose
+                             cells are not all eight, that has an ERROR cell but is not a NO, that is not one of the
+                             question's (by number and name), or whose fields do not fit its verdict, is printed as
+                             `not filed: NAME: WHY` and left out
   no WHYFILE --agent A       a problem, "not correctly stated", as its own issue, with the reasons
       --decl NAME            in WHYFILE; the site must be at SHA. Prints `issue <number> <url>`
       --commit SHA --category AXIS [--involvement I] [--dry-run]
@@ -58,7 +60,8 @@ that each review is of the version that was checked. A long batch goes in severa
 of at most COMMENT_CAP characters.
 
 Astra answers each item of a question, as the instructions in the question say, with its number and name, the eight
-cells, a verdict, and the lines the verdict takes:
+cells, a verdict, and the fields the verdict takes. A field is one line that starts with its name in capitals, and
+what it says is on that line (`Note:` is prose, and so is the next line):
 
   ### N. NAME
   CELLS: object=checked, convention=checked, ..., choice=n/a, ..., naming=checked   (a cell may be `ERROR: WHY`)
@@ -149,14 +152,12 @@ PARTS = {"BLOCK": f"`{OPEN}` block of the whole text", "NOTE": "NOTE", "DROPPED"
 ARTICLE = {"APPROVE": "an APPROVE", "EDIT": "an EDIT", "WRITE": "a WRITE", "NO": "a NO"}
 #: The heading of an item of an answer, `### 3. Name`, as a question numbers its items (any level of heading, and `3)`).
 ITEM_HEADING = re.compile(r"^ {0,3}#{1,6}[ \t]*(\d+)[ \t]*[.)][ \t]*(.*?)[ \t]*$")
-#: A rule between the items, or the fence of a code block that holds the whole answer: no line of an item.
-RULE = re.compile(r"^(?:-{3,}|\*{3,}|_{3,}|`{3,}[\w+-]*)$")
-#: A line of an item that starts one of its fields; the label may be in bold. A NOTE, a DROPPED line and a WHY go on
-#: over the lines after them.
+#: A line of an item that is one of its fields: the name of the field in capitals (a bullet or bold may go round it),
+#: a colon, and the value, which is the rest of that line. A name in any other case is none: `Note:` is prose.
 FIELD = re.compile(r"^(?:[-*+][ \t]+)?(?:\*\*|__)?(CELLS|VERDICT|NOTE|DROPPED|CATEGORY|WHY)(?:\*\*|__)?[ \t]*:"
-                   r"(?:\*\*|__)?[ \t]*(.*?)[ \t]*$", re.I)
+                   r"(?:\*\*|__)?[ \t]*(.*?)[ \t]*$")
 #: What a CATEGORY line holds: the check, and the WHY if it comes on the same line.
-CATEGORY_LINE = re.compile(r"^([^\s,;]+)[,;]?\s*(?:WHY\s*:\s*(.*))?$", re.I | re.S)
+CATEGORY_LINE = re.compile(r"^([^\s,;]+)[,;]?\s*(?:WHY\s*:\s*(.*))?$")
 #: Where a cell starts in a CELLS line: the name of a check, at the start or after a comma, and `=`.
 CELL_KEY = re.compile(r"(?:^|,)[ \t]*(" + "|".join(AXES[:-1]) + r")[ \t]*=[ \t]*", re.I)
 
@@ -833,8 +834,10 @@ The rules of the format:
 - An APPROVE has nothing after its VERDICT line. An EDIT has its NOTE, any DROPPED lines, and the text; a WRITE has the
   text, and nothing else. The text is in a block that starts with a `~~~review` line and ends with the last `~~~` line
   of the item, in the three parts of the definition below, none empty.
-- Plain text, exactly as shown: no other lines, no bold or other markup on CELLS, VERDICT, NOTE, DROPPED, CATEGORY or
-  WHY, nothing before the first item or after the last.
+- Plain text, exactly as shown. CELLS, VERDICT, NOTE, DROPPED, CATEGORY and WHY are in capitals, with no bold or other
+  markup, and each is one line: all it says is on that line, and the next line is not part of it. Lines that are none
+  of these are not read.
+- Write nothing before your first item. Write nothing after your last item: no summary, no closing remark.
 - If you cannot tell whether a declaration is correctly stated, leave its item out rather than guess.
 
 The site's definition of a standard review follows, then the declarations."""
@@ -1113,56 +1116,45 @@ def parse_cells(value):
 def item_fields(body):
     """What the lines of an item hold, as ({field: [its values]}, the text of its `~~~review` block or None, whether
     it has one, the problems in reading it). The block starts at the first `~~~review` line and ends at the last `~~~`
-    line, as the intake reads a block, so that the text may hold fences of its own."""
+    line, as the intake reads a block, so that the text may hold fences of its own. Outside it a field is a line that
+    starts with its name in capitals, and its value is the rest of that line and no more: every other line is left out
+    (a remark, a rule, a heading, an echoed `Version:`), and joins no field, so that nothing a model says besides its
+    fields can be filed as one's reasons, or lose an item."""
     problems, text = [], None
     opens = [k for k, line in enumerate(body) if line.strip() == OPEN]
     rest = body
     if opens:
         closes = [k for k in range(opens[0] + 1, len(body)) if body[k].strip() == CLOSE]
         if closes:
-            text, rest = "\n".join(body[opens[0] + 1:closes[-1]]), body[:opens[0]] + [""] + body[closes[-1] + 1:]
+            text, rest = "\n".join(body[opens[0] + 1:closes[-1]]), body[:opens[0]] + body[closes[-1] + 1:]
         else:
             rest = body[:opens[0]]
             problems.append(f"the `{OPEN}` block is not closed: it ends at the last line `{CLOSE}`")
-    fields, current = {}, None
+    fields = {}
     for line in rest:
-        s = line.strip()
-        if not s or RULE.match(s):
-            if current == "WHY":  # a reason may run over several paragraphs
-                fields["WHY"][-1] += ("" if s else "\n")
-            else:
-                current = None
-            continue
-        m = FIELD.match(s)
+        m = FIELD.match(line.strip())
         if m is None:
-            if current:
-                fields[current][-1] += ("\n" if current == "WHY" else " ") + s
-            elif not any(p.startswith("cannot read") for p in problems):
-                problems.append(f"cannot read the line `{s[:60]}`")
             continue
-        key, value = m[1].upper(), m[2]
-        if key == "CATEGORY":
-            c = CATEGORY_LINE.match(value)
-            if c is None:
-                problems.append("cannot read the CATEGORY line: it is `CATEGORY: <check>   WHY: <the error>`")
-                current = None
-                continue
-            fields.setdefault("CATEGORY", []).append(bare(c[1]).lower())
-            if c[2] is not None:
-                fields.setdefault("WHY", []).append(c[2])
-            current = "WHY" if c[2] is not None else None
-        else:
+        key, value = m[1], m[2]
+        if key != "CATEGORY":
             fields.setdefault(key, []).append(value)
-            current = key if key in ("NOTE", "DROPPED", "WHY") else None
+            continue
+        c = CATEGORY_LINE.match(value)
+        if c is None:
+            problems.append("cannot read the CATEGORY line: it is `CATEGORY: <check>   WHY: <the error>`")
+            continue
+        fields.setdefault("CATEGORY", []).append(bare(c[1]).lower())
+        if c[2] is not None:
+            fields.setdefault("WHY", []).append(c[2])
     return fields, text, bool(opens), problems
 
 
 def judge_item(name, body, version):
     """What to file for the item ``name`` of an answer, whose lines after its heading are ``body``, when the question
     showed it the review of version ``version`` (None: it showed none): ("action", the row for `post`), ("no", its row
-    for the noes) or ("not filed", why). It files nothing it has to guess: the cells are all eight and none an ERROR but
-    a NO's, the verdict has the lines it takes and no other, and an approval or an edit has a review to approve or
-    edit."""
+    for the noes) or ("not filed", why). It files nothing it has to guess: the fields it needs are there, the cells are
+    all eight and none an ERROR but a NO's, the verdict has the fields it takes and no other, and an approval or an edit
+    has a review to approve or edit. What is no field is not read (`item_fields`)."""
     fields, text, has_block, problems = item_fields(body)
     for key, values in fields.items():
         if len(values) > 1 and key != "DROPPED":
