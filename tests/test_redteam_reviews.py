@@ -389,6 +389,25 @@ class ReviewsTests(Case):
         self.assertEqual(self.cli("reviews")[0], 0)
         self.assertEqual(len(self.rows()), 1)
 
+    def test_an_entry_the_site_would_refuse_waits_for_re_review(self):
+        # One recorded under laxer checks, or a line edited by hand: `post` refuses a whole comment for one such action,
+        # so it waits for a re-review, and the rest of the file goes up.
+        v_one, v_three = self.version("TauCeti.Foo.one"), self.version("TauCeti.Foo.three")
+        self.append("audits", {"file": FILE, "matrix": MATRIX, "model": MODEL,
+                               "yes": {"TauCeti.Foo.one": {"cells": {a: s for a, s in CELLS.items() if a != "junk"},
+                                                           "approve": v_one},
+                                       "TauCeti.Foo.two": {"cells": CELLS},
+                                       "TauCeti.Foo.three": {"cells": CELLS, "approve": v_three}},
+                               "blob": self.git("rev-parse", f"{self.c2}:{FILE}"), "main": self.c2,
+                               "audited_at": "2026-10-31T10:00:00Z", "owner": OWNER, "decls": 4, "findings": []})
+        code, out, err = self.cli("reviews")
+        self.assertEqual(code, 0, err)
+        [post] = self.posts
+        self.assertEqual(post["actions"], [{"approve": "TauCeti.Foo.three", "version": v_three, "cells": CELLS}])
+        self.assertEqual(self.states(), {("posted", "TauCeti.Foo.three"), ("re-review", "TauCeti.Foo.one"),
+                                         ("re-review", "TauCeti.Foo.two")})
+        self.assertIn("junk", out)
+
     def test_rows_written_before_settle_their_audits(self):
         # Under 0.81, a row of the reviews ledger settled the whole audit, and named no declarations.
         self.old_audit({"TauCeti.Foo.one": "Correctly stated."})

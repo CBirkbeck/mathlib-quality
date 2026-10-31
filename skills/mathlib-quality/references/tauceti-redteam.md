@@ -391,8 +391,9 @@ the site has no page for (`private` declarations, anonymous instances) are left 
 here limits the hunt: any file on `main` is audited, on the site or not.
 
 **Re-review.** `reviews` reads each standard review again before it posts. A decision made
-against a text that has changed since, or a write where there is a text now, is not posted: the
-ledger marks it `re-review`, and `reviews` names it in every round until R0 re-reviews it. R0
+against a text that has changed since, or a write where there is a text now, is not posted (nor
+is one the site would refuse, which would hold back the whole comment): the ledger marks it
+`re-review`, and `reviews` names it in every round until R0 re-reviews it. R0
 reads the current text, checks it against the audit, and records a new decision with
 `python3 "$RT" yes @update.json`, `{"file": "<path>", "yes": {"<full name>": {…}}}`, which the
 script checks as it checks an audit's. An audit recorded before 0.82.0, whose yeses were reasons,

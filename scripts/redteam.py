@@ -603,7 +603,8 @@ def cmd_reviews(a):
     follows Tau Ceti's docgen commit, behind main, so a file added or changed since then waits. If the file changes
     again before the site reaches the audited commit, its yeses are dropped: they were about a version the site never
     shows. Each goes up as it was decided, against the standard review the site shows now: one decided against another
-    text, or a first text where there is one now, is not posted, and waits for a re-review (`yes`)."""
+    text, a first text where there is one now, or one `post` would refuse, is not posted, and waits for a re-review
+    (`yes`)."""
     d = ledger_dir()
     pull(d)
     owner = owner_id(a.repo)
@@ -656,7 +657,8 @@ def cmd_reviews(a):
             if shown.get(n) is None:
                 left.append(n)
                 continue
-            why = stale(e, shown[n].get("version"))
+            # `post` refuses a whole comment for one action it cannot take: one recorded under laxer checks waits too.
+            why = "; ".join(entry_problems(n, e)) or stale(e, shown[n].get("version"))
             if why:
                 redo[n] = why
             else:
