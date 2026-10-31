@@ -34,10 +34,11 @@ problem, is its own issue. ACTIONS is a JSONL file, an action a line:
 naming. `version` and `parent` are 8 to 16 hex digits of the version the site shows now (`standard`), or of the text
 of a draft in DRAFTS, a JSONL of actions posted just before, for a text the site does not show yet. `dropped` says
 why an edit leaves out a reference, test or Check of the text it replaces. `post` refuses, with the reasons on
-stderr and nothing posted: a name the site does not have; cells that are not all eight; a text without its three
-parts in order, or one that the intake would read cut short; a version that is not the site's or a draft's; a
-declaration written or edited twice in the file; an action longer than a comment; and a site not at SHA, so that
-each review is of the version that was checked. A long batch goes in several comments, split between actions, each
+stderr and nothing posted: a declaration the site does not ask its question of (it asks it of Tau Ceti's own, and of
+those outside the library in a module of Mathlib or another package it reviews); cells that are not all eight; a text
+without its three parts in order, or one that the intake would read cut short; a version that is not the site's or a
+draft's; a declaration written or edited twice in the file; an action longer than a comment; and a site not at SHA, so
+that each review is of the version that was checked. A long batch goes in several comments, split between actions, each
 of at most COMMENT_CAP characters.
 
 A is the agent, "TOOL, MODEL[, session S]" ("Voyager, claude-fable-5-1"): the reviews show on the
@@ -135,13 +136,40 @@ def fnv(name, shards):
     return h % shards
 
 
-def on_site(meta, name):
-    """Whether the site has a page for ``name`` as one of Tau Ceti's own declarations."""
+def node_of(meta, name):
+    """The site's row for ``name`` in nodes/<k>.json: [name, kind, flags, module index, ...]. None if it has no such
+    declaration."""
     ids = [r[0] for r in get(f"names/{fnv(name, meta['shards']['names'])}.json") if r[1] == name]
     if not ids:
-        return False
+        return None
     n = meta["shards"]["nodes"]
-    return get(f"nodes/{ids[0] // n}.json")[ids[0] % n][2] & 1 == 1
+    return get(f"nodes/{ids[0] // n}.json")[ids[0] % n]
+
+
+def on_site(meta, name):
+    """Whether the site has a page for ``name`` as one of Tau Ceti's own declarations."""
+    node = node_of(meta, name)
+    return node is not None and node[2] & 1 == 1
+
+
+def why_not_asked(meta, name, modules):
+    """Why the site does not ask its question of ``name``, or "" when it does. It asks it of Tau Ceti's own
+    declarations, and of those outside the library in a module that is one of ``meta.review.outside`` (Mathlib) or
+    under one: the site's `answerable`, in its scripts/site_data.py. ``modules()`` reads its modules.json, which names
+    a declaration's module by the index its node holds (-1: none)."""
+    node = node_of(meta, name)
+    if node is None:
+        return "the site has no page for it"
+    if node[2] & 1:
+        return ""
+    outside = (meta.get("review") or {}).get("outside") or []
+    rows = modules() if outside else []
+    module = rows[node[3]][0] if 0 <= node[3] < len(rows) else ""
+    if module and any(module == p or module.startswith(p + ".") for p in outside):
+        return ""
+    return ("the site has a page for it" + (f", in {module}," if module else ",")
+            + " but asks its question only of Tau Ceti's own declarations"
+            + (f" and those under {', '.join(outside)}" if outside else ""))
 
 
 def at_commit(meta, sha):
@@ -474,22 +502,22 @@ def read_actions(path):
     return out
 
 
-def action_problems(act, site_has, site_version, drafted):
-    """Why ``act`` cannot be posted as it is, as sentences; none when it can. ``site_has(name)`` says whether the site
-    has a page for a declaration, ``site_version(name)`` gives the version of its standard review that the site shows
-    (or None), and ``drafted`` has the versions of the texts in the drafts, by declaration."""
+def action_problems(act, site_reason, site_version, drafted):
+    """Why ``act`` cannot be posted as it is, as sentences; none when it can. ``site_reason(name)`` is why the site does
+    not ask its question of a declaration ("" when it does), ``site_version(name)`` gives the version of its standard
+    review that the site shows (or None), and ``drafted`` has the versions of the drafts' texts, by declaration."""
     kind, name, f = act["kind"], act["decl"], act["fields"]
     if not isinstance(name, str) or not name.strip():
         return [f"`{kind}` names a declaration: give its full name"]
     out = [f"`{x}` is not a field of {kind}, which has {', '.join(sorted(FIELDS[kind]))}"
            for x in f if x not in FIELDS[kind]]
-    on = site_has(name)
-    if not on:
-        out.append("it is not one of Tau Ceti's declarations on the site (`check` says which are)")
+    asked = site_reason(name)
+    if asked:
+        out.append(asked)
     out += cell_problems(f.get("cells"))
     out += body_problems(f.get("text")) if kind != "approve" else []
     out += edit_problems(f) if kind == "edit" else []
-    if on and kind != "write":
+    if not asked and kind != "write":
         field = "version" if kind == "approve" else "parent"
         out += version_problems(field, f.get(field), name, site_version(name), sorted(drafted.get(name, ())))
     return out
@@ -515,12 +543,17 @@ def lines_of(act):
 def check_actions(actions, meta, drafted, head):
     """``actions`` checked against the site: the reasons any cannot be posted, as lines that name the action; and, if
     there are none, the declaration and the lines of each. A comment starts with ``head``."""
-    pages, versions = {}, {}
+    reasons, versions, modules = {}, {}, []
 
-    def site_has(name):
-        if name not in pages:
-            pages[name] = on_site(meta, name)
-        return pages[name]
+    def site_modules():
+        if not modules:
+            modules.extend(get("modules.json"))
+        return modules
+
+    def site_reason(name):
+        if name not in reasons:
+            reasons[name] = why_not_asked(meta, name, site_modules)
+        return reasons[name]
 
     def site_version(name):
         if name not in versions:
@@ -530,7 +563,7 @@ def check_actions(actions, meta, drafted, head):
     problems, chunks, changed = [], [], set()
     for act in actions:
         name = act["decl"] if isinstance(act["decl"], str) else ""
-        why = action_problems(act, site_has, site_version, drafted)
+        why = action_problems(act, site_reason, site_version, drafted)
         if act["kind"] != "approve" and name:
             if name in changed:
                 why.append("a comment changes the review of a declaration once, and this file changes it again")

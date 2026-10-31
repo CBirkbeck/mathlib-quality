@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -136,33 +137,43 @@ def parse_writes(body):
 
 class Site:
     """The data the review site publishes, as `review_site.get` reads it: a few declarations, each with its record
-    views, and the standard reviews the site shows."""
+    views, and the standard reviews the site shows. The library has one module, `Fixture`; a declaration outside it
+    may be in a module of its own (modules.json lists them). ``outside`` is the packages whose declarations the site
+    asks its question of (`meta.review.outside`), or None for a site that does not say. ``reads`` lists what was asked
+    of it."""
     NODES, NAMES, STANDARD = 4, 4, 256
 
-    def __init__(self, commit=COMMIT, standard=True, bulk=1):
-        self.commit, self.standard, self.bulk, self.decls, self.reviews = commit, standard, bulk, [], {}
+    def __init__(self, commit=COMMIT, standard=True, bulk=1, outside=("Mathlib",)):
+        self.commit, self.standard, self.bulk, self.outside = commit, standard, bulk, outside
+        self.decls, self.reviews, self.modules, self.reads = [], {}, ["Fixture"], []
 
-    def add(self, name, review=None, records=(), project=True):
-        self.decls.append((name, project, list(records)))
+    def add(self, name, review=None, records=(), project=True, module=None):
+        if module and module not in self.modules:
+            self.modules.append(module)
+        self.decls.append((name, project, list(records), module))
         if review:
             self.reviews[name] = review
         return self
 
     def get(self, path):
+        self.reads.append(path)
         shards = {"nodes": self.NODES, "names": self.NAMES, **({"standard": self.STANDARD} if self.standard else {})}
         if path == "meta.json":
-            return {"library": {"commit": self.commit}, "shards": shards, "store": {"bulk": self.bulk}}
+            return {"library": {"commit": self.commit}, "shards": shards, "store": {"bulk": self.bulk},
+                    **({} if self.outside is None else {"review": {"outside": list(self.outside)}})}
+        if path == "modules.json":
+            return [[module, "pkg", "", ""] for module in self.modules]
         if path == "upstream.json":
-            return {name: {"records": records} for name, project, records in self.decls if not project}
+            return {name: {"records": records} for name, project, records, _ in self.decls if not project}
         kind, _, rest = path.partition("/")
         k = int(rest.removesuffix(".json")) if rest else -1
         if kind == "names":
-            return [[i, name] for i, (name, _, _) in enumerate(self.decls) if review_site.fnv(name, self.NAMES) == k]
+            return [[i, name] for i, (name, _, _, _) in enumerate(self.decls) if review_site.fnv(name, self.NAMES) == k]
         if kind == "nodes":
-            return [[name, "t", 1 if project else 0, 0 if project else -1]
-                    for name, project, _ in self.decls[k * self.NODES:(k + 1) * self.NODES]]
+            return [[name, "t", 1 if project else 0, 0 if project else self.modules.index(module) if module else -1]
+                    for name, project, _, module in self.decls[k * self.NODES:(k + 1) * self.NODES]]
         if kind == "m":
-            return {"decls": [{"id": i, "records": records} for i, (_, project, records) in enumerate(self.decls)
+            return {"decls": [{"id": i, "records": records} for i, (_, project, records, _) in enumerate(self.decls)
                               if project]}
         if kind == "standard":
             return {name: r for name, r in self.reviews.items() if review_site.fnv(name, self.STANDARD) == k}
@@ -215,6 +226,10 @@ class Case(unittest.TestCase):
     def post(self, *rows, dry=True, extra=(), commit=COMMIT[:12]):
         return self.cli("post", self.jsonl(*rows), "--agent", AGENT, "--commit", commit,
                         *(["--dry-run"] if dry else []), *extra)
+
+    def outside(self, name, module, text=None):
+        """A declaration outside the library, in ``module``, with a standard review of ``text`` unless it has none."""
+        self.site.add(name, entry(text) if text else None, module=module, project=False)
 
 
 class VersionTests(Case):
@@ -584,6 +599,67 @@ class PostTests(Case):
         self.assertIn("Fixture.nope", err)
         self.assertNotIn("(Fixture.a)", err)  # only the action that is wrong is named
 
+    def test_post_takes_the_declarations_outside_the_library_that_the_site_asks_about(self):
+        # Mathlib's, as the site lists its package (meta.review.outside): a module of it, or the package's own.
+        foo, baz = review(says="`Nat.foo` is a successor"), review(says="`Nat.baz` is an order")
+        self.outside("Nat.foo", "Mathlib.Data.Nat.Basic", foo)
+        self.outside("Nat.bar", "Mathlib")
+        self.outside("Nat.baz", "Mathlib.Order.Basic", baz)
+        rows = [approve("Nat.foo", V(foo)), write("Nat.bar", review(says="bar")),
+                edit("Nat.baz", V(baz), review(says="`Nat.baz` is a partial order"), "says which order"),
+                approve("Fixture.a", V(self.a))]
+        self.site.reads.clear()
+        code, out, err = self.post(*rows)
+        self.assertEqual(code, 0, err)
+        for line in (f"Approve: Nat.foo — {V(foo)} — {CELLS_LINE}", f"Write: Nat.bar — {CELLS_LINE}",
+                     f"Edit: Nat.baz — {V(baz)} — {CELLS_LINE} — says which order"):
+            self.assertIn(line, out)
+        self.assertEqual(self.site.reads.count("modules.json"), 1)  # the list of modules is read once
+        code, out, err = self.post(*rows, dry=False)  # and they are posted, not only written
+        self.assertEqual((code, len(self.gh.calls)), (0, 1), err)
+        # Tau Ceti's own declarations do not need the list at all.
+        self.site.reads.clear()
+        self.assertEqual(self.post(approve("Fixture.a", V(self.a)))[0], 0)
+        self.assertNotIn("modules.json", self.site.reads)
+
+    def test_post_refuses_a_declaration_outside_the_library_that_the_site_does_not_ask_about(self):
+        text = review(says="x")
+        self.outside("Nat.a", "Init.Data.Nat.Basic")  # a package the site does not review
+        self.outside("Nat.b", "MathlibExtras.Foo")  # begins like a reviewed package, and is not under it
+        self.outside("Nat.c", None)  # in no module, and so not in the list: the last module there is one it asks about
+        self.outside("Nat.d", "Mathlib.Order.Basic")
+        for name, module in (("Nat.a", "Init.Data.Nat.Basic"), ("Nat.b", "MathlibExtras.Foo"), ("Nat.c", None)):
+            with self.subTest(module=module):
+                err = self.refused(write(name, text))
+                self.assertIn(name, err)
+                self.assertIn("asks its question only of", err)
+                self.assertIn("Mathlib", err)  # what it does ask about
+                if module:
+                    self.assertIn(module, err)  # and where this one is
+        # A declaration the site does not have at all is still told so.
+        self.assertIn("no page", self.refused(write("Nat.nope", text)))
+
+    def test_a_module_index_beyond_the_list_is_no_module(self):
+        self.outside("Nat.e", "Mathlib.Order.Basic")
+        meta = self.site.get("meta.json")
+        with mock.patch.object(review_site, "get", self.site.get):
+            self.assertEqual(review_site.why_not_asked(meta, "Nat.e", lambda: self.site.get("modules.json")), "")
+            short = review_site.why_not_asked(meta, "Nat.e", lambda: [["Fixture", "pkg", "", ""]])  # a list too short
+        self.assertIn("asks its question only of", short)
+
+    def test_post_asks_the_site_which_packages_it_reviews(self):
+        self.outside("Int.x", "Init.Data.Int.Basic")
+        self.outside("Nat.y", "Mathlib.Order.Basic")
+        text = review(says="x")
+        both = {"Int.x", "Nat.y"}
+        for outside, taken in ((["Init.Data"], {"Int.x"}), (["Mathlib"], {"Nat.y"}), (["Mathlib", "Init.Data"], both),
+                               ([], set()), (None, set())):  # None: a site whose meta.json does not say
+            self.site.outside = outside
+            for name in ("Int.x", "Nat.y", "Fixture.b"):
+                with self.subTest(outside=outside, name=name):
+                    code = self.post(write(name, text))[0]
+                    self.assertEqual(code, 0 if name in taken or name == "Fixture.b" else 1)
+
     def test_post_needs_the_site_at_the_commit(self):
         self.assertIn("deadbeef", self.refused(approve("Fixture.a", V(self.a)), commit="deadbeef"))
         code, out, err = self.cli("post", self.jsonl(approve("Fixture.a", V(self.a))), "--agent", AGENT, "--commit", "")
@@ -761,6 +837,17 @@ class OtherCommandsTests(Case):
                                             "MISSING Int"])
         self.assertEqual(self.cli("check", "Fixture.a")[0], 0)
 
+    def test_check_and_no_still_take_only_tau_cetis_own_declarations(self):
+        self.site.add("Nat.foo", entry(review()), module="Mathlib.Data.Nat.Basic", project=False)  # one `post` takes
+        code, out, err = self.cli("check", "Nat.foo")
+        self.assertEqual((code, out.splitlines()[1:]), (1, ["MISSING Nat.foo"]))
+        why = self.dir / "why.md"
+        why.write_text("It is off by one.\n", encoding="utf-8")
+        code, out, err = self.cli("no", str(why), "--agent", AGENT, "--decl", "Nat.foo", "--commit", COMMIT[:12],
+                                  "--category", "object", "--involvement", "outsider")
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("the site has no page for Nat.foo", err)
+
     def test_reviews_says_what_a_record_of_the_standard_review_did(self):
         code, out, err = self.cli("reviews", "Fixture.a", "Fixture.nope", "Int")
         self.assertEqual(code, 0, err)
@@ -843,25 +930,29 @@ class IntakeReadsPostTests(Case):
         dropped = [{"item": "`Fixture.c_one`", "why": "renamed `Fixture.c_uno` — in Tau Ceti"},
                    {"item": "Check *test_one*", "why": "no longer there"}]
         note = "renames the test — and drops a Check"
+        o = review(says="`Nat.o` is a successor, in Mathlib")
         self.site.add("Fixture.a", entry(a)).add("Fixture.b").add("Fixture.c", entry(c))
+        self.outside("Nat.o", "Mathlib.Data.Nat.Basic", o)  # one of Mathlib's, which the site asks about
         code, out, err = self.post(approve("Fixture.a", V(a)[:8].upper()), write("Fixture.b", b_raw),
-                                   edit("Fixture.c", V(c), c2, note, dropped))
+                                   edit("Fixture.c", V(c), c2, note, dropped), approve("Nat.o", V(o)))
         self.assertEqual(code, 0, err)
         comments = self.comments(out)
         self.assertEqual(len(comments), 1)
         # The agent line is the intake's: the same tool, model and session.
         self.assertEqual(self.intake.parse_agent_mark(comments[0]),
                          {"tool": "Voyager", "model": "claude-fable-5-1", "session": "7"})
-        approval, written, edited = self.si.commands(comments[0])
-        self.assertEqual([(x.keyword, x.fields[0]) for x in (approval, written, edited)],
-                         [("Approve", "Fixture.a"), ("Write", "Fixture.b"), ("Edit", "Fixture.c")])
+        approval, written, edited, outside = self.si.commands(comments[0])
+        self.assertEqual([(x.keyword, x.fields[0]) for x in (approval, written, edited, outside)],
+                         [("Approve", "Fixture.a"), ("Write", "Fixture.b"), ("Edit", "Fixture.c"),
+                          ("Approve", "Nat.o")])
         # Each line has the fields of the form the intake gives an agent, and cells that are the rubric's.
-        forms = [self.si.given(x, self.si.FORMS[x.keyword, True]) for x in (approval, written, edited)]
+        forms = [self.si.given(x, self.si.FORMS[x.keyword, True]) for x in (approval, written, edited, outside)]
         self.assertNotIn(None, forms)
         for f in forms:
             self.assertEqual(std.cells(f["cells"], self.rubric.names), (CELLS, ""))
         self.assertEqual(self.si.named(forms[0]["version"], {V(a)}), {V(a)})  # 8 digits, in capitals, name a version
         self.assertEqual(self.si.named(forms[2]["parent"], {V(c)}), {V(c)})
+        self.assertEqual((forms[3]["decl"], self.si.named(forms[3]["version"], {V(o)})), ("Nat.o", {V(o)}))
         # A text reaches the intake whole, and is the version the agent hashed; it passes the intake's check.
         self.assertEqual(written.block, std.normalize(b_raw))
         self.assertEqual(std.version_of(written.block), V(b_raw))
@@ -907,6 +998,27 @@ class IntakeReadsPostTests(Case):
                 self.assertEqual(review_site.fnv(name, shards), self.common.fnv_shard(name, shards))
         self.assertEqual(review_site.RUBRIC, list(self.rubric.names))
         self.assertEqual(tuple(review_site.HEADINGS), std.HEADINGS)
+
+    def test_the_site_asks_about_the_declarations_post_takes(self):
+        try:
+            import site_data
+        except ImportError as e:
+            self.skipTest(f"the site's build needs more of evidence-core ({e})")
+        modules = (None, "", "Mathlib", "Mathlib.Data.Nat.Basic", "MathlibExtras.Foo", "Init.Data",
+                   "Init.Data.Int.Basic", "Init.Prelude", "Fixture.Basic")
+        for outside in (None, [], ["Mathlib"], ["Init.Data"], ["Mathlib", "Init.Data"]):
+            settings = {} if outside is None else {"review_outside": outside}
+            asks = types.SimpleNamespace(inp=types.SimpleNamespace(settings=settings))
+            for project in (True, False):
+                for module in modules:
+                    with self.subTest(outside=outside, project=project, module=module):
+                        site = Site(outside=outside).add("W", module="Mathlib.Order.Basic", project=False)
+                        site.add("X", module=module, project=project)
+                        with mock.patch.object(review_site, "get", site.get):
+                            ours = review_site.why_not_asked(site.get("meta.json"), "X",
+                                                             lambda: site.get("modules.json"))
+                        decl = types.SimpleNamespace(is_project=project, module=module)
+                        self.assertEqual(ours == "", site_data.Site.answerable(asks, decl), ours)
 
     def test_the_local_checks_agree_with_the_sites(self):
         std = self.standard
