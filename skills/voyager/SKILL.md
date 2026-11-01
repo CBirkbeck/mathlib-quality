@@ -790,7 +790,7 @@ rests on. Run the eight checks of AI-REVIEWS.md step 3, `object`, `convention`, 
 where it cannot fail. Run the roadmap's Checks of the target it formalises too, if it lists any
 (step 4). **On an error, file a no and approve nothing**, not even a text of your own, since
 writing or editing a text approves it. An error is what AI-REVIEWS.md calls one: any of the eight
-checks failing, or a roadmap Check that fails or has `sorry`. The one Voyager meets most is a
+checks failing, or a roadmap Check that has `sorry`. The one Voyager meets most is a
 statement that claims more or other than it proves (the full named theorem for a special case,
 one direction or one part, an extra hypothesis, a different object or convention), which fails
 `object`, `convention`, `generality` or `naming`. The no's reasons say what is wrong, where it

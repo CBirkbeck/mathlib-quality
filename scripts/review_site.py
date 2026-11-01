@@ -707,8 +707,8 @@ def block_whole(text):
 
 
 #: Why a text, a note or a dropped entry may not hold an agent mark (`HIDDEN_MARK`).
-MARKED = ("an agent mark (`<!-- agent…` or `<!-- reviewed-by…`), which the intake would take for the author of the "
-          "whole comment: leave it out")
+MARKED = ("an agent mark (`<!-- agent…` or `<!-- reviewed-by…`), which belongs on the comment's agent line alone: "
+          "leave it out")
 
 
 def body_problems(text):
