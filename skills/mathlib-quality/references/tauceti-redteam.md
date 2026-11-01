@@ -333,39 +333,97 @@ An audit: `{"file": "<path>", "matrix": {"(file)": {…}, "<declaration>": {"cor
   and refuses the audit if any is missing.
 - `"model"` and `"yes"`: the model that audited, exactly as its harness names it (`claude-opus-5-5`,
   `GPT-6 Astra`; the script refuses a family such as `Opus` or `GPT-6`, since the site shows the model
-  beside each answer), and the yeses for the review site, `{"<full name>": "<reasons>"}` (section 7). The script refuses a yes for a declaration whose
-  correctness cell is not `ok`, or against which a CRITICAL finding stands.
+  beside each approval), and the reviews for the review site, `{"<full name>": {"cells": {…},
+  "approve" | "write" | "edit": …}}` (section 7). The script refuses a yes for a declaration whose
+  correctness cell is not `ok`, or against which a CRITICAL finding stands, or a finding that one of
+  the site's checks covers (section 7), and one the site would refuse: cells not all eight, no
+  decision or more than one, a text without its three parts.
 
-`python3 "$RT" reviews` writes `reviews/<owner>.jsonl`, one line per audit whose yeses it has
-settled: `"state": "posted"` with the site's commit, or `"dropped"` with why.
+`python3 "$RT" reviews` writes `reviews/<owner>.jsonl`, a line for each state it gives an audit's
+declarations, which the line names (`"decls"`): `"posted"`, with the site's commit and the URLs of
+the comments `post` made (`"comments"`); `"re-review"`;
+`"left out"`, for a name the site has no page for; or `"dropped"`, with why. `python3 "$RT" yes`
+adds a `"re-reviewed"` line with the new decisions (`"yes"`), which `reviews` posts next.
 
-## 7. Yeses on the review site
+## 7. Reviews on the review site
 
 The Tau Ceti review site (`https://cbirkbeck.github.io/tauceti-reviewed-by-test/`) asks one
 question of each declaration: is it correctly stated? A file's audit answers it for every
-declaration, and the red team records the yeses there as its AI reviews (R6 steps 8–10).
+declaration, and the red team records the answer there as its AI reviews (R6 steps 8–10).
 **It never says no**: what it finds wrong it fixes (R5), and the fix landing changes the
-declaration, so any earlier yes for it goes stale by itself.
+declaration, so any earlier review of it goes stale by itself.
 
-**Every yes counts; its reasons say only what is new.** The site shows each answer's reasons
-as the evidence for the declaration, so an agent that repeats what is there only buries it.
-Before writing them, read the answers the declaration already has
-(`python3 "$RS" reviews <full names>`). Say yes regardless, but put in the reasons only what
-they lack: the checks the audit ran, if no one lists them; a second source that states it as
-Lean does; a case the others did not try. When there is nothing to add, the reasons are `""`
-and the yes goes up as the name alone.
+**Which declarations.** Only those against which no finding that one of the site's eight checks
+covers stands, of any severity, unless it was refuted:
+
+| the audit's findings in | the site's checks that cover them |
+|---|---|
+| `correctness` | `object`, `convention`, `edge-cases`, `junk`, `vacuous`, `choice` |
+| `generality` | `generality` |
+| `naming`, `docs` | `naming` |
+
+and against which no CRITICAL finding of any kind stands. With such a finding standing, that check
+of the site fails, a failed check has no cell, and the red team files no no: the declaration
+waits until its fix lands and a later audit finds it clean. A finding counts whether it is the
+finding's own category or the cell that cites it (one defect, one finding). The `correctness`
+cell itself must be `ok`: one that cites a finding holds the declaration back, refuted or not.
+Findings in `reuse`, `proof`, `api` and `hygiene` say nothing about whether it is correctly
+stated, and do not hold it back. The script refuses a yes that breaks this.
+
+**One standard review per declaration.** The site shows one text for each declaration, its
+standard review: a reading guide for a mathematician who does not read Lean, in three parts.
+AI agents approve it, edit it, or write the first one, and leave no reasons of their own.
+`python3 "$RS" guide` prints what the text must be; the site's
+[AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) has
+the process and its rules. For each declaration it reviews (R6 step 8), the audit records:
+
+- **the cells**: the site's eight checks, `object`, `convention`, `edge-cases`, `junk`,
+  `vacuous`, `choice`, `generality` and `naming`, each `"checked"`, or `"na"` where the check
+  cannot fail. The approval shows them on the site. Mark each from what the audit examined
+  ([AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) step 3 says what each asks);
+  they are not the audit's categories renamed;
+- **one decision**, against the text `python3 "$RS" standard --json <full names>` shows now:
+  `"approve"`, its version; `"edit"`, that version as the parent, with a `"note"` on what the
+  edit adds or changes, `"dropped"` (each reference, test or Check of the text it leaves out,
+  and why; usually `[]`) and the whole new `"text"`; or `"write"`, the text, where there is none.
 
 ```json
 "yes": {
-  "TauCeti.Foo.card_dvd": "Correctly stated: for a finite group G acting on a finite set X, the size of each orbit divides |G|, as its docstring says. Red-team audit at 1a2b3c4d5e6f: no False from the hypotheses (simp_all, omega, grind); lean_minimal_hypotheses needs both; specialised at the cyclic group of order 3 acting on itself.",
-  "TauCeti.Foo.card_orbit_mul_card_stabilizer": ""
+  "TauCeti.Foo.card_dvd": {
+    "cells": {"object": "checked", "convention": "checked", "edge-cases": "checked", "junk": "checked",
+              "vacuous": "checked", "choice": "na", "generality": "checked", "naming": "checked"},
+    "approve": "dd83c85a488e22c8"},
+  "TauCeti.Foo.card_orbit_mul_card_stabilizer": {
+    "cells": {"object": "checked", "…": "…"},
+    "write": "## What it says\n…\n\n## References and tests\n- …\n\n## Lean subtleties\nNone.\n"},
+  "TauCeti.Foo.mem_fixedPoints_iff": {
+    "cells": {"object": "checked", "…": "…"},
+    "edit": "5b1e0c2a9f3d4e71", "note": "adds the hypothesis that G is finite, which the text skips",
+    "dropped": [], "text": "## What it says\n…"}
 }
 ```
 
 **When they go up.** The site follows Tau Ceti's `docgen` commit, up to a day behind `main`.
-`python3 "$RT" reviews` posts an audit's yeses, as one comment on the site's bulk issue, once
-the site shows the file exactly as audited (the same blob): at once if the file has not
-changed since the site's commit, otherwise in the round after the site catches up. If the file
-changes again before then, the yeses are dropped, since they describe a version the site never
-shows. Names the site has no page for (`private` declarations, anonymous instances) are left
-out. Nothing here limits the hunt: any file on `main` is audited, on the site or not.
+`python3 "$RT" reviews` posts an audit's reviews, in one or more comments on the site's bulk issue
+(`post` splits a long batch), once the site shows the file exactly as audited (the same blob): at
+once if the file has not changed since the site's commit, otherwise in the round after the site
+catches up. If the file changes again before then, they are dropped, since they describe a version
+the site never shows. Names the site has no page for (`private` declarations, anonymous instances)
+are left out. `reviews` prints the URL of each comment it posts, for the round's line, and keeps
+them in the ledger: the intake can still refuse a line, and its reply to the comment on issue #1
+says why. Nothing here limits the hunt: any file on `main` is audited, on the site or not.
+
+**Re-review.** `reviews` reads each standard review again before it posts. A decision made
+against a text that has changed since, or a write where there is a text now, is not posted; nor is
+one `post` would refuse, which would hold back the file's other reviews: a field it lacks, or what
+the site's check says of its text against the text the site shows (an edit that changes nothing,
+or that leaves out a reference, test or Check without a `dropped` entry that names it; a test that
+is no declaration). The ledger marks it `re-review`, and `reviews` names it, with why, in every
+round until R0 re-reviews it. R0 reads the current text, checks it against the audit, and records
+a new decision with `python3 "$RT" yes @update.json`,
+`{"file": "<path>", "model": "<your exact model>", "yes": {"<full name>": {…}}}`, which the script
+checks as it checks an audit's. The reviews go up under the audit's model, so it refuses an update
+whose `"model"` is not the audit's, exactly as the harness names it. It takes only the declarations
+`reviews` names to re-review, and refuses one already posted, or one the audit has no review of. An
+audit recorded before 0.82.0, whose yeses were reasons, is dropped: the site takes standard-review
+approvals now.

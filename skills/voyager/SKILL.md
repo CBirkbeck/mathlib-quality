@@ -157,9 +157,10 @@ general-purpose agent with:
 
 The agent needs the Zulip env vars, an authenticated `gh`, and the npm `codex` CLI on PATH
 (the significance gate runs through it, not through an MCP — see §4). Give it `Bash`, `Read`,
-`Grep`, `Glob`. It does **not** need write access to any repository — Voyager never commits
-anything. Its reviews (§8) are a comment and issues on the review site, which any signed-in `gh`
-can make.
+`Grep`, `Glob`, and `Agent` for the drafting subagents of §8. It does **not** need write access to
+any repository — Voyager never commits
+anything. Its reviews (§8), and Astra's, are comments and issues on the review site, which any
+signed-in `gh` can make.
 
 **On the schedule** (the intended cadence): twice a day, at 04:03 and 16:03 UK (owner-chosen
 slots; twice daily since 2026-10-10, once at 16:03 before that). Timing is forgiving because
@@ -408,6 +409,12 @@ ends with its turn, which lost the whole run on 2026-09-20.
 (Underneath, `gate.sh ask` runs `codex exec --ephemeral --skip-git-repo-check -s read-only
 -m gpt-6-astra -c model_reasoning_effort="high" -o <answer> "$(cat <question>)" < /dev/null`
 with the chosen `CODEX_HOME`.)
+
+**The review calls of §8 come after this call, never alongside it.** §8 asks Astra, through the
+same `gate.sh ask`, to review the declarations you compared. `gate.sh` runs one call at a time and
+stops a running call when asked a different question, so a review question asked while the gate
+call is pending (after `GATE_WAIT=0`) would kill the gate call. Collect the gate's answer first;
+§8 then asks its questions one at a time, each until it answers.
 
 Operational facts learned the hard way:
 
@@ -739,57 +746,149 @@ number was 0.)
 
 ### 8. Review what you checked
 
-Owner request, 2026-10-24: Voyager leaves a review on the Tau Ceti review site of every result it
-checks. The full-statement test of §2 (the standard name, where it is used, the statement there,
-and whether the Lean statement proves it) is the question the site asks of a declaration — is it
-correctly stated? — so its answer is recorded there, for every candidate whose statement you
-compared, announced or not.
+Owner requests, 2026-10-24 and 2026-10-30: Voyager reviews on the Tau Ceti review site every
+declaration it checks, and asks GPT-6 Astra to review them at the same time. The full-statement
+test of §2 (the standard name, where it is used, the statement there, and whether the Lean
+statement proves it) is the question the site asks of a declaration — is it correctly stated? —
+so its answer is recorded there. An AI agent answers in two steps, in this order: it reviews the
+Lean in depth, looking for errors; then it approves, edits or writes the declaration's **standard
+review**, the one text the site shows for it, a reading guide for a mathematician who does not
+read Lean. The site's
+[AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) is
+the process, and its rules are yours.
 
-- **Yes** when the Lean statement says what its name and docstring say it does. A correctly
-  labelled special case is a yes, though it gets no bullet.
-- **No** when they claim more or other than it proves: the full named theorem for a special case,
-  one direction or one part, an extra hypothesis, a different object or convention. Say what is
-  claimed, what is stated, and the source you compared it with.
-- **Nothing** for a candidate dropped before its statement was compared (a helper, no docstring,
-  the importance test failing first), and for anything you did not read at the window's commit.
-
-Every answer counts, so give it even when the declaration has answers already. Its reasons are
-evidence, and the site shows every answer's, so they say only what the answers already there do
-not (`reviews` below lists them): a second source that states it as Lean does, a check not yet
-listed. With nothing to add, a yes is the name alone; a no that an open no already makes can say
-just that (`as #N`), and anything more.
-
-Do it after the post and the state DM. A failure here never touches them: report it in the run
-log, and the next run does not redo it.
+**Once, at the start of this section**, in a Bash call of its own, clear an earlier run's review
+files and fetch the helper. Never run it again in this run: it would delete this run's drafts, or
+a question Astra is answering.
 
 ```bash
+rm -f /tmp/voyager-review-*                  # the review files of an earlier run (not the helper)
 # The helper at origin/main, like this file; the plugin's copy if the clone is missing.
-RS=/tmp/voyager-review_site.py
-git -C ~/Documents/GitHub/mathlib-quality show origin/main:scripts/review_site.py > "$RS" 2>/dev/null ||
-  cp "${CLAUDE_PLUGIN_ROOT:-$(ls -d ~/.claude/plugins/cache/*/mathlib-quality/*/ | sort -V | tail -1)}/scripts/review_site.py" "$RS"
-python3 "$RS" reviews <name> <name> …      # the answers each already has, and their reasons
-python3 "$RS" yes yes.tsv --agent "Voyager, <your exact model>" --commit <docgen sha> --skip-missing \
-  --note "Checked in Voyager's full-statement test for the update of <date>: <link to the post>."
-python3 "$RS" no why.md --agent "Voyager, <your exact model>" --decl <name> --commit <docgen sha> --category <axis>
+git -C ~/Documents/GitHub/mathlib-quality show origin/main:scripts/review_site.py > /tmp/voyager-review_site.py 2>/dev/null ||
+  cp "${CLAUDE_PLUGIN_ROOT:-$(ls -d ~/.claude/plugins/cache/*/mathlib-quality/*/ | sort -V | tail -1)}/scripts/review_site.py" /tmp/voyager-review_site.py
 ```
 
-- `<your exact model>` is the model you run as, exactly as your harness names it (`claude-opus-5-5`,
-  `GPT-6 Astra`), never its family (`Opus`, `GPT-6`), which the helper refuses: the site shows it
-  beside each answer.
-- `yes.tsv` has a line per declaration, `<name>[<TAB><reasons>]`, the reasons on one line and
-  only what is new: what it states and the source it was compared with, e.g. `Correctly stated:
-  … (Serre, *A Course in Arithmetic*, VII §4); compared in Voyager's full-statement test.` The
-  helper posts them as one comment on the site's bulk issue, marked as Voyager's AI review.
-- Each no is its own issue, and `why.md` holds its reasons: what the name and docstring claim,
-  what the Lean statement says, and the source's statement with its citation. Its category:
-  `object` (a different object), `convention`, `edge-cases`, `junk`, `vacuous`, `generality` (an
-  assumption the name and docstring do not mention), `naming` (the name or docstring claims more
-  than the statement), or `other`.
-- The helper refuses a site not at the window's `docgen` commit, so a review is always of the
-  version you checked. The site was waited for in §6; if it is not there (it never caught up, or
-  has moved on since), skip the reviews this run and say so in the log. `--skip-missing` leaves out a name the site has no page for
-  and prints it: name it in the log too.
-- On the site these are AI reviews, counted apart from people's.
+Every later command calls the helper by its path, `/tmp/voyager-review_site.py`, as below: a shell
+variable does not last from one Bash call to the next.
+
+```bash
+python3 /tmp/voyager-review_site.py guide    # what a standard review is: its three parts and its rules
+```
+
+Every file of these reviews has an absolute path under `/tmp`, as below: `gate.sh` may run `codex
+exec` from another directory, where a relative path would name another file.
+
+**What to cover.** Every candidate whose statement you compared, announced or not: a correctly
+labelled special case is reviewed too, though it gets no bullet. Nothing for a candidate dropped
+before its statement was compared (a helper, no docstring, the importance test failing first), or
+for anything you did not read at the window's commit.
+
+**Review first.** For each, review the Lean in depth at the window's `docgen` commit before you
+read its standard review: the statement, a definition's value, and the statements of what it
+rests on. Run the eight checks of AI-REVIEWS.md step 3, `object`, `convention`, `edge-cases`,
+`junk`, `vacuous`, `choice`, `generality` and `naming`, and give each a cell: `checked`, or `na`
+where it cannot fail. Run the roadmap's Checks of the target it formalises too, if it lists any
+(step 4). **On an error, file a no and approve nothing**, not even a text of your own, since
+writing or editing a text approves it. An error is what AI-REVIEWS.md calls one: any of the eight
+checks failing, or a roadmap Check that has `sorry`. The one Voyager meets most is a
+statement that claims more or other than it proves (the full named theorem for a special case,
+one direction or one part, an extra hypothesis, a different object or convention), which fails
+`object`, `convention`, `generality` or `naming`. The no's reasons say what is wrong, where it
+fails or which source it disagrees with, and the Lean names involved; its category is the check
+that fails, or `other`. A no that an open no already makes can say just that (`as #N`), and
+anything more.
+
+**Then the standard review.** Read each with `python3 /tmp/voyager-review_site.py standard <names>`:
+its text and version, who approved it, and the noes still open (an open no may name an error your
+review must answer).
+- **None yet:** write one, following `python3 /tmp/voyager-review_site.py guide`. Your
+  full-statement comparison has what its first part needs. You may draft them in subagents, ten
+  declarations each, giving each the comparison and the Lean source; a draft cites only
+  references from that comparison, the docstring or the roadmap. Check every draft against the
+  Lean before it goes in: writing it approves it.
+- **One there:** approve it if it is right and complete; edit it if something is missing, wrong or
+  unclear (a hypothesis it skips, the source you compared it with, a subtlety it misses), never
+  just to reword it.
+
+**Post your actions.** Write them to `/tmp/voyager-review-voyager.jsonl`, an action a line
+(`python3 /tmp/voyager-review_site.py --help` gives the three, `approve`, `write` and `edit`; build
+the lines with `json.dumps`, since a text holds newlines), then post them, and each no with its
+reasons in `/tmp/voyager-review-why.md`:
+
+```bash
+python3 /tmp/voyager-review_site.py post /tmp/voyager-review-voyager.jsonl --agent "Voyager, <your exact model>" \
+  --commit <docgen sha> --note "Checked in Voyager's full-statement test for the update of <date>: <link to the post>."
+python3 /tmp/voyager-review_site.py no /tmp/voyager-review-why.md --agent "Voyager, <your exact model>" --decl <name> \
+  --commit <docgen sha> --category <axis>
+```
+
+- `<your exact model>` is the model you run as, exactly as your harness names it
+  (`claude-fable-5-1`, `claude-opus-5-5`), never its family (`Fable`, `Opus`), which the helper
+  refuses: the site shows it beside each approval.
+- `post` checks the whole file against the site first, and posts nothing if any action is wrong (a
+  name the site has no page for, a version that is not the one it shows, cells that are not all
+  eight, a text without its three parts, a write where the site shows a review, an edit that
+  changes nothing or leaves out a reference, test or Check without a `dropped` entry, a test that
+  is no declaration), with the reasons. Fix those lines, or take them out and name them in the run
+  log, and post again. Each no is its own issue.
+- `post` prints the URL of each comment it posts: name them in the run log. The intake can still
+  refuse a line; its reply to the comment on issue #1 says why.
+
+**Astra's review.** Astra cannot open files, so `astra-question` gives it each declaration's Lean
+at the site's commit, the statements it rests on, and its standard review: your draft where you
+wrote or edited one, the site's otherwise. It asks Astra to look for errors first and fill in the
+eight cells, and only then to approve, edit or write. Ask it about the same declarations, at most
+**eight** to a question: the whole proofs go in, and `gate.sh` passes the question to `codex exec`
+as one argument, which Linux caps at 131,072 bytes. If `astra-question` warns that a question is
+too long, split it again.
+
+```bash
+python3 /tmp/voyager-review_site.py astra-question <at most 8 names> --tauceti <the TauCeti clone> \
+  --drafts /tmp/voyager-review-voyager.jsonl --out /tmp/voyager-review-q-<k>.txt
+~/.claude3/voyager/gate.sh ask /tmp/voyager-review-q-<k>.txt /tmp/voyager-review-a-<k>.md
+                                                  # GATE_SERVED_BY=…, GATE_PENDING or GATE_UNAVAILABLE
+python3 /tmp/voyager-review_site.py astra-answer /tmp/voyager-review-a-<k>.md --question /tmp/voyager-review-q-<k>.txt \
+  --out /tmp/voyager-review-actions-<k>.jsonl --noes /tmp/voyager-review-noes-<k>.jsonl
+python3 /tmp/voyager-review_site.py post /tmp/voyager-review-actions-<k>.jsonl --drafts /tmp/voyager-review-voyager.jsonl \
+  --agent "<Astra's agent>" --commit <docgen sha> --note "Asked by Voyager for the update of <date>: <link to the post>."
+python3 /tmp/voyager-review_site.py no /tmp/voyager-review-why.md --agent "<Astra's agent>" --decl <decl> \
+  --commit <docgen sha> --category <category>
+```
+
+- **`--drafts` only after your own `post` succeeded.** Give it, to `astra-question` and to Astra's
+  `post`, only when the `post` of `/tmp/voyager-review-voyager.jsonl` above succeeded and the file
+  exists. Otherwise leave it out of both: Astra then reviews the texts the site shows, and its
+  approvals name their versions, not those of drafts the site never received.
+- `astra-question` refuses the whole question, with the reasons, if a name is not one of Tau Ceti's
+  own with its source on the site: leave those names out, name them in the run log, and ask again.
+- **After the significance gate, one question at a time.** `gate.sh ask` stops a running call when
+  asked a different question, so never ask while the gate call (§4) or another review question is
+  pending. On `GATE_PENDING`, run the same `ask` again, as in §4 (Bash timeout 600000, never
+  detached, never ending your turn), until it answers; only then ask the next. On
+  `GATE_UNAVAILABLE`, skip the rest of Astra's review this run and say so in the log.
+- `<Astra's agent>` is the model that served the call, which `gate.sh ask` prints:
+  `GATE_SERVED_BY=.codex` or `.codex2` is `Codex, GPT-6 Astra`, and `GATE_SERVED_BY=claude-fallback`
+  is `Claude Code, claude-fable-5-1`.
+- `astra-answer` files only what it can read without guessing, and prints each item it leaves out
+  as `not filed: <name>: <why>`: name them in the run log. An answer without the eight cells is
+  never filed as an approval.
+- File a no for each line of `/tmp/voyager-review-noes-<k>.jsonl` (`{"decl", "category", "why"}`),
+  under Astra's agent: its `why` goes in `/tmp/voyager-review-why.md`.
+- **Astra's lines and noes are filed exactly as `astra-answer` wrote them.** If `post` refuses some
+  of Astra's actions, take the refused lines out of `/tmp/voyager-review-actions-<k>.jsonl`, name
+  them in the run log with `post`'s reasons, and post the rest. Never change a version, a cell, a
+  text or a reason, and never post your own judgement under Astra's agent: a stale version means
+  Astra reviewed an older text, so leave that declaration for the next run.
+- Name in the run log the URL of each comment Astra's `post` prints, as for yours: the intake can
+  still refuse a line, and its reply on issue #1 says why.
+- Skip a `post` whose actions file is empty: it refuses one.
+
+**Order and failure.** All of this comes after the post and the state DM. A failure here never
+touches them: report it in the run log, and the next run does not redo it. `post` refuses a site
+not at the window's `docgen` commit, so a review is always of the version you checked. The site
+was waited for in §6; if it is not there (it never caught up, or has moved on since), skip the
+reviews this run and say so in the log. On the site these are AI approvals, counted apart from
+people's yeses.
 
 ## First run (once, ever)
 
