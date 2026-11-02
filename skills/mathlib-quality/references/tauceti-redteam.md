@@ -112,6 +112,17 @@ For each declaration, every category. The tools named are the lean-lsp MCP's unl
   decomposing.
 - **Speed**: `lean_profile_proof` on suspects, or `Skill(mathlib-quality:buzz)` on the file.
   Over 1 s is MINOR, over 10 s MAJOR.
+- **Equation lemmas.** A definition whose value is a structure with laws (a `Functor`, a
+  `NatTrans`, an algebra built by a constructor) in one of three shapes: a transport
+  (`eqToHom`, `cast`, `▸`, `Eq.mpr`) inlined into a field the laws mention; an anonymous
+  family `fun n ↦ …` handed to a constructor whose laws use it at an index; or a functor
+  rebuilt with its own `obj` and `map` where it is a composite of existing ones, such as the
+  one an adjunction produces (`references/style-rules.md`, "Name the parts of a structure
+  with laws"). From a scratch file that is not a module and imports the module, `#check
+  @f.eq_1` must return at once. If it hangs, the documentation generator hangs on it too,
+  and the API docs stop for the whole library: MAJOR. Grep for the shapes first:
+  `git grep -n -E 'eqToHom|cast|▸' -- <file>` inside `where` blocks of `Functor`s, and
+  constructors given `fun n ↦`.
 - **Brittleness**: long chains of named-lemma `rw`s, `simp only` lists over ~10 lemmas,
   `simpa` closing through unfolding, `erw`, `convert … using` with deep side goals.
 - **`change` or `show` without a comment** saying why; reliance on defeq across wrappers
@@ -187,6 +198,7 @@ audit) or `lean_multi_attempt` at a position in the file. Paste the probe verbat
 | Tau Ceti duplicate | `example : <statement> := <other decl> …`, or `example : defA = defB := rfl` / by `ext` | `compiles` |
 | duplicate of a definition that is run | the agreement probe above, and in `evidence` the times of both: the tests or callers that run it (`lake env lean <test>`, several runs each) or a benchmark (`#eval` with `set_option profiler true`, `decide` on a large case) | `compiles` |
 | redundant hypothesis, strong typeclass | the statement without it, or under the weaker class, with a proof | `compiles` |
+| equation lemma the kernel cannot check | a scratch file that is not a module, importing the module, with `#check @f.eq_1`, run with a limit (`timeout 120 lake env lean probe.lean`), and its time or that it was killed | `measured` |
 | long or slow proof, naming, api, docs | the measurement: line count, profiler time, the name, the grep | `measured` |
 
 `scripts/redteam.py finding` refuses a CRITICAL or MAJOR finding without this. Correctness,
@@ -271,6 +283,7 @@ finding wrong, record it `refuted`: a loss, but an honest one.
 | redundant hypothesis, strong typeclass | Remove or weaken it, and update every call site. |
 | long proof | Search for a replacement first; otherwise `Skill(mathlib-quality:decompose-proof)`. |
 | slow proof | `Skill(mathlib-quality:buzz)`. |
+| equation lemma the kernel cannot check | Name the inlined part (a `def` for a map that carries a transport, an `abbrev` for a family), or define the functor as the existing composite. The statements do not change. Show in the PR that `#check @f.eq_1` from a non-module file returns at once, before and after, and run `doc-gen4 single` on the module if you can. |
 | naming, namespace | Rename and update every use. No alias. |
 | compatibility surface | Delete it; repoint uses. |
 | missing characteristic API | Add a lemma only where it replaces unfolding in an existing proof, and say so; otherwise it is new material — record it `needs-human`. |
