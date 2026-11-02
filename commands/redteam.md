@@ -373,6 +373,7 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
 | "This proof is long, decompose it" | Search first. A one-line Mathlib proof replaces it; decomposing it keeps the waste. |
 | "They are equal by `rfl`, so one can replace the other" | `rfl` shows equal values, not equal speed. If the definition is run, by compiled code or by the kernel, time both and replace it only if the new one is no slower. |
 | "A type ascription makes it clearer" | Write only what the elaborator needs. Delete the ascription and recompile; keep it only if that fails. |
+| "It compiles in seconds, so the definition is fine" | Inside a `module` file it does. The documentation generator checks each definition's equation lemma outside the module system: from a non-module file, `#check @f.eq_1` must return at once. |
 | "This needs an issue, a roadmap change or a rubric PR" | Out of bounds. Record it `needs-human`; the report carries it to the user. |
 | "It is wrong; leave a no on the review site" | The red team fixes what it finds: a PR (R5), not a no. It reviews on the site only a declaration against which no finding that a site check covers stands. |
 | "Others already approved its standard review; skip it" | Approve too: each approval is one more review of the Lean. Edit only to add what is missing or make it clearer. |

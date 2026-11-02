@@ -231,6 +231,11 @@ Then **`/cleanup` on every changed `.lean` file** — ported or new, full workfl
 the `/simplify` and `/buzz` hand-offs — and **`/decompose-proof`** for any proof over 30
 lines (50 is the hard cap).
 
+For each new definition whose value is a structure with laws (a `Functor`, a `NatTrans`, an
+algebra built by a constructor), follow style-rules' "Name the parts of a structure with
+laws", and check from a scratch file that is not a module that `#check @f.eq_1` returns at
+once. One that hangs passes CI but stops the API docs for the whole library.
+
 This is the most-skipped step, because by now the code already builds so nothing complains.
 It is gated: see "The pre-PR gate" below.
 

@@ -927,6 +927,39 @@ lemma mem_cuspFormSubmodule_iff {f : ModularForm Γ k} :
 
 When you have `cuspFormSubmodule : Submodule ℂ (ModularForm Γ k)` (a term) and a dedicated type `CuspForm Γ k` with an equiv between them, don't add `FunLike`/`CuspFormClass` instances to the submodule. Use the equiv instead. The term-coerced-as-type pattern is awkward when you already have a dedicated type.
 
+### Name the parts of a structure with laws, and use composites as they are
+
+A definition whose value is a structure with laws, such as a `Functor`, a `NatTrans`, an `Equiv`, or an algebra built by a constructor like `ofHomogeneous`, leaves no work for the kernel in its fields:
+
+- **No proofs inside data.** Do not inline a transport into a field that the laws mention: `eqToHom h`, `cast h`, `h ▸ x`, `Eq.mpr`, or an `Iso` built from a proof. Make the data a named `def` and give that as the field.
+- **No anonymous families.** Do not pass `fun n ↦ …` to a constructor whose laws are stated through the family at an index. Name the family (an `abbrev`) and state the laws through the name.
+- **Composites as composites.** A functor that is a composite of existing ones, such as the one an adjunction or an equivalence produces, is defined as that composite, `F ⋙ G ⋙ H`, not rebuilt with its own `obj` and `map`.
+
+```lean
+-- ❌ The transport is inlined in `map`, so each law's statement carries its own copy of the proof
+def determinantCore : Core (FiniteLocallyFreeSheaf X) ⥤ InvertibleSheaf X where
+  obj E := det E.of
+  map {E F} e := ObjectProperty.homMk <|
+    (locallyConstantExteriorPower E.of.rank).map e.iso.hom.hom ≫ eqToHom (congrArg … (rank_eq_of_iso …))
+  map_id E := …
+  map_comp e f := …
+
+-- ✓ The map is a definition of its own
+def determinantCoreMap {E F : Core (FiniteLocallyFreeSheaf X)} (e : E ⟶ F) : det E.of ⟶ det F.of :=
+  ObjectProperty.homMk <|
+    (locallyConstantExteriorPower E.of.rank).map e.iso.hom.hom ≫ eqToHom (congrArg … (rank_eq_of_iso …))
+
+def determinantCore : Core (FiniteLocallyFreeSheaf X) ⥤ InvertibleSheaf X where
+  obj E := det E.of
+  map := determinantCoreMap
+  map_id E := …
+  map_comp e f := …
+```
+
+**Why.** The documentation generator (doc-gen4) asks for every definition's equation lemma `f.eq_1`, and the kernel checks it outside the module system, where every definition can be unfolded. In these three shapes the two sides differ only in proof terms, instance proofs or `(fun n ↦ …) k` redexes. The kernel unfolds the surrounding construction instead of comparing them, and runs past 20 GB. This happened three times in Tau Ceti in one week, and each time the API docs, and Voyager's announcements with them, stopped for a day (TauCeti#22746, #26557, #26558). The normal build cannot show it: inside a `module` file, other files' definitions are opaque unless exposed, so the file compiles in seconds.
+
+**Check.** From a file that is not a module and imports yours, `#check @f.eq_1` returns at once. If it does not, or ends in `(kernel) deterministic timeout`, the definition has this problem.
+
 ## Unify Related API via Defaults
 
 When two functions (`copy` and `ofSubgroupEq`) share most of their implementation, unify them via default arguments:
