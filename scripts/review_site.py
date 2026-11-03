@@ -13,6 +13,12 @@ Voyager's full-statement test, the red team's correctness audit (mathlib-quality
                              and null for a name the site does not have
   hash FILE                  the version of the text in FILE: what an approval or an edit names
   guide                      what a standard review is: the section of AI-REVIEWS.md that defines it
+  linked                     every declaration name a Voyager message links (review-site links and docs anchors),
+                             one a line, from the whole Tau Ceti topic on Zulip: ~/.zuliprc, or ZULIP_EMAIL,
+                             ZULIP_API_KEY and ZULIP_SITE
+  unreviewed NAME...         of these, the names with no AI review on the site yet (no standard-review record, no
+                             AI yes of the earlier form, no AI no in force), one a line: the backlog the Voyager
+                             skill's section 8 reviews; `MISSING <name>` for a name the site does not have
   post ACTIONS --agent A     approvals, writes and edits of standard reviews: ACTIONS (below) as lines in comments
       --commit SHA           on the site's bulk issue, as many as hold them, each starting with the agent line and
       [--note TEXT]          TEXT (default: "Reviews of declarations checked at Tau Ceti <SHA, 12 digits>.").
@@ -103,6 +109,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 from collections import namedtuple
 from difflib import SequenceMatcher
@@ -915,6 +922,67 @@ def comments_of(head, chunks):
     return out
 
 
+def ai_reviewed(views):
+    """Whether the record views carry an AI review in force: a record of the standard review (an approval, a write or
+    an edit), a yes of the earlier form, or a no."""
+    for v in views:
+        if v.get("kind") != "review" or (v.get("by") or {}).get("kind") != "agent" or not v.get("inForce", True):
+            continue
+        if v.get("std") or earlier_form(v) or v.get("verdict") == "problem":
+            return True
+    return False
+
+
+def cmd_unreviewed(a):
+    meta = get("meta.json")
+    n_missing = n_done = n_left = 0
+    for name in a.names:
+        views = answers_on(meta, name)
+        if views is None:
+            print(f"MISSING {name}"); n_missing += 1
+        elif ai_reviewed(views):
+            n_done += 1
+        else:
+            print(name); n_left += 1
+    print(f"unreviewed {n_left}, reviewed {n_done}, missing {n_missing}", file=sys.stderr)
+
+
+def zulip_auth():
+    """(site, email, key) from ZULIP_SITE/ZULIP_EMAIL/ZULIP_API_KEY, else ~/.zuliprc."""
+    env = os.environ
+    if env.get("ZULIP_EMAIL") and env.get("ZULIP_API_KEY"):
+        return env.get("ZULIP_SITE", "https://leanprover.zulipchat.com"), env["ZULIP_EMAIL"], env["ZULIP_API_KEY"]
+    import configparser
+    cfg = configparser.ConfigParser()
+    if not cfg.read(os.path.expanduser("~/.zuliprc")) or "api" not in cfg:
+        die("error: no Zulip credentials: set ZULIP_EMAIL and ZULIP_API_KEY, or write ~/.zuliprc", 2)
+    return cfg["api"].get("site", "https://leanprover.zulipchat.com"), cfg["api"]["email"], cfg["api"]["key"]
+
+
+def cmd_linked(a):
+    import base64
+    site, email, key = zulip_auth()
+    auth = base64.b64encode(f"{email}:{key}".encode()).decode()
+    narrow = json.dumps([{"operator": "channel", "operand": a.channel}, {"operator": "topic", "operand": a.topic},
+                         {"operator": "sender", "operand": email}])
+    names, anchor = set(), "newest"
+    while True:
+        q = urllib.parse.urlencode({"anchor": anchor, "num_before": 100, "num_after": 0, "narrow": narrow,
+                                    "apply_markdown": "false"})
+        req = urllib.request.Request(f"{site}/api/v1/messages?{q}", headers={"Authorization": f"Basic {auth}"})
+        d = json.load(urllib.request.urlopen(req, timeout=60))
+        got = d.get("messages") or []
+        for m in got:
+            c = m["content"]
+            names.update(urllib.parse.unquote(x) for x in re.findall(r"tauceti-reviewed-by-test/#/d/([^)\s>]+)", c))
+            names.update(re.findall(r"taucetiproject\.org/docs/TauCeti/[^)\s#]+#([^)\s]+)", c))
+        if d.get("found_oldest") or not got:
+            break
+        anchor = got[0]["id"] - 1
+    for name in sorted(names):
+        print(name)
+
+
 def cmd_post(a):
     mark, note = agent_mark(a.agent), one_line(a.note)
     if COMMAND.match(note):
@@ -1600,6 +1668,13 @@ def main(argv):
     q.add_argument("file")
     q.set_defaults(fn=cmd_hash)
     sub.add_parser("guide").set_defaults(fn=cmd_guide)
+    q = sub.add_parser("linked")
+    q.add_argument("--channel", default="Tau Ceti")
+    q.add_argument("--topic", default="new results")
+    q.set_defaults(fn=cmd_linked)
+    q = sub.add_parser("unreviewed")
+    q.add_argument("names", nargs="+")
+    q.set_defaults(fn=cmd_unreviewed)
     q = sub.add_parser("post")
     q.add_argument("actions")
     q.add_argument("--agent", required=True)

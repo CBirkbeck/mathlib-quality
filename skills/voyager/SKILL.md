@@ -884,11 +884,37 @@ python3 /tmp/voyager-review_site.py no /tmp/voyager-review-why.md --agent "<Astr
 - Skip a `post` whose actions file is empty: it refuses one.
 
 **Order and failure.** All of this comes after the post and the state DM. A failure here never
-touches them: report it in the run log, and the next run does not redo it. `post` refuses a site
-not at the window's `docgen` commit, so a review is always of the version you checked. The site
-was waited for in §6; if it is not there (it never caught up, or has moved on since), skip the
-reviews this run and say so in the log. On the site these are AI approvals, counted apart from
-people's yeses.
+touches them: report it in the run log. `post` refuses a site not at the window's `docgen` commit,
+so a review is always of the version you checked. The site was waited for in §6; if it is not
+there (it never caught up, or has moved on since), skip the window's reviews this run, say so in
+the log, and list the names left unreviewed: they are the backlog, below, and the next run that
+can files them. On the site these are AI approvals, counted apart from people's yeses.
+
+**The backlog (owner request, 2026-11-03).** Every declaration a Voyager update ever linked gets
+its AI review, Voyager's and Astra's, in the end: a run that could not file its reviews (the site
+behind, the gate unavailable, a failure above) leaves them to the next run that can, never to no
+one. So every run, once its own reviews are filed, and a run with an empty window too, reviews the
+backlog: every declaration linked from any earlier Voyager message in the topic that has no AI
+review on the site, at the commit the site shows now.
+
+```bash
+python3 /tmp/voyager-review_site.py linked > /tmp/voyager-review-linked.txt
+                   # every name a Voyager message links, from the topic (Zulip: ~/.zuliprc or ZULIP_EMAIL/ZULIP_API_KEY/ZULIP_SITE)
+python3 /tmp/voyager-review_site.py unreviewed $(cat /tmp/voyager-review-linked.txt) > /tmp/voyager-review-backlog.txt
+                   # those with no AI review yet, one a line; `MISSING <name>` for a name the site does not have
+```
+
+Review them exactly as the window's own: the Lean first at the site's commit, the eight checks and
+the roadmap's Checks, then approve, edit or write the standard review or file a no; then Astra's
+review of the same. Work in batches of ten (a subagent may draft a batch, given the Lean and the
+guide, and you check every draft against the Lean before it goes in), and post each batch as above
+with `--note "Backfill of Voyager's reviews for declarations its earlier updates announced, checked
+at Tau Ceti <sha>."`, Astra's with `--note "Asked by Voyager for the backfill …"`. A `MISSING` name
+was renamed or deleted since its post: find its current name (§6, the retargeting rule) and review
+that, or name it in the log as deleted. Do as many batches as the run can finish; what is left is
+still the backlog of the next run, and the run log says how many names remain. A declaration with
+an AI review already (`unreviewed` leaves it out) is not reviewed again here: that is the window's
+job when it changes.
 
 ## First run (once, ever)
 
