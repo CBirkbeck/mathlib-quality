@@ -916,6 +916,18 @@ still the backlog of the next run, and the run log says how many names remain. A
 an AI review already (`unreviewed` leaves it out) is not reviewed again here: that is the window's
 job when it changes.
 
+Three things the first backfill (2026-11-03, 545 declarations) met, to plan for:
+- **the site moves while you work.** It follows `docgen` every twenty minutes, and `post` refuses
+  a batch reviewed at a commit the site has left. Read `site` right before each batch, post the
+  batch as soon as its review is done, and redo at the new commit a batch the move caught; fetch
+  the site's commit into the Tau Ceti checkout first (`git fetch origin <sha>`), since
+  `astra-question` reads the Lean there.
+- **every test a review names must exist.** `post` refuses the whole batch for one review that
+  lists a test the site does not have as a declaration (a misremembered name): run `check` on
+  every test name a draft cites before posting, and take out or fix the line it names.
+- **the published data lags the intake** by some minutes: a name just filed can still print from
+  `unreviewed`. Do not file it twice; the intake refuses a second write anyway.
+
 ## First run (once, ever)
 
 The first run happens **at most once in the lifetime of the bot**, and is detected solely by
