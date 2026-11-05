@@ -256,10 +256,22 @@ same tree the window ends at.
 
 ### 2. Extract candidates
 
-**Work PR-by-PR — the merged PRs are the unit of discovery.** TauCeti squash-merges, so
-`git log --format='%s' <watermark>..HEAD` lists exactly the window's PRs, one per commit,
-with the number in the subject (`feat: prove the double centralizer theorem (#1435)`).
-Triage by title: `feat:` is where announcements live; `chore:`/`refactor:`/`fix:` almost
+**Work PR-by-PR — the merged PRs are the unit of discovery.** TauCeti lands one commit per
+PR on the first-parent line, in one of two formats: before 2026-11-05 a squash commit with the
+number in the subject (`feat: prove the double centralizer theorem (#1435)`); since then the
+queue writes the subject without a number and records the PR in a `Source-PR:` trailer
+(`Source-PR: TauCetiProject/TauCeti#27824`, with an `Accepted-Head:` trailer beside it). List
+the window with both:
+
+```bash
+git log --first-parent --format='%h%x09%s%x09%(trailers:key=Source-PR,valueonly)' <watermark>..HEAD
+```
+
+A line whose subject ends in `(#N)` or whose third column names `TauCeti#N` is a PR; take `N`
+from whichever is present. A subject with neither (a `Merge pull request` of the queue's own
+infrastructure branches) is not a library PR. Grepping subjects for `(#N)` alone now misses
+every PR: on 2026-11-05 a 1,191-commit batch landed with trailers only, and a run that counted
+subjects reported "1 PR merged". Triage by title: `feat:` is where announcements live; `chore:`/`refactor:`/`fix:` almost
 never are. Then, for each candidate,
 `gh pr view <n> --repo TauCetiProject/TauCeti --json title,body` — the body typically says
 what was proved, names the result, and cites the roadmap and references, which is exactly
@@ -481,12 +493,12 @@ have not sanity-checked against the actual Lean statement.
 
 ### 5. Attribute each result to a PR
 
-Readers must be able to click through. TauCeti squash-merges, so the PR number is already in
-the commit subject as `(#1443)` — read it off the commit that added the file rather than
-querying the API:
+Readers must be able to click through. The PR number is on the commit that added the file,
+either in its subject as `(#1443)` (squash commits before 2026-11-05) or in its `Source-PR:`
+trailer (the queue's commits since) — read it off that commit rather than querying the API:
 
 ```bash
-git log --diff-filter=A --follow --format='%s' -1 -- <file> | grep -oE '#[0-9]+' | head -1
+git log --diff-filter=A --follow --format='%s%n%(trailers:key=Source-PR,valueonly)' -1 -- <file> | grep -oE '#[0-9]+' | head -1
 ```
 
 **A shallow clone silently breaks this.** With `--depth`, `--diff-filter=A` finds the graft
@@ -709,7 +721,8 @@ zero-change check-ins.
 find TauCeti -name '*.lean' -print0 | xargs -0 cat | wc -l
 find TauCeti -name '*.lean' | wc -l                        # files
 grep -rhcE '^(theorem|lemma|def|structure|class|abbrev|instance)' --include='*.lean' TauCeti | awk '{s+=$1} END {print s}'
-git log --format=%s origin/docgen | grep -cE '\(#[0-9]+\)$'      # T: PRs merged, at the docgen commit
+# T: PRs merged, at the docgen commit — a squash subject `(#N)` OR a Source-PR trailer, counted once per commit
+git log --first-parent --format='%s%x09%(trailers:key=Source-PR,valueonly)' origin/docgen | grep -cE '\(#[0-9]+\)\t|TauCeti#[0-9]+'
 ```
 
 **Sanity-check every stat against the previous post before you publish.** The library is
@@ -725,9 +738,11 @@ Do **not** report `sorry` counts in the stats (owner decision). The no-`sorry` r
 an announcement *gate*: check nothing you announce has a `sorry` in its file, remembering a
 docstring can mention the word without it being a proof hole.
 
-"PRs merged since the last update" = the number of squash-merge commits in the window
-(each carries its `(#N)`), which is exact and consistent with what was actually scanned.
-The total `T` counts the same commits over the whole docgen history.
+"PRs merged since the last update" = the number of first-parent commits in the window that
+carry a PR (a `(#N)` subject or a `Source-PR:` trailer, §2), which is exact and consistent
+with what was actually scanned. The total `T` counts the same commits over the whole docgen
+history. The trailer format began with TauCeti#20359 on 2026-11-05; a count that only reads
+subjects stops moving there, exactly as the merged search did in October.
 - **Never use GitHub's merged search.** Tau Ceti lands pull requests through bors, which
   closes them instead of merging them, so that count stopped moving in October 2026
   (11,535 on 2026-10-12).
