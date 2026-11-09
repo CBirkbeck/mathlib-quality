@@ -25,7 +25,8 @@ For each declaration, every category. The tools named are the lean-lsp MCP's unl
   (`example : tcFoo x = Mathlib.foo x := …`). Failure means a wrong definition; success
   means a duplicate. Either is a finding.
 - **Junk values** (table below): does the definition return Lean's junk value where the
-  mathematics has no value, or a different one — and does anything downstream rely on it?
+  mathematics has no value, or a different one — and does anything downstream rely on it on the
+  inputs it is about? Relying on it at degenerate inputs is Mathlib's convention (below).
 - **Unexercised predicates.** A `Prop`-valued definition, class or hypothesis structure with
   no nontrivial witness and no consumer anywhere: try to prove it unsatisfiable, or always
   true. Either is CRITICAL.
@@ -50,11 +51,17 @@ For each declaration, every category. The tools named are the lean-lsp MCP's unl
   structure that bundles it. Compare with the source's hypotheses.
 - **Specialisation test.** Instantiate at a standard concrete case and check the conclusion
   is the known fact: `example : <known fact> := decl …`.
-- **Junk-value vacuity.** At the degenerate inputs the hypotheses allow, does the statement
-  hold for the wrong reason (`Nat.card G ∣ n` when `G` is infinite and `Nat.card G = 0`)?
+- **Junk-value vacuity.** On the inputs the statement is about, does a junk value make it hold
+  for the wrong reason (`Nat.card G ≤ n` where the hypotheses force `G` to be infinite, so it
+  says `0 ≤ n`)? At degenerate inputs Tau Ceti follows Mathlib: a statement that still holds
+  there by convention, through a junk value, needs no hypothesis to exclude them. That is not a
+  finding, and a hypothesis that only excludes them is a `generality` finding.
 - **Name against strength.** `_iff` proving one direction, `_eq` proving `≤`, `_unique`
   without uniqueness.
 - **Downstream.** Every consumer of a CRITICAL finding inherits it. Sweep them (section 5).
+
+The traps below matter on the inputs a statement is about; at degenerate inputs they are
+Mathlib's convention.
 
 | Lean's junk value | where | the trap |
 |---|---|---|
@@ -67,11 +74,12 @@ For each declaration, every category. The tools named are the lean-lsp MCP's unl
 | `0` | `orderOf` of an element of infinite order; `padicValNat p 0`; `ENNReal.toReal ⊤` | |
 | `0` / `⊥` | `Polynomial.natDegree 0` / `Polynomial.degree 0` | |
 | arbitrary | `Classical.choose`, `Classical.epsilon` off their hypotheses | |
-| everything true | the zero ring, an empty type, `Fin 0` | a missing `[Nontrivial R]` or `[Nonempty α]` |
+| everything true | the zero ring, an empty type, `Fin 0` | statements about them hold vacuously |
 
 ### generality
 
-- `lean_minimal_hypotheses` on every theorem: explicit hypotheses it does not need.
+- `lean_minimal_hypotheses` on every theorem: explicit hypotheses it does not need, including
+  one that only excludes a degenerate case where the statement holds by convention.
 - **Typeclass weakening**: retry the proof under parents — `Field` → `DivisionRing` or
   `CommRing`, `Group` → `Monoid`, `LinearOrder` → `PartialOrder`, `Fintype` → `Finite`,
   and drop an unused `DecidableEq`. `Skill(mathlib-quality:generalise)` with
@@ -193,7 +201,7 @@ audit) or `lean_multi_attempt` at a position in the file. Paste the probe verbat
 | overstated name or docstring | `example : <what they claim> := by exact decl …`; add a counterexample to the claim if there is one | `fails-as-expected` |
 | wrong definition | a value or witness test showing the gap, with the standard value cited | `compiles` |
 | too weak or too strong | `example : IsFoo <non-example>` / `example : ¬ IsFoo <standard example>` | `compiles` |
-| junk-value vacuity | the statement at the junk input, proved by the junk | `compiles` |
+| junk-value vacuity | the statement at an input it is about, proved by the junk | `compiles` |
 | Mathlib duplicate | `example <binders> : <statement> := <MathlibDecl> …` (or a one-line `simpa using`) | `compiles` |
 | Tau Ceti duplicate | `example : <statement> := <other decl> …`, or `example : defA = defB := rfl` / by `ext` | `compiles` |
 | duplicate of a definition that is run | the agreement probe above, and in `evidence` the times of both: the tests or callers that run it (`lake env lean <test>`, several runs each) or a benchmark (`#eval` with `set_option profiler true`, `decide` on a large case) | `compiles` |
@@ -227,8 +235,10 @@ to break it. In particular:
   degenerate cases, Lean junk values such as x/0 = 0, truncated ℕ subtraction, Nat.card of
   an infinite type = 0)?
 - are any theorem's hypotheses contradictory, or its conclusion trivial, tautological, or
-  different from what its name and docstring say?
-- are hypotheses or typeclass assumptions unused or stronger than needed?
+  different from what its name and docstring say? (Holding at degenerate inputs only through a
+  junk value is Mathlib's convention, and fine.)
+- are hypotheses or typeclass assumptions unused or stronger than needed, including one that
+  only excludes a degenerate case where the statement holds by convention?
 - does Mathlib already have it (name the declaration), or does the file rebuild something?
 - names, namespaces, proof length and robustness, documentation, leftovers.
 For each problem give: the declaration; the category (correctness | generality | reuse |
