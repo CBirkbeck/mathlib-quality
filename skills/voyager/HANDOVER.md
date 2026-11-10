@@ -300,7 +300,7 @@ message, not a silent rewrite of history.
   reachable as `~/.claude3/voyager`).
   - Systemd user timers fire `run.sh` at 04:03 and 16:03 UK. Beside it are `prompt.txt`,
     `smoke.txt`, `gate.sh`, `freshness.py`, `retry.sh` and `status.py`.
-  - Its Claude model is `claude-fable-5-1` (Fable 5.1) only: the six subscription accounts
+  - Its Claude model is `claude-fable-5-2` (Fable 5.2) only: the six subscription accounts
     first, then the Anthropic API key as a last resort (since 2026-10-10).
   - The OpenAI gate model is `gpt-6-astra`, served from `~/.codex`, with `~/.codex2` as the
     fallback account (`gate.sh`); with both accounts out, the gate runs on Claude Fable

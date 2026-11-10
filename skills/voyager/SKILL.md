@@ -442,7 +442,7 @@ Operational facts learned the hard way:
   declaration name, its statement, and its docstring summary;
 - the gate is **required** (owner decision, 2026-10-10: every post is made with Fable and
   Astra). When no OpenAI account can serve (quota, the plan rejects the model, codex missing,
-  timeout), `gate.sh` itself falls back to Claude Fable (`claude-fable-5-1`, API billing) with
+  timeout), `gate.sh` itself falls back to Claude Fable (`claude-fable-5-2`, API billing) with
   the same question and reports `GATE_SERVED_BY=claude-fallback` (owner decision, 2026-10-30:
   a post must still go out when Astra is unavailable). Only if the fallback fails too: post
   nothing, leave the watermark, and end the run as failed so the scheduler retries later.
@@ -838,7 +838,7 @@ python3 /tmp/voyager-review_site.py no /tmp/voyager-review-why.md --agent "Voyag
 ```
 
 - `<your exact model>` is the model you run as, exactly as your harness names it
-  (`claude-fable-5-1`, `claude-opus-5-5`), never its family (`Fable`, `Opus`), which the helper
+  (`claude-fable-5-2`, `claude-opus-5-5`), never its family (`Fable`, `Opus`), which the helper
   refuses: the site shows it beside each approval.
 - `post` checks the whole file against the site first, and posts nothing if any action is wrong (a
   name the site has no page for, a version that is not the one it shows, cells that are not all
@@ -883,7 +883,7 @@ python3 /tmp/voyager-review_site.py no /tmp/voyager-review-why.md --agent "<Astr
   `GATE_UNAVAILABLE`, skip the rest of Astra's review this run and say so in the log.
 - `<Astra's agent>` is the model that served the call, which `gate.sh ask` prints:
   `GATE_SERVED_BY=.codex` or `.codex2` is `Codex, GPT-6 Astra`, and `GATE_SERVED_BY=claude-fallback`
-  is `Claude Code, claude-fable-5-1`.
+  is `Claude Code, claude-fable-5-2`.
 - `astra-answer` files only what it can read without guessing, and prints each item it leaves out
   as `not filed: <name>: <why>`: name them in the run log. An answer without the eight cells is
   never filed as an approval.

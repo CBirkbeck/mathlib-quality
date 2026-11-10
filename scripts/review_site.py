@@ -87,7 +87,7 @@ are that line and the lines directly under it, joined by a space, up to a blank 
   VERDICT: WRITE            the block alone (for a declaration the question showed no standard review of)
   VERDICT: NO               CATEGORY: AXIS   WHY: THE ERROR (and an ERROR cell, which no other verdict has)
 
-A is the agent, "TOOL, MODEL[, session S]" ("Voyager, claude-fable-5-1"): the reviews show on the
+A is the agent, "TOOL, MODEL[, session S]" ("Voyager, claude-fable-5-2"): the reviews show on the
 site as that AI agent's, via the account `gh` is signed in as. MODEL is the model exactly as the
 harness names it ("claude-opus-5-5", "GPT-6 Astra"), never its family ("Opus", "GPT-6"), which is
 refused: the site shows it beside each answer, and readers weigh the answer by it. What deserves a yes or a no is
