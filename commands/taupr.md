@@ -148,6 +148,13 @@ not this — implement it, or show it wrong on the merits.
 **A contest does not re-trigger CI** — contest re-reviews belong to the local worker, so
 follow it with R4's command on that PR regardless of age.
 
+**Keep the quality pass current.** When a fix adds or changes declarations and the PR
+template has a `Quality pass:` block (5d), run its checks over those and update the block's
+lines in the description (`gh pr edit <PR> --repo TauCetiProject/TauCeti --body-file pr.md`).
+A `quality-pass` finding is fixed the same way. An edit to the description alone starts no
+re-review: reply in the finding's thread (the endpoint above) saying what you ran and
+updated, then run R4's command.
+
 Push fixes with `--force-with-lease` (see R5).
 
 # R4 — Review a stalled PR
@@ -266,6 +273,13 @@ Being invisible to the sweeper is therefore **correct** for a refactor. Two refa
 touching one file are not target-duplicates; they collide at merge, which is R1's job.
 
 Keep the body in sync with the code — a drifted body is itself a review finding.
+
+**The quality pass.** If `.github/pull_request_template.md` in the checkout has a
+`Quality pass:` block, the body carries it completed, after the `Roadmap:` line: run each
+check the template lists over every declaration the PR adds or changes, fix what it finds,
+and write one line per check in the template's format. `--body-file` does not apply the
+template, so copy the block in. The `quality-pass` review angle reads it. No block in the
+template: skip this.
 
 ### 5e. Push and create
 

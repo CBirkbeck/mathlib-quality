@@ -258,6 +258,9 @@ Roadmap: <canonical roadmap directory of the code, or none>
 No `tauceti-target` marker: a red-team fix advances no roadmap target (`/taupr` 5d explains
 why a fabricated one is harmful). Keep the body true to the diff after every push.
 
+If the PR template has a `Quality pass:` block, the body carries it completed, after the
+`redteam:v1` line (`/taupr` 5d), and R3 keeps it current (`/taupr` R3).
+
 ### The pre-PR receipt
 
 `.mathlib-quality/review-receipt.json`, as `/taupr` writes it: `head_sha`, `base_ref`,
