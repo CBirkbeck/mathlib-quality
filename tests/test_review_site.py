@@ -2224,3 +2224,16 @@ class IntakeReadsPostTests(Case):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_links_go_to_the_public_address_and_are_read_at_both():
+    """A declaration's link is at the public address; a post that links the data repository's own Pages, the
+    address until 2026-11-13, is still read, as are API-docs anchors at both addresses the docs have had."""
+    assert review_site.declaration_link("TauCeti.Foo.bar") == "https://taucetiproject.org/review/#/d/TauCeti.Foo.bar"
+    assert review_site.declaration_link("a b") == "https://taucetiproject.org/review/#/d/a%20b"
+    content = ("[**A**](https://taucetiproject.org/review/#/d/TauCeti.A) and "
+               "[**B**](https://cbirkbeck.github.io/tauceti-reviewed-by-test/#/d/TauCeti.B%27) and "
+               "[C](https://taucetiproject.github.io/TauCeti/docs/TauCeti/M.html#TauCeti.C) and "
+               "[D](https://taucetiproject.org/docs/TauCeti/M.html#TauCeti.D) and "
+               "[module](https://taucetiproject.org/review/#/m/TauCeti.M)")
+    assert review_site.linked_names(content) == {"TauCeti.A", "TauCeti.B'", "TauCeti.C", "TauCeti.D"}

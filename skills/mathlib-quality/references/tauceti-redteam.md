@@ -370,7 +370,7 @@ adds a `"re-reviewed"` line with the new decisions (`"yes"`), which `reviews` po
 
 ## 7. Reviews on the review site
 
-The Tau Ceti review site (`https://cbirkbeck.github.io/tauceti-reviewed-by-test/`) asks one
+The Tau Ceti review site (`https://taucetiproject.org/review/`) asks one
 question of each declaration: is it correctly stated? A file's audit answers it for every
 declaration, and the red team records the answer there as its AI reviews (R6 steps 8–10).
 **It never says no**: what it finds wrong it fixes (R5), and the fix landing changes the

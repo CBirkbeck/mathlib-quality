@@ -547,10 +547,10 @@ Zulip-specific rules, each learned from reader feedback on the first message:
 - **Link each bold result name to the declaration's page on the Tau Ceti review site** (owner
   request, 2026-10-24), where a reader sees the statement as the docs show it and what it rests on,
   and can review it, suggest a test or say what could be better:
-  `https://cbirkbeck.github.io/tauceti-reviewed-by-test/#/d/<Fully.Qualified.Name>`, the name
+  `https://taucetiproject.org/review/#/d/<Fully.Qualified.Name>`, the name
   percent-encoded as a URI component (Python `urllib.parse.quote(name, safe="")`; most names need
   nothing). **Take the name from the API docs, never construct it**: curl the published page,
-  `https://taucetiproject.org/docs/TauCeti/<Module/Path>.html` (expect 200), and pull the real
+  `https://taucetiproject.github.io/TauCeti/docs/TauCeti/<Module/Path>.html` (expect 200), and pull the real
   `id="…"` out of its HTML. Namespaces vary and some files have no `TauCeti` namespace at all
   (`lieExp`, `pointDerivationEquivTangentSpace`, `ModularForm.lSeries`,
   `Matrix.SpecialLinearGroup.map_intCast_zmod_surjective` are bare or foreign-namespaced);
@@ -558,6 +558,12 @@ Zulip-specific rules, each learned from reader feedback on the first message:
   the declaration the headline claims, never the containing definition** — a bullet titled "…is
   finite" links the finiteness statement (`instFinite`), not the group it is about; the maintainer
   caught exactly this once.
+- **One site, two addresses.** Readers reach Tau Ceti Review at `https://taucetiproject.org/review/`, and every
+  link you write goes there. Its data, its intake and its workflows are the repository
+  `CBirkbeck/tauceti-reviewed-by-test`: reviews are filed there (the helper's `post`), `follow.yml` runs there,
+  and the app at the public address reads `data/` from that repository's Pages, which is the address the
+  check below and the helper read. A review filed there shows at the public address once that site has
+  rebuilt; nothing is copied. The helper reads links at either address in older posts.
 - **Verify every link on the site before posting.** The site follows the `docgen` branch your
   window ends at: it checks every 20 minutes and rebuilds in about 45, so at the time of a run it
   can be behind.
@@ -572,7 +578,7 @@ Zulip-specific rules, each learned from reader feedback on the first message:
      is pending.
   3. Every name must print `ON-SITE`. A name still `MISSING` with the site at the `docgen` commit (the
      site's extractor skips a module that did not build for it), or after 90 minutes: link that
-     bullet to the API docs anchor instead, `https://taucetiproject.org/docs/TauCeti/<Module/Path>.html#<Name>`
+     bullet to the API docs anchor instead, `https://taucetiproject.github.io/TauCeti/docs/TauCeti/<Module/Path>.html#<Name>`
      (curled, 200, the `id` present), and say in the run log which name and why. Never post a link
      you have not verified.
 

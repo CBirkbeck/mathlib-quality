@@ -206,7 +206,7 @@ disclaimer — it is Chris's wording and it defuses complaints about judgment ca
 ## Links: verify, then verify the right thing
 
 Since 2026-10-24 (owner request) every bold name links to the declaration's page on the Tau Ceti
-review site, `https://cbirkbeck.github.io/tauceti-reviewed-by-test/#/d/<FQN>`: the statement as the
+review site, `https://taucetiproject.org/review/#/d/<FQN>`: the statement as the
 docs show it, what it rests on, and a box where a reader reviews it, suggests a test or says what
 could be better. Three rules:
 
@@ -223,9 +223,9 @@ could be better. Three rules:
    the site's update early (`gh workflow run follow.yml -R CBirkbeck/tauceti-reviewed-by-test`) and
    waits for it before posting, up to 90 minutes. A name the site still lacks (its extractor skips a
    module that does not build for it) gets the docs anchor,
-   `https://taucetiproject.org/docs/TauCeti/<Module/Path>.html#<FQN>`, and a line in the run log.
+   `https://taucetiproject.github.io/TauCeti/docs/TauCeti/<Module/Path>.html#<FQN>`, and a line in the run log.
 
-The site is CBirkbeck/tauceti-reviewed-by-test. It also reads this topic: its Named page is built
+The site's public address is https://taucetiproject.org/review/; its data, intake and workflows are the repository CBirkbeck/tauceti-reviewed-by-test. It also reads this topic: its Named page is built
 from Voyager's bullets, through either kind of link.
 
 **Link rot is real.** Both the site and the docs serve only the newest build, so links verified at
