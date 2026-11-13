@@ -114,8 +114,28 @@ import urllib.request
 from collections import namedtuple
 from difflib import SequenceMatcher
 
+#: Where the review data is published (`<SITE>data/…`): the Pages of the review data repository. The app at LINK reads
+#: its data from there, so a review filed in REPO shows at LINK as soon as that site has rebuilt.
 SITE = os.environ.get("REVIEW_SITE", "https://cbirkbeck.github.io/tauceti-reviewed-by-test/")
+#: The review data repository: evidence is filed, and the follow and dataset workflows run, there.
 REPO = os.environ.get("REVIEW_SITE_REPO", "CBirkbeck/tauceti-reviewed-by-test")
+#: The public address of Tau Ceti Review. Links to a declaration are `<LINK>#/d/<name>`, to a module `<LINK>#/m/<module>`.
+LINK = os.environ.get("REVIEW_SITE_LINK", "https://taucetiproject.org/review/")
+#: A link to a declaration page, at the public address or at the data repository's own Pages (the address until 2026-11-13).
+DECLARATION_LINK = re.compile(r"(?:taucetiproject\.org/review|tauceti-reviewed-by-test)/#/d/([^)\s>]+)")
+#: An anchor of the API docs, at either address the docs have had.
+DOCS_ANCHOR = re.compile(r"(?:taucetiproject\.org|taucetiproject\.github\.io/TauCeti)/docs/TauCeti/[^)\s#]+#([^)\s]+)")
+
+
+def declaration_link(name: str) -> str:
+    """The address of `name`'s page on Tau Ceti Review."""
+    return f"{LINK}#/d/{urllib.parse.quote(name, safe='')}"
+
+
+def linked_names(content: str) -> set[str]:
+    """The declarations a message links: review pages at either address, and API-docs anchors."""
+    return ({urllib.parse.unquote(x) for x in DECLARATION_LINK.findall(content)}
+            | set(DOCS_ANCHOR.findall(content)))
 EVIDENCE_STORE = os.environ.get("REVIEW_SITE_EVIDENCE_STORE",
                                 "git+https://github.com/LeanTrustBuilders/evidence-store@v0.7.2")
 #: The axes a problem can name (the store's rubric, ltb-rubric/1), and `other`.
@@ -973,9 +993,7 @@ def cmd_linked(a):
         d = json.load(urllib.request.urlopen(req, timeout=60))
         got = d.get("messages") or []
         for m in got:
-            c = m["content"]
-            names.update(urllib.parse.unquote(x) for x in re.findall(r"tauceti-reviewed-by-test/#/d/([^)\s>]+)", c))
-            names.update(re.findall(r"taucetiproject\.org/docs/TauCeti/[^)\s#]+#([^)\s]+)", c))
+            names |= linked_names(m["content"])
         if d.get("found_oldest") or not got:
             break
         anchor = got[0]["id"] - 1
