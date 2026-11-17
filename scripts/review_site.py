@@ -110,6 +110,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections import namedtuple
@@ -236,13 +237,26 @@ def fetch(url):
         return r.read().decode("utf-8-sig")
 
 
+RETRIES, RETRY_WAIT = 4, 5  # a read of the site that meets a 5xx or a timeout is tried again after 5, 10, 20, 40 s
+
+
+def transient(e):
+    """Whether a failed read is worth another try: the host answered 429 or 5xx, or did not answer in time. GitHub
+    Pages does so for seconds at a time; on 2026-11-17 a 503 on one file of reviews cost a whole post."""
+    return (isinstance(e, urllib.error.HTTPError) and (e.code == 429 or e.code >= 500)) or isinstance(e, TimeoutError)
+
+
 def get(path):
     """The site's data, past the Pages cache: a build may be minutes old."""
     url = f"{SITE}data/{path}?t={time.time():.0f}"
-    try:
-        return json.loads(fetch(url))
-    except Exception as e:  # noqa: BLE001 - any failure to read the site is an error, not a verdict
-        die(f"error: cannot read {url}: {e}", 2)
+    for k in range(RETRIES + 1):
+        try:
+            return json.loads(fetch(url))
+        except Exception as e:  # noqa: BLE001 - any failure to read the site is an error, not a verdict
+            if k < RETRIES and transient(e):
+                time.sleep(RETRY_WAIT * 2 ** k)
+                continue
+            die(f"error: cannot read {url}: {e}", 2)
 
 
 def normalize(text):
