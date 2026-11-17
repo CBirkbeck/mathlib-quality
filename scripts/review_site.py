@@ -101,6 +101,7 @@ complete, or a question of more than 12 declarations or of one that is not Tau C
 stderr); 2 error (a checkout without the commit the site shows, among them).
 """
 import argparse
+import calendar
 import hashlib
 import json
 import os
@@ -312,7 +313,7 @@ def why_not_asked(meta, name, modules):
     a declaration's module by the index its node holds (-1: none)."""
     node = node_of(meta, name)
     if node is None:
-        return "the site has no page for it"
+        return NO_PAGE
     if node[2] & 1:
         return ""
     outside = (meta.get("review") or {}).get("outside") or []
@@ -323,6 +324,22 @@ def why_not_asked(meta, name, modules):
     return ("the site has a page for it" + (f", in {module}," if module else ",")
             + " but asks its question only of Tau Ceti's own declarations"
             + (f" and those under {', '.join(outside)}" if outside else ""))
+
+
+NO_PAGE = "the site has no page for it"
+PAGE_WAIT, PAGE_STEP, FRESH_BUILD = 720, 60, 1800  # seconds
+
+
+def fresh_build(meta):
+    """Whether the site's data was built in the last half hour (`meta.built`). After a build from a new dataset, Pages'
+    cache serves some files of the build before for about ten minutes, whatever the query string, and a declaration
+    the new dataset added then reads as having no page: `post` waits that out rather than refuse it. A site that does
+    not say when it was built is not waited for."""
+    try:
+        built = calendar.timegm(time.strptime(str(meta.get("built") or ""), "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return False
+    return 0 <= time.time() - built < FRESH_BUILD
 
 
 def at_commit(meta, sha):
@@ -1019,6 +1036,16 @@ def cmd_post(a):
     commit = at_commit(meta, a.commit)
     head = mark + "\n" + (note or f"Reviews of declarations checked at Tau Ceti {commit[:12]}.") + "\n"
     problems, chunks = check_actions(actions, meta, drafted, head)
+    waited = 0
+    while any(NO_PAGE in p for p in problems) and fresh_build(meta) and waited < PAGE_WAIT:
+        # 2026-11-17: a run that waits for the site posts its reviews minutes after the site's new build.
+        print(f"waiting {PAGE_STEP}s: the site was built at {meta.get('built')}, and its cache may still serve files of "
+              "the build before", file=sys.stderr)
+        time.sleep(PAGE_STEP)
+        waited += PAGE_STEP
+        meta = get("meta.json")
+        commit = at_commit(meta, a.commit)
+        problems, chunks = check_actions(actions, meta, drafted, head)
     if problems:
         die("refused, and nothing was posted:\n" + "\n".join("- " + p for p in problems), 1)
     comments = comments_of(head, chunks)
@@ -1255,7 +1282,7 @@ def asked_about(meta, name, read):
     i = id_of(meta, name, read)
     node = None if i is None else node_at(meta, i, read)
     if node is None:
-        return None, "the site has no page for it"
+        return None, NO_PAGE
     if not node[2] & 1:
         return None, "it is not one of Tau Ceti's own declarations: a question gives the Lean of Tau Ceti's"
     file = module_file(node, read)
