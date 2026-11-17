@@ -639,6 +639,33 @@ class PostTests(Case):
         self.assertIn("Fixture.nope", err)
         self.assertNotIn("(Fixture.a)", err)  # only the action that is wrong is named
 
+    def test_post_waits_for_a_page_while_the_site_is_freshly_built(self):
+        # Just after a build from a new dataset the cache serves files of the build before: a declaration the new
+        # dataset added has no page yet, and is there a minute later. A site built long ago is not waited for.
+        row, plain = write("Fixture.late", review()), self.site.get
+
+        def built(stamp):
+            return lambda path: {**plain(path), "built": stamp} if path == "meta.json" else plain(path)
+
+        def arrives(seconds):
+            if not any(decl[0] == "Fixture.late" for decl in self.site.decls):
+                self.site.add("Fixture.late")
+
+        with mock.patch.object(review_site.time, "sleep", side_effect=arrives) as sleep:
+            self.site.get = built("2026-01-01T00:00:00Z")
+            self.assertIn("Fixture.late", self.refused(row))
+            sleep.assert_not_called()
+            self.site.get = built(review_site.time.strftime("%Y-%m-%dT%H:%M:%SZ", review_site.time.gmtime()))
+            code, out, err = self.post(row)
+            self.assertEqual(code, 0, err)
+            self.assertIn("Fixture.late", out)
+            self.assertIn("waiting 60s", err)
+            sleep.assert_called_once_with(review_site.PAGE_STEP)
+        # A name that never arrives is refused once the wait is over.
+        with mock.patch.object(review_site.time, "sleep") as sleep:
+            self.assertIn("Fixture.never", self.refused(write("Fixture.never", review())))
+            self.assertEqual(sleep.call_count, review_site.PAGE_WAIT // review_site.PAGE_STEP)
+
     def test_post_takes_the_declarations_outside_the_library_that_the_site_asks_about(self):
         # Mathlib's, as the site lists its package (meta.review.outside): a module of it, or the package's own.
         foo, baz = review(says="`Nat.foo` is a successor"), review(says="`Nat.baz` is an order")
