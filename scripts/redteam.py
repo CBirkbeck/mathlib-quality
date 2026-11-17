@@ -614,6 +614,19 @@ def standard_now(names):
     return shown
 
 
+#: Why a yes of the account's own work is dropped: the site refuses it (AI-REVIEWS.md, Rules).
+OWN_WORK = "the account's own work: Tau Ceti's history names it among the declaration's authors"
+
+
+def own_work_of(names):
+    """Those of ``names`` that are the own work of the account the reviews go up under, as `review_site.py mine` says
+    from the authors the site records (co-authors included); none when the site cannot say, and `post` then warns."""
+    r = run([sys.executable, REVIEW_SITE, "mine", *names], check=False) if names else None
+    if r is None or r.returncode not in (0, 1):
+        return []
+    return sorted(line.split()[1].rstrip(":") for line in r.stdout.splitlines() if line.startswith("MINE "))
+
+
 def stale(entry, version):
     """Why ``entry`` no longer fits the standard review the site shows now, of ``version`` (None: it shows none): it was
     decided against another text, or writes a first one where there is one now. "" when it fits."""
@@ -674,6 +687,14 @@ def cmd_reviews(a):
             pending = {n: e for n, e in pending.items() if n not in old}
         if not pending:
             continue
+        mine = own_work_of(sorted(pending))
+        if mine:  # `post` would refuse the whole file for one of them, round after round
+            settle(au, "dropped", mine, why=OWN_WORK)
+            print("%s: dropped %s, %s" % (au["file"], ", ".join(mine), OWN_WORK))
+            pending = {n: e for n, e in pending.items() if n not in mine}
+            if not pending:
+                dropped += 1
+                continue
         g = run(["git", "rev-parse", "%s:%s" % (site, au["file"])], cwd=a.repo, check=False)
         if g.returncode != 0 or g.stdout.strip() != au["blob"]:
             if run(["git", "merge-base", "--is-ancestor", au["main"], site], cwd=a.repo, check=False).returncode != 0:

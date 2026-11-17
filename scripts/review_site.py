@@ -5,12 +5,27 @@ Voyager's full-statement test, the red team's correctness audit (mathlib-quality
   site                       the Tau Ceti commit the site shows
   check NAME...              ON-SITE or MISSING for each name (Tau Ceti's own declarations only)
   reviews NAME...            the answers each declaration has had so far, and their reasons
-  standard NAME... [--json]  the standard review of each declaration, the one text the site shows for it: its
+  standard NAME... [--json] [--tauceti CHECKOUT]
+                             the standard review of each declaration, the one text the site shows for it: its
                              version and text, the AI agents that approved it and the checks they made, how many
                              approved an earlier text, the reasons of the AI yeses of the earlier form recorded
                              since, and the noes still open. --json prints {NAME: {"version": V|null, "text": T,
                              "unfolded": [{"by", "at", "text"}], "noes": [{"by", "at", "category", "text", "url"}]}},
-                             and null for a name the site does not have
+                             and null for a name the site does not have. A text written for an earlier version of
+                             the declaration says for which (the commit, module and name, "checked_for"); with
+                             --tauceti, a clone of Tau Ceti with its history, the statement then and now and their
+                             difference ("changed")
+  mine NAME... [--login L]   MINE, NOT-MINE or UNKNOWN for each: whether the account (default: the one gh is signed
+                             in as) is among the declaration's authors as the site records them from Tau Ceti's
+                             history, co-authors included. Exit 1 if one is yours, 2 if the site cannot say
+  withdraw NAME VERSION --note WHY [--agent A] [--dry-run]
+                             takes back what the account filed of that version of NAME's standard review (its
+                             approval, or its write or edit): a `Withdraw:` line on the bulk issue
+  snapshot DIR [--dataset]   what a run over many declarations reads in place of the site's shards, in three
+                             requests: DIR/meta.json, DIR/standard.jsonl (every standard review, with its
+                             declaration's authors and statement), DIR/snapshot.json (the commits of Tau Ceti,
+                             Mathlib and TauCetiRoadmap), and with --dataset the dataset of Tau Ceti at the site's
+                             commit in DIR/dataset (some 400 MB); then the git commands for the three clones
   hash FILE                  the version of the text in FILE: what an approval or an edit names
   guide                      what a standard review is: the section of AI-REVIEWS.md that defines it
   linked                     every declaration name a Voyager message links (review-site links and docs anchors),
@@ -19,11 +34,13 @@ Voyager's full-statement test, the red team's correctness audit (mathlib-quality
   unreviewed NAME...         of these, the names with no AI review on the site yet (no standard-review record, no
                              AI yes of the earlier form, no AI no in force), one a line: the backlog the Voyager
                              skill's section 8 reviews; `MISSING <name>` for a name the site does not have
-  post ACTIONS --agent A     approvals, writes and edits of standard reviews: ACTIONS (below) as lines in comments
-      --commit SHA           on the site's bulk issue, as many as hold them, each starting with the agent line and
-      [--note TEXT]          TEXT (default: "Reviews of declarations checked at Tau Ceti <SHA, 12 digits>.").
+  post ACTIONS --agent A     approvals, writes, edits and withdrawals of standard reviews: ACTIONS (below) as lines
+      --commit SHA           in comments on the site's bulk issue, as many as hold them, each starting with the agent
+      [--note TEXT]          line and TEXT (default: "Reviews of declarations checked at Tau Ceti <SHA, 12 digits>.").
       [--drafts FILE]        Checks first, and posts nothing unless every action passes. --dry-run prints the
-      [--dry-run]            comments instead
+      [--login L] [--dry-run]
+                             comments instead. --login is the account they go up under, whose own work is refused
+                             (default: the one gh is signed in as)
   astra-question NAME... --tauceti CHECKOUT --out FILE [--drafts FILE]
                              the question to put to GPT-6 Astra, in a `codex exec` call that has no file access, about
                              at most 12 of Tau Ceti's own declarations, whole in one file: the instructions (look for
@@ -48,6 +65,9 @@ Voyager's full-statement test, the red team's correctness audit (mathlib-quality
       --decl NAME            in WHYFILE; the site must be at SHA. Prints `issue <number> <url>`
       --commit SHA --category AXIS [--involvement I] [--dry-run]
 
+Reads of the site that meet HTTP 429 wait 30, 60, 120, 240 s (or what Retry-After asks), and comments GitHub limits are
+posted again after a minute: a run over many declarations reads `snapshot`'s files, never the shards one by one.
+
 An AI agent's yes is an approval of the declaration's standard review (`guide`): it approves the text the site
 shows, edits it, or writes the first one, with the eight checks it made, and gives no reasons of its own. A no, a
 problem, is its own issue. ACTIONS is a JSONL file, an action a line:
@@ -55,6 +75,7 @@ problem, is its own issue. ACTIONS is a JSONL file, an action a line:
   {"approve": DECL, "version": V, "cells": {AXIS: "checked"|"na", ...}}
   {"write": DECL, "cells": {...}, "text": TEXT}
   {"edit": DECL, "parent": V, "cells": {...}, "note": WHAT, "dropped": [{"item": I, "why": W}], "text": TEXT}
+  {"withdraw": DECL, "version": V, "note": WHY}
 
 `cells` has all eight checks of the rubric: object, convention, edge-cases, junk, vacuous, choice, generality,
 naming. `version` and `parent` are 8 to 16 hex digits of the version the site shows now (`standard`), or of the text
@@ -68,8 +89,14 @@ draft's it names), or that leaves out a reference, test or Check of it that no `
 reads them: a reference reworded is kept while it reads alike, or holds the old one whole); a test, a bullet of the
 second part that starts with a Lean name in backticks, that the site has no declaration of; an agent mark
 (`<!-- agent`, `<!-- reviewed-by`) in a text, a note or a `dropped` entry, and a bare @-mention in a note or a `dropped`
-entry, which GitHub would send to that user; a declaration written or edited twice in the file; an action longer than a
-comment; and a site not at SHA, so that each review is of the version that was checked. A long batch goes in several
+entry, which GitHub would send to that user; a declaration written or edited twice in the file (a withdrawal counts); an
+action longer than a comment; and a site not at SHA, so that each review is of the version that was checked. Since
+2026-11-17 it also refuses an approval, a write or an edit of a declaration whose authors, as the site records them
+(Tau Ceti's history, co-authors and one person's other accounts included), include the account (a site that records
+none is said to, and nothing is checked); an edit that only moves where its links point (approve instead); and a Check
+named by a Lean name or given in prose that says nothing of what was found, or names a declaration that does not exist
+or says one is missing that does. It warns of a text longer than the guide's 400 words. A roadmap target a text names
+that TauCetiRoadmap does not have is the intake's to refuse: the site does not publish the roadmap's names. A long batch goes in several
 comments, split between actions, each of at most COMMENT_CAP characters. `post` prints the URL of each comment: the
 intake can still refuse a line, and its reply to the comment on the bulk issue says why.
 
@@ -102,6 +129,8 @@ stderr); 2 error (a checkout without the commit the site shows, among them).
 """
 import argparse
 import calendar
+import difflib
+import gzip
 import hashlib
 import json
 import os
@@ -109,6 +138,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 import urllib.error
 import urllib.parse
@@ -156,6 +186,18 @@ IDENT = r"[^\W\d][\w'!?]*"
 BULLET = re.compile(r"^[-*+][ \t]+(\S.*)$")
 TEST = re.compile(rf"^`({IDENT}(?:\.[\w'!?]+)*)`")
 CHECK = re.compile(r"^Check\s+\*([^*]+)\*")
+#: A Check of Part 2 by how the roadmap names it (`check_of`): its tag in asterisks, the Lean name it gives in backticks,
+#: or, for a Check the roadmap gives in prose, its first words in quotes; then what carries it, after a comma, and what was
+#: found, after a spaced dash (the site's, as `check_of` and the functions after it to `scope`).
+CHECK_ANY = re.compile(r'^Check\s+(?:\*(?P<tag>[^*]+)\*|`(?P<name>[^`]+)`|"(?P<quote>[^"]+)"|“(?P<quote2>[^”]+)”)')
+RESULT = re.compile(r"^[^—]*?\s(?:—|--)\s+(passes|missing|sorry)\b", re.I)
+CARRIER = re.compile(r"^,\s*(?:by\s+|in\s+)?`([^`]+)`")
+LEAN_NAME = re.compile(rf"^{IDENT}(?:\.[\w'!?]+)*$")
+#: The guide's length of a text, in words (`words`); a longer one is said, not refused.
+WORDS = (150, 400)
+#: A Markdown link's target, and a commit in a GitHub address: what an edit that moves only links changes (`unlinked`).
+LINK_TARGET = re.compile(r"\]\((?:[^()\s]|\([^()\s]*\))*(?:\s+\"[^\"]*\")?\)")
+LINK_COMMIT = re.compile(r"(/(?:blob|tree|commit|blame)/)[0-9a-f]{7,40}\b")
 #: How alike two references must read, by `SequenceMatcher`'s ratio, to be one reference reworded.
 SIMILAR = 0.6
 #: The start of an agent mark of evidence-store's (`<!-- agent: ... -->`, `<!--reviewed-by:v1 {...}-->`): the intake
@@ -168,12 +210,14 @@ MENTION = re.compile(r"(?<![\w@])@([A-Za-z0-9][A-Za-z0-9-]*)")
 CODE_SPAN = re.compile(r"(`+).+?\1", re.S)
 #: What an action of `post` has besides the key that names its kind and its declaration.
 FIELDS = {"approve": {"version", "cells"}, "write": {"cells", "text"},
-          "edit": {"parent", "cells", "note", "dropped", "text"}}
+          "edit": {"parent", "cells", "note", "dropped", "text"}, "withdraw": {"version", "note"}}
+#: The actions that say a text is right, which no author of the declaration posts (`own_work`).
+OWN_WORK = ("approve", "write", "edit")
 #: A version, or at least 8 of its leading hex digits.
 VERSION = re.compile(r"[0-9a-f]{8,16}")
 #: A line that starts a command of the bulk issue, as the intake reads one (the site's standard_intake.py): a review's
 #: block, which OPEN and CLOSE fence, ends before the next.
-COMMAND = re.compile(r"^\s*(Approve|Write|Edit|Restore|Reviewed-by|Test|Named|Challenge)\s*:\s*(.*?)\s*$")
+COMMAND = re.compile(r"^\s*(Approve|Write|Edit|Restore|Withdraw|Reviewed-by|Test|Named|Challenge)\s*:\s*(.*?)\s*$")
 OPEN, CLOSE = "~~~review", "~~~"
 #: What ends a field of a line of the bulk issue: a spaced em dash, or `--`.
 FIELD_SEP = re.compile(r"\s+(?:—|--)\s+")
@@ -238,6 +282,10 @@ def fetch(url):
 
 
 RETRIES, RETRY_WAIT = 4, 5  # a read of the site that meets a 5xx or a timeout is tried again after 5, 10, 20, 40 s
+#: A read the host refused for reading too fast (HTTP 429) waits longer: 30, 60, 120, 240 s, or what its Retry-After
+#: says if that is longer. On 2026-11-17 a bulk run's ~2,500 reads of the shards in a minute or two met 429s from GitHub
+#: Pages: a run over many declarations reads `snapshot`'s files instead.
+LIMITED_WAIT = 30
 
 
 def transient(e):
@@ -246,17 +294,35 @@ def transient(e):
     return (isinstance(e, urllib.error.HTTPError) and (e.code == 429 or e.code >= 500)) or isinstance(e, TimeoutError)
 
 
-def get(path):
-    """The site's data, past the Pages cache: a build may be minutes old."""
-    url = f"{SITE}data/{path}?t={time.time():.0f}"
+def backoff(e, k):
+    """How long to wait before try ``k + 1`` of a read that failed with ``e`` (`transient`): longer for a 429, and at
+    least what its Retry-After header asks."""
+    if isinstance(e, urllib.error.HTTPError) and e.code == 429:
+        try:
+            asked = float((e.headers or {}).get("Retry-After") or 0)
+        except (TypeError, ValueError):
+            asked = 0
+        return max(asked, LIMITED_WAIT * 2 ** k)
+    return RETRY_WAIT * 2 ** k
+
+
+def patiently(read, url):
+    """``read(url)``, tried again after a transient failure (`transient`, `backoff`); exit 2 when it keeps failing."""
     for k in range(RETRIES + 1):
         try:
-            return json.loads(fetch(url))
+            return read(url)
         except Exception as e:  # noqa: BLE001 - any failure to read the site is an error, not a verdict
             if k < RETRIES and transient(e):
-                time.sleep(RETRY_WAIT * 2 ** k)
+                wait = backoff(e, k)
+                print(f"{url}: {e}; trying again in {wait:.0f} s", file=sys.stderr)
+                time.sleep(wait)
                 continue
             die(f"error: cannot read {url}: {e}", 2)
+
+
+def get(path):
+    """The site's data, past the Pages cache: a build may be minutes old."""
+    return patiently(lambda url: json.loads(fetch(url)), f"{SITE}data/{path}?t={time.time():.0f}")
 
 
 def normalize(text):
@@ -381,11 +447,20 @@ def agent_mark(agent):
     return "<!-- agent: " + "; ".join(fields) + " -->"
 
 
+class GhError(SystemExit):
+    """`gh` failed: exit 2, as `die`, with what it said, so that a caller may wait out a rate limit (`comment_on`)."""
+
+    def __init__(self, stderr):
+        super().__init__(2)
+        self.stderr = stderr
+
+
 def gh(*args, body=None):
     io = {"input": body} if body is not None else {"stdin": subprocess.DEVNULL}
     r = subprocess.run(["gh", *args], capture_output=True, text=True, **io)
     if r.returncode:
-        die(f"error: gh {' '.join(args[:3])}: {r.stderr.strip()}", 2)
+        print(f"error: gh {' '.join(args[:3])}: {r.stderr.strip()}", file=sys.stderr)
+        raise GhError(r.stderr)
     return r.stdout.strip()
 
 
@@ -453,6 +528,65 @@ def standard_of(meta, name, read=None):
     return (read or get)(f"standard/{fnv(name, need_standard(meta))}.json").get(name)
 
 
+def entry_of(meta, name, read=None):
+    """The entry of one of Tau Ceti's own declarations in its module's file, and that file; (None, None) for a name the
+    site has no page for, or one outside the library."""
+    read = read or get
+    i = id_of(meta, name, read)
+    node = None if i is None else node_at(meta, i, read)
+    if node is None or not node[2] & 1 or node[3] < 0:
+        return None, None
+    file = read(f"m/{node[3]}.json")
+    return entry_in(file, i), file
+
+
+def recorded(meta):
+    """Whether the site records who wrote each declaration (the dataset's facet `authors`)."""
+    return bool((meta.get("authors") or {}).get("recorded"))
+
+
+def authors_on(meta, name, read=None):
+    """The logins of the authors the site records for ``name`` (its entry's `au`, places in its module's table
+    `people`), or None when it cannot say: the site records no authors, or the name is not one of Tau Ceti's own."""
+    if not recorded(meta):
+        return None
+    entry, file = entry_of(meta, name, read)
+    if entry is None:
+        return None
+    people = (file or {}).get("people") or []
+    return [people[i] for i in entry.get("au") or [] if 0 <= i < len(people)]
+
+
+def same_person(meta):
+    """The accounts of one person each, as the site's settings list them (`authors.same_person`)."""
+    return [list(g) for g in (meta.get("authors") or {}).get("samePerson") or []]
+
+
+def accounts_of(login, same):
+    """The accounts of the person behind ``login``, in lowercase: the login and the others of its group."""
+    mine = {login.lower()}
+    for group in same:
+        if mine & {x.lower() for x in group}:
+            mine |= {x.lower() for x in group}
+    return mine
+
+
+def own_work(name, login, authors, same=()):
+    """Why ``login`` may not approve, write or edit the standard review of ``name``: it is one of its authors (the site's
+    record, `authors_on`, with one person's accounts, ``same``); "" when it is not, or when the site cannot say."""
+    mine = [a for a in authors or [] if a.lower() in accounts_of(login, same)]
+    if not mine:
+        return ""
+    return (f"it is your own work: Tau Ceti's history names {', '.join(mine)} among its authors (who wrote or changed "
+            "its lines, co-authors included), and no one approves, writes or edits the standard review of their own "
+            "work: leave it to another reviewer")
+
+
+def account(given=""):
+    """The GitHub account the actions go up under: ``given``, or the one `gh` is signed in as."""
+    return given or gh("api", "user", "-q", ".login")
+
+
 def earlier_form(v):
     """Whether record view ``v`` is an AI agent's yes of the earlier form: an accept by an agent that is no record of
     the standard review (those carry `std`, and no text)."""
@@ -508,6 +642,13 @@ def describe(name, review, found):
                else f"yeses of the earlier form{since}: none")
     for u in found["unfolded"]:
         out += [f"- {u['by']}, {u['at'][:10]}", indent(u["text"])]
+    then = found.get("checked_for")
+    if then:
+        out.append(f"written for Tau Ceti at {then.get('commit', '?')[:12]}, where it was {then.get('name', name)} in "
+                   f"{then.get('module', '?')}: compare the statement then with the statement now"
+                   + ("" if found.get("changed") else " (`standard --tauceti CHECKOUT` shows both)"))
+        if found.get("changed"):
+            out.append(found["changed"])
     out.append("noes still open:" if found["noes"] else "noes still open: none")
     for n in found["noes"]:
         out += [f"- {n['by']}, {n['at'][:10]}" + (f", {n['category']}" if n["category"] else "") + f"  {n['url']}",
@@ -518,6 +659,8 @@ def describe(name, review, found):
 def cmd_standard(a):
     meta = get("meta.json")
     need_standard(meta)
+    if a.tauceti:
+        need_commit(a.tauceti, meta["library"]["commit"])
     shown, missing = {}, False
     for name in a.names:
         views = answers_on(meta, name)
@@ -529,11 +672,67 @@ def cmd_standard(a):
         review = standard_of(meta, name)
         shown[name] = {"version": review["version"] if review else None, "text": review["text"] if review else "",
                        "unfolded": unfolded(views, review["at"] if review else ""), "noes": open_noes(views)}
+        then = (review or {}).get("checkedFor")
+        if then:
+            shown[name]["checked_for"] = then
+            if a.tauceti:
+                shown[name]["changed"] = what_changed(a.tauceti, meta, name, then)
         if not a.json:
             print(describe(name, review, shown[name]) + "\n")
     if a.json:
         print(json.dumps(shown, indent=2, ensure_ascii=False))
     sys.exit(1 if missing else 0)
+
+
+#: The line a declaration opens with, and the name it declares (`statement_in`).
+DECL_HEAD = re.compile(r"^(?:@\[.*?\]\s*)*(?:(?:private|protected|noncomputable|nonrec|partial|unsafe|scoped)\s+)*"
+                       r"(?:theorem|lemma|def|abbrev|instance|structure|class|inductive|opaque|axiom)\s+([^\s:({\[]+)")
+#: The most lines a statement is taken to run over.
+STATEMENT_MAX = 60
+
+
+def statement_in(lines, name, start=0):
+    """The statement of ``name`` in the lines of a Lean file: from the line that declares it (the first after ``start``,
+    from 0, whose declared name ``name`` ends with, the longest such) to its `:=` or `where`, which is left out; None when
+    no line declares it."""
+    found = []
+    for k in range(start, len(lines)):
+        m = DECL_HEAD.match(lines[k])
+        if m and (name == m[1] or name.endswith("." + m[1])):
+            found.append((len(m[1]), -k, k))
+            if start:
+                break
+    if not found:
+        return None
+    k = max(found)[2]
+    out = []
+    for line in lines[k:k + STATEMENT_MAX]:
+        cut = re.split(r":=|\bwhere\b", line, maxsplit=1)
+        out.append(cut[0].rstrip())
+        if len(cut) > 1:
+            break
+    return "\n".join(x for x in out if x.strip())
+
+
+def what_changed(checkout, meta, name, then):
+    """The statement of ``name`` when its standard review was last read with it (``then``: the commit, module and name
+    the site gives, `checkedFor`) and the statement now, from a clone of Tau Ceti with its history, and their difference."""
+    old_path = (then.get("module") or "").replace(".", "/") + ".lean"
+    r = git(checkout, "show", f"{then.get('commit', '')}:{old_path}")
+    if r.returncode:
+        return f"(the statement then: {old_path} at {then.get('commit', '?')[:12]} is not in {checkout})"
+    before = statement_in(r.stdout.decode("utf-8", "replace").split("\n"), then.get("name") or name)
+    entry, file = entry_of(meta, name)
+    now = None
+    if entry and file and file.get("path") and isinstance(entry.get("line"), list):
+        lines = source_lines(checkout, meta["library"]["commit"], file["path"], {})
+        now = statement_in(lines, name, max(entry["line"][0] - 1, 0)) or statement_in(lines, name)
+    if before is None or now is None:
+        return f"(the statement {'then' if before is None else 'now'} was not found by its name)"
+    if before == now:
+        return "the statement then and now (what it rests on changed, or its proof):\n" + now
+    diff = difflib.unified_diff(before.split("\n"), now.split("\n"), "then", "now", lineterm="")
+    return "the statement changed since:\n" + "\n".join(diff)
 
 
 def cmd_hash(a):
@@ -627,19 +826,117 @@ def bullets(body):
     return [" ".join(b) for b in out]
 
 
+#: A Check a bullet records: how the roadmap names it ("tag", "name" or "prose"), by what, what was found (or None) and
+#: what carries it (or None).
+Check = namedtuple("Check", "kind key result carrier")
+
+
+def check_label(c):
+    return {"tag": f"*{c.key}*", "name": f"`{c.key}`", "prose": f'"{c.key}"'}[c.kind]
+
+
+def check_of(bullet):
+    """The Check a bullet of Part 2 records, if it records one (`CHECK_ANY`)."""
+    m = CHECK_ANY.match(bullet)
+    if m is None:
+        return None
+    kind = "tag" if m["tag"] is not None else "name" if m["name"] is not None else "prose"
+    key = " ".join((m["tag"] or m["name"] or m["quote"] or m["quote2"] or "").split())
+    rest = bullet[m.end():]
+    carried, result = CARRIER.match(rest), RESULT.match(rest)
+    return Check(kind, key, result[1].lower() if result else None, carried[1].strip() if carried else None)
+
+
+def part_two(text):
+    """The bullets of the text's Part 2; none when it has no Part 2."""
+    return bullets(next((b for heading, b in sections(text)[1] if heading == HEADINGS[1]), ""))
+
+
 def items(text):
     """The items of the text's Part 2. It reads what it finds, so a text with its parts wrong still has items, and a
     text with no Part 2 has none."""
-    body = next((b for heading, b in sections(text)[1] if heading == HEADINGS[1]), "")
     references, tests, checks = [], [], []
-    for bullet in bullets(body):
+    for bullet in part_two(text):
         if m := TEST.match(bullet):
             tests.append(m[1])
-        elif m := CHECK.match(bullet):
-            checks.append(m[1].strip())
+        elif c := check_of(bullet):
+            checks.append(c.key)
         else:
             references.append(bullet)
     return Items(references, tests, checks)
+
+
+def checks_of(text):
+    """The Checks the text's Part 2 records, in order."""
+    return [c for b in part_two(text) if not TEST.match(b) and (c := check_of(b)) is not None]
+
+
+def check_problems(text, exists):
+    """What is wrong with the Checks the text records, as the site's intake says it: one named by a Lean name or given
+    in prose says what was found; one named by a Lean name passes or has `sorry` only if a declaration of that name
+    exists (``exists``), and is missing only if none does; a carrier given by its Lean name exists. Without ``exists``
+    nothing is said of names."""
+    out = []
+    for c in checks_of(text):
+        if c.kind != "tag" and c.result is None:
+            out.append(f"the Check {check_label(c)} says nothing of what was found: follow its name (and what carries "
+                       "it) with ` — passes`, ` — missing` or ` — sorry`, then a line on what it shows")
+        if exists is None:
+            continue
+        if c.kind == "name" and LEAN_NAME.match(c.key) and c.result in ("passes", "sorry") and not exists(c.key):
+            out.append(f"the Check `{c.key}` is said to be there, but `{c.key}` is not a declaration that exists: if "
+                       "nothing carries it, it is missing; if something else does, name that after a comma")
+        if c.kind == "name" and LEAN_NAME.match(c.key) and c.result == "missing" and c.carrier is None and \
+                exists(c.key):
+            out.append(f"the Check `{c.key}` is said to be missing, but `{c.key}` is a declaration of the library: say "
+                       "whether it passes or has `sorry`")
+        if c.carrier and LEAN_NAME.match(c.carrier) and not exists(c.carrier):
+            out.append(f"the Check {check_label(c)} is carried by `{c.carrier}`, which is not a declaration that exists")
+    return out
+
+
+def words(text):
+    """How many words the text has, as the guide counts them: not its headings, its links' addresses, or marks with no
+    letter or digit."""
+    lines = [line for line in normalize(text).split("\n") if line not in HEADINGS]
+    return sum(1 for w in LINK_TARGET.sub("]", "\n".join(lines)).split() if any(c.isalnum() for c in w))
+
+
+def unlinked(text):
+    """The text with its links' targets and the commits in its addresses set aside: what a reader reads of it."""
+    return LINK_COMMIT.sub(r"\1<commit>", LINK_TARGET.sub("]()", normalize(text)))
+
+
+def roadmap_line(bullet):
+    """Whether a bullet of Part 2 is a roadmap reference: it names TauCetiRoadmap, or opens with `Roadmap`."""
+    return "TauCetiRoadmap" in bullet or bool(re.match(r"^(?:\*\*)?Roadmap\b", bullet))
+
+
+def without_roadmap_lines(text):
+    """The text without the bullets of Part 2 that are roadmap references, their indented lines with them."""
+    out, part, dropping = [], None, False
+    for line in normalize(text).split("\n"):
+        if line in HEADINGS:
+            part, dropping = line, False
+        elif part == HEADINGS[1]:
+            m = BULLET.match(line)
+            if m:
+                dropping = roadmap_line(m[1])
+            elif not (dropping and line[:1] in (" ", "\t") and line.strip()):
+                dropping = False
+            if dropping:
+                continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def scope(parent, text):
+    """What an edit changes when it changes only links: "links" when only its links' targets and commits differ from its
+    parent's, "roadmap" when, those aside, only roadmap bullets do; None otherwise."""
+    a, b = unlinked(parent), unlinked(text)
+    if a == b:
+        return "links"
+    return "roadmap" if without_roadmap_lines(a) == without_roadmap_lines(b) else None
 
 
 def squash(text):
@@ -712,16 +1009,22 @@ def mentions(item, name):
     return re.search(rf"(?<![\w'!?.]){re.escape(name)}(?![\w'!?]|\.\w)", item) is not None
 
 
+def same_check(a, b):
+    """Whether two Checks' names are one: the same tag or Lean name, or first words that read the same or alike."""
+    return a == b or plain(a) == plain(b) or (" " in a and " " in b and like(a, b))
+
+
 def losses(old, new, dropped):
     """What the items ``new`` leave out of the items ``old`` that no (item, why) pair of ``dropped`` names with a
-    reason: a test or a Check is named by an item that holds its name or tag, a reference by one that reads alike. A
-    reference is not left out while a new one keeps it (`kept`)."""
+    reason: a test or a Check is named by an item that holds its name or tag (or a prose Check's first words), a
+    reference by one that reads alike. A reference is not left out while a new one keeps it (`kept`)."""
     said = [item for item, why in dropped if why.strip()]
     ask = "keep it, or give the reason on a `Dropped:` line that names it"
     problems = [f"the edit drops the test `{name}`: {ask}" for name in dict.fromkeys(old.tests)
                 if name not in new.tests and not any(mentions(item, name) for item in said)]
     problems += [f"the edit drops the Check *{tag}*: {ask}" for tag in dict.fromkeys(old.checks)
-                 if tag not in new.checks and not any(mentions(item, tag) for item in said)]
+                 if not any(same_check(tag, n) for n in new.checks)
+                 and not any(mentions(item, tag) or same_check(item.strip(' "“”*`'), tag) for item in said)]
     refs = distinct(old.references)
     keeps = kept(refs, new.references)
     problems += [f'the edit drops the reference "{ref}": {ask}' for ref in refs
@@ -738,10 +1041,15 @@ def change_problems(text, parent, dropped, exists):
     out = []
     if parent is not None and normalize(text) == normalize(parent):
         out.append("the edit changes nothing: its text is its parent's")
+    elif parent is not None and scope(parent, text) == "links":
+        out.append("the edit changes only where its links point (their addresses, or the commit in them), which no "
+                   "reader reads: approve the text instead. A new version would leave behind every approval of the text "
+                   "it replaces")
     if not text_problems(text):
         new = items(text)
         out += [f"the test `{name}` is not a declaration that exists" for name in dict.fromkeys(new.tests)
                 if not exists(name)]
+        out += check_problems(text, exists)
         if parent is not None:
             out += losses(items(parent), new, dropped)
     return out
@@ -863,6 +1171,8 @@ def action_problems(act, site_reason, site_version, drafted):
     asked = site_reason(name)
     if asked:
         out.append(asked)
+    if kind == "withdraw":
+        return out + withdraw_problems(f)
     out += cell_problems(f.get("cells"))
     out += body_problems(f.get("text")) if kind != "approve" else []
     out += edit_problems(f) if kind == "edit" else []
@@ -872,10 +1182,23 @@ def action_problems(act, site_reason, site_version, drafted):
     return out
 
 
+def withdraw_problems(f):
+    """Why a withdrawal's fields are not as they should be: the version of what it takes back, 8 to 16 hex digits (the
+    site's current one or any other: the intake finds what the account filed of it), and a note saying why."""
+    version = f.get("version").strip().lower() if isinstance(f.get("version"), str) else ""
+    out = [] if VERSION.fullmatch(version) else [
+        "version: give the version you approved, wrote or edited, 8 to 16 hex digits"]
+    note = f.get("note")
+    out += [] if isinstance(note, str) and note.strip() else ["note: say why you withdraw it"]
+    return out + ([f"note: {p}" for p in line_problems(note)] if isinstance(note, str) else [])
+
+
 def lines_of(act):
     """The lines of the bulk issue for ``act``, which passed `action_problems`: its command line, and for a write or an
     edit the `Dropped:` lines and the block, with the text as its version is taken."""
     kind, name, f = act["kind"], act["decl"], act["fields"]
+    if kind == "withdraw":
+        return f"Withdraw: {name} — {f['version'].strip()} — {one_line(f['note'])}\n"
     cells = cells_line({a: CELL_STATES[s] for a, s in f["cells"].items()})
     if kind == "approve":
         lines = [f"Approve: {name} — {f['version'].strip()} — {cells}"]
@@ -914,9 +1237,11 @@ def site_problems(act, review, drafts, exists):
     return out + change_problems(text, parent, pairs, exists)
 
 
-def check_actions(actions, meta, drafted, head):
+def check_actions(actions, meta, drafted, head, login=None, warn=None):
     """``actions`` checked against the site: the reasons any cannot be posted, as lines that name the action; and, if
-    there are none, the declaration and the lines of each. A comment starts with ``head``."""
+    there are none, the declaration and the lines of each. A comment starts with ``head``. With ``login``, the account
+    the actions go up under, an approval, a write or an edit of a declaration that account wrote (`own_work`, by the
+    authors the site records) is refused. ``warn`` hears what is said and not refused: a text longer than the guide."""
     reasons, shown, found, modules = {}, {}, {}, []
     read = reader()  # the site's files of names, read once each for the tests the texts list
 
@@ -946,10 +1271,18 @@ def check_actions(actions, meta, drafted, head):
         why = action_problems(act, site_reason, lambda n: site_review(n).get("version"), drafted)
         if name.strip() and not site_reason(name):
             why += site_problems(act, site_review(name), drafted.get(name, {}), exists)
-        if act["kind"] != "approve" and name:
+            if login and act["kind"] in OWN_WORK:
+                mine = own_work(name, login, authors_on(meta, name, read), same_person(meta))
+                why += [mine] if mine else []
+        if act["kind"] != "approve" and name:  # a withdrawal may change it too: it may take back the current text
             if name in changed:
-                why.append("a comment changes the review of a declaration once, and this file changes it again")
+                why.append("a comment changes the review of a declaration once, and this file changes it again (a "
+                           "withdrawal counts): post them in two runs")
             changed.add(name)
+        text = act["fields"].get("text")
+        if warn and not why and act["kind"] in ("write", "edit") and isinstance(text, str) and words(text) > WORDS[1]:
+            warn(f"line {act['line']} ({name}): its text is {words(text)} words, over the {WORDS[0]} to {WORDS[1]} the "
+                 "guide asks for: condense it when you can, keeping every reference, test and Check")
         if not why:
             lines = lines_of(act)
             if len(head) + len(lines) > COMMENT_CAP:
@@ -1032,6 +1365,35 @@ def cmd_linked(a):
         print(name)
 
 
+#: What GitHub says when it refuses a comment for a while: its secondary rate limit, or the hourly one. `post` waits
+#: GH_WAIT seconds and tries again, at most GH_TRIES times in all.
+LIMITED = re.compile(r"rate limit|HTTP 429|was submitted too quickly", re.I)
+GH_WAIT, GH_TRIES = 60, 3
+
+
+def comment_on(bulk, text):
+    """Posts ``text`` as a comment on the bulk issue, waiting out GitHub's rate limits (`LIMITED`): the comment's URL."""
+    for k in range(GH_TRIES):
+        try:
+            return gh("issue", "comment", bulk, "-R", REPO, "--body-file", "-", body=text)
+        except GhError as e:
+            if k + 1 < GH_TRIES and LIMITED.search(e.stderr or ""):
+                print(f"GitHub limits comments for now; trying again in {GH_WAIT} s", file=sys.stderr)
+                time.sleep(GH_WAIT)
+                continue
+            raise
+
+
+def authorship_login(meta, given=""):
+    """The account whose own work `post` refuses (`own_work`), or None, with a warning, when the site records no authors,
+    and then nothing was checked."""
+    if not recorded(meta):
+        print("warning: the site records no authors of declarations yet, so `post` could not check that none of these "
+              "is your own work: check it yourself (AI-REVIEWS.md, Rules)", file=sys.stderr)
+        return None
+    return account(given)
+
+
 def cmd_post(a):
     mark, note = agent_mark(a.agent), one_line(a.note)
     if COMMAND.match(note):
@@ -1049,7 +1411,9 @@ def cmd_post(a):
     need_standard(meta)
     commit = at_commit(meta, a.commit)
     head = mark + "\n" + (note or f"Reviews of declarations checked at Tau Ceti {commit[:12]}.") + "\n"
-    problems, chunks = check_actions(actions, meta, drafted, head)
+    login = authorship_login(meta, a.login)
+    warnings = []
+    problems, chunks = check_actions(actions, meta, drafted, head, login, warnings.append)
     waited = 0
     while any(NO_PAGE in p for p in problems) and fresh_build(meta) and waited < PAGE_WAIT:
         # 2026-11-17: a run that waits for the site posts its reviews minutes after the site's new build.
@@ -1059,24 +1423,130 @@ def cmd_post(a):
         waited += PAGE_STEP
         meta = get("meta.json")
         commit = at_commit(meta, a.commit)
-        problems, chunks = check_actions(actions, meta, drafted, head)
+        warnings.clear()
+        problems, chunks = check_actions(actions, meta, drafted, head, login, warnings.append)
     if problems:
         die("refused, and nothing was posted:\n" + "\n".join("- " + p for p in problems), 1)
+    for w in warnings:
+        print("warning: " + w, file=sys.stderr)
+    send(meta, head, chunks, a.dry_run)
+
+
+def send(meta, head, chunks, dry_run):
+    """Posts ``chunks`` (each a declaration and the lines of its action, checked) on the bulk issue, in as many comments
+    as hold them, each starting with ``head``; or prints the comments, for a dry run."""
     comments = comments_of(head, chunks)
     bulk = str((meta.get("store") or {}).get("bulk", 1))
     for k, group in enumerate(comments, 1):
         text = head + "".join(lines for _, lines in group)
-        if a.dry_run:
+        if dry_run:
             print(text)
             continue
         try:
-            print(gh("issue", "comment", bulk, "-R", REPO, "--body-file", "-", body=text), flush=True)
+            print(comment_on(bulk, text), flush=True)
         except SystemExit:
             left = [name for rest in comments[k - 1:] for name, _ in rest]
             print(f"{k - 1} of {len(comments)} comments were posted; not posted: {', '.join(left)}", file=sys.stderr)
             raise
     print(f"{len(chunks)} action{'' if len(chunks) == 1 else 's'} in {len(comments)} comment"
-          f"{'' if len(comments) == 1 else 's'}{' (dry run)' if a.dry_run else ''}", file=sys.stderr)
+          f"{'' if len(comments) == 1 else 's'}{' (dry run)' if dry_run else ''}", file=sys.stderr)
+
+
+def fetch_bytes(url):
+    """The bytes at ``url``."""
+    with urllib.request.urlopen(url, timeout=120) as r:
+        return r.read()
+
+
+def download(url, path):
+    """The file at ``url`` saved as ``path``, read in pieces (a dataset is some 400 MB)."""
+    def save(u):
+        with urllib.request.urlopen(u, timeout=600) as r, open(path, "wb") as f:
+            shutil.copyfileobj(r, f, 1 << 20)
+        return path
+    return patiently(save, url)
+
+
+def unpack(tar_path, into):
+    """A dataset's archive unpacked into ``into``, refusing any member that would land outside it."""
+    os.makedirs(into, exist_ok=True)
+    with tarfile.open(tar_path) as tar:
+        root = os.path.realpath(into)
+        for m in tar.getmembers():
+            target = os.path.realpath(os.path.join(into, m.name))
+            if not (target == root or target.startswith(root + os.sep)) or m.issym() or m.islnk():
+                die(f"error: {tar_path} holds {m.name}, which would land outside {into}: not unpacked", 2)
+        tar.extractall(into, **({"filter": "data"} if hasattr(tarfile, "data_filter") else {}))
+
+
+def cmd_snapshot(a):
+    os.makedirs(a.dir, exist_ok=True)
+    meta = get("meta.json")
+    commit = meta["library"]["commit"]
+    write_file(os.path.join(a.dir, "meta.json"), json.dumps(meta, ensure_ascii=False, indent=1) + "\n")
+    exports = meta.get("exports") or {}
+    if not exports.get("standard"):
+        die("error: the site publishes no file of all its standard reviews yet (its meta.json names no "
+            "exports.standard): read what you need with `standard NAME...`, a few at a time, and never crawl its shards",
+            2)
+    raw = patiently(fetch_bytes, f"{SITE}data/{exports['standard']}?t={time.time():.0f}")
+    rows = gzip.decompress(raw).decode("utf-8")
+    write_file(os.path.join(a.dir, "standard.jsonl"), rows)
+    manifest = patiently(lambda u: json.loads(fetch(u)),
+                         f"https://raw.githubusercontent.com/{LIBRARY}/{commit}/lake-manifest.json")
+    mathlib = next((p.get("rev") for p in manifest.get("packages", []) if p.get("name") == "mathlib"), None)
+    roadmap = (meta.get("roadmap") or {}).get("commit")
+    if a.dataset:
+        url = exports.get("dataset") or f"https://github.com/{REPO}/releases/download/dataset-{commit[:12]}/dataset.tar.gz"
+        tar = download(url, os.path.join(a.dir, "dataset.tar.gz"))
+        unpack(tar, os.path.join(a.dir, "dataset"))
+        os.remove(tar)
+    info = {"site": SITE, "built": meta.get("built"), "tauceti": commit, "mathlib": mathlib, "roadmap": roadmap,
+            "reviews": rows.count("\n"), "dataset": bool(a.dataset)}
+    write_file(os.path.join(a.dir, "snapshot.json"), json.dumps(info, indent=1) + "\n")
+    d = a.dir.rstrip("/")
+    print(f"wrote {d}/meta.json, {d}/standard.jsonl ({info['reviews']} standard reviews)"
+          + (f" and {d}/dataset/" if a.dataset else "") + f", and {d}/snapshot.json. Then, once:")
+    print(f"  git clone https://github.com/{LIBRARY} {d}/TauCeti && git -C {d}/TauCeti checkout {commit}")
+    print(f"  git clone https://github.com/TauCetiProject/TauCetiRoadmap {d}/TauCetiRoadmap"
+          + (f" && git -C {d}/TauCetiRoadmap checkout {roadmap}" if roadmap else ""))
+    if mathlib:
+        print(f"  git clone --filter=blob:none https://github.com/leanprover-community/mathlib4 {d}/mathlib4 && "
+              f"git -C {d}/mathlib4 checkout {mathlib}")
+    print("Read the reviews from these files, never from the site's shards; post through `post`.")
+
+
+def cmd_withdraw(a):
+    mark, note = agent_mark(a.agent) if a.agent else "", one_line(a.note)
+    act = {"line": 1, "kind": "withdraw", "decl": a.name, "fields": {"version": a.version, "note": note}}
+    meta = get("meta.json")
+    need_standard(meta)
+    head = (mark + "\n" if mark else "") + f"Withdrawing what this account filed of `{a.name}`.\n"
+    problems, chunks = check_actions([act], meta, {}, head)
+    if problems:
+        die("refused, and nothing was posted:\n" + "\n".join("- " + p for p in problems), 1)
+    send(meta, head, chunks, a.dry_run)
+
+
+def cmd_mine(a):
+    meta = get("meta.json")
+    if not recorded(meta):
+        die("cannot say: the site records no authors of declarations yet (its dataset has no facet `authors`): read "
+            "Tau Ceti's history yourself, co-authors included", 2)
+    login, same, read = account(a.login), same_person(meta), reader()
+    mine = unknown = 0
+    for name in a.names:
+        authors = authors_on(meta, name, read)
+        if authors is None:
+            print(f"UNKNOWN {name}: the site records no authors for it (no page, or not one of Tau Ceti's own)")
+            unknown += 1
+        elif own_work(name, login, authors, same):
+            print(f"MINE {name}: {', '.join(authors)}")
+            mine += 1
+        else:
+            print(f"NOT-MINE {name}" + (f": {', '.join(authors)}" if authors else ""))
+    print(f"{login}: {mine} yours, {len(a.names) - mine - unknown} not, {unknown} unknown", file=sys.stderr)
+    sys.exit(1 if mine else 2 if unknown else 0)
 
 
 # --- Astra's review: the question, and its answer ---------------------------------------------------------------
@@ -1722,6 +2192,8 @@ def main(argv):
     q = sub.add_parser("standard")
     q.add_argument("names", nargs="+")
     q.add_argument("--json", action="store_true")
+    q.add_argument("--tauceti", default="", help="a clone of Tau Ceti with its history: show what changed under a "
+                                                 "text written for an earlier version")
     q.set_defaults(fn=cmd_standard)
     q = sub.add_parser("hash")
     q.add_argument("file")
@@ -1740,8 +2212,24 @@ def main(argv):
     q.add_argument("--commit", required=True)
     q.add_argument("--note", default="")
     q.add_argument("--drafts", default="")
+    q.add_argument("--login", default="", help="the account the actions go up under (default: the one gh is signed in as)")
     q.add_argument("--dry-run", action="store_true")
     q.set_defaults(fn=cmd_post)
+    q = sub.add_parser("withdraw")
+    q.add_argument("name")
+    q.add_argument("version")
+    q.add_argument("--note", required=True)
+    q.add_argument("--agent", default="")
+    q.add_argument("--dry-run", action="store_true")
+    q.set_defaults(fn=cmd_withdraw)
+    q = sub.add_parser("mine")
+    q.add_argument("names", nargs="+")
+    q.add_argument("--login", default="")
+    q.set_defaults(fn=cmd_mine)
+    q = sub.add_parser("snapshot")
+    q.add_argument("dir")
+    q.add_argument("--dataset", action="store_true")
+    q.set_defaults(fn=cmd_snapshot)
     q = sub.add_parser("astra-question")
     q.add_argument("names", nargs="+")
     q.add_argument("--tauceti", required=True)

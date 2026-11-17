@@ -537,6 +537,32 @@ class ReviewsTests(Case):
         self.assertEqual(self.cli("reviews")[0], 0)
         self.assertEqual((len(self.gh.bodies), self.states()), (1, {("posted", "TauCeti.Foo.one")}))
 
+    def test_a_yes_of_the_accounts_own_work_is_dropped(self):
+        # The site records the authors of `one`: the account gh is signed in as, `alice`, is one. `post` would refuse
+        # the whole file for it, round after round: it is dropped, and the rest go up.
+        site_get, gh = self.site.get, self.gh
+
+        def get(path):
+            out = site_get(path)
+            if path == "meta.json":
+                return {**out, "authors": {"recorded": True, "samePerson": []}}
+            if path.startswith("m/"):
+                return {**out, "people": ["alice", "bob"],
+                        "decls": [{**e, "au": [0] if e["name"] == "TauCeti.Foo.one" else [1]} for e in out["decls"]]}
+            return out
+
+        def signed_in(*args, body=None):
+            return "alice" if args[:2] == ("api", "user") else gh(*args, body=body)
+        self.site.get, self.gh = get, signed_in
+        self.audit({"TauCeti.Foo.one": {"cells": CELLS, "approve": self.version("TauCeti.Foo.one")},
+                    "TauCeti.Foo.two": {"cells": CELLS, "write": TEXT_TWO}})
+        code, out, err = self.cli("reviews")
+        self.assertEqual(code, 0, err)
+        [post] = self.posts
+        self.assertEqual([a.get("approve") or a.get("write") for a in post["actions"]], ["TauCeti.Foo.two"])
+        self.assertIn(f"{FILE}: dropped TauCeti.Foo.one, {redteam.OWN_WORK}", out)
+        self.assertEqual(self.states(), {("dropped", "TauCeti.Foo.one"), ("posted", "TauCeti.Foo.two")})
+
 
 class ReReviewTests(Case):
     def test_yes_command_replaces_entries(self):
