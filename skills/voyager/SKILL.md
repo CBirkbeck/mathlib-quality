@@ -816,7 +816,10 @@ exec` from another directory, where a relative path would name another file.
 **What to cover.** Every candidate whose statement you compared, announced or not: a correctly
 labelled special case is reviewed too, though it gets no bullet. Nothing for a candidate dropped
 before its statement was compared (a helper, no docstring, the importance test failing first), or
-for anything you did not read at the window's commit.
+for anything you did not read at the window's commit. **Nothing that is the account's own work**:
+`python3 /tmp/voyager-review_site.py mine <names>` prints MINE for each declaration the account `gh`
+is signed in as wrote or changed (Tau Ceti's history as the site records it, co-authors included);
+leave every MINE out, and name them in the run log. `post` refuses them anyway, and the intake too.
 
 **Review first.** For each, review the Lean in depth at the window's `docgen` commit before you
 read its standard review: the statement, a definition's value, and the statements of what it
@@ -833,17 +836,21 @@ fails or which source it disagrees with, and the Lean names involved; its catego
 that fails, or `other`. A no that an open no already makes can say just that (`as #N`), and
 anything more.
 
-**Then the standard review.** Read each with `python3 /tmp/voyager-review_site.py standard <names>`:
-its text and version, who approved it, and the noes still open (an open no may name an error your
-review must answer).
+**Then the standard review.** Read each with `python3 /tmp/voyager-review_site.py standard <names>
+--tauceti <the TauCeti clone>`: its text and version, who approved it, and the noes still open (an
+open no may name an error your review must answer). For a text written for an earlier version of the
+declaration it also prints the statement then and now, and their difference: edit what no longer
+holds before anything else.
 - **None yet:** write one, following `python3 /tmp/voyager-review_site.py guide`. Your
   full-statement comparison has what its first part needs. You may draft them in subagents, ten
   declarations each, giving each the comparison and the Lean source; a draft cites only
   references from that comparison, the docstring or the roadmap. Check every draft against the
   Lean before it goes in: writing it approves it.
 - **One there:** approve it if it is right and complete; edit it if something is missing, wrong or
-  unclear (a hypothesis it skips, the source you compared it with, a subtlety it misses), never
-  just to reword it.
+  unclear (a hypothesis it skips, the source you compared it with, a subtlety it misses), or to
+  condense a text over 400 words (keeping every reference, test and Check), never just to reword it,
+  and never only to move a link's commit or add a roadmap line for a roadmap that merely lists the
+  declaration as an input: approve then.
 
 **Post your actions.** Write them to `/tmp/voyager-review-voyager.jsonl`, an action a line
 (`python3 /tmp/voyager-review_site.py --help` gives the three, `approve`, `write` and `edit`; build
@@ -863,9 +870,13 @@ python3 /tmp/voyager-review_site.py no /tmp/voyager-review-why.md --agent "Voyag
 - `post` checks the whole file against the site first, and posts nothing if any action is wrong (a
   name the site has no page for, a version that is not the one it shows, cells that are not all
   eight, a text without its three parts, a write where the site shows a review, an edit that
-  changes nothing or leaves out a reference, test or Check without a `dropped` entry, a test that
-  is no declaration), with the reasons. Fix those lines, or take them out and name them in the run
-  log, and post again. Each no is its own issue.
+  changes nothing, moves only links or leaves out a reference, test or Check without a `dropped`
+  entry, a test that is no declaration, a Check that says nothing of what was found, a declaration
+  that is the account's own work), with the reasons. Fix those lines, or take them out and name them
+  in the run log, and post again. Each no is its own issue.
+- An approval, write or edit posted in error (your own work, the wrong declaration) is taken back with
+  `python3 /tmp/voyager-review_site.py withdraw <name> <version> --note "<why>" --agent "Voyager, <your
+  exact model>"`: never leave it standing.
 - `post` prints the URL of each comment it posts: name them in the run log. The intake can still
   refuse a line; its reply to the comment on issue #1 says why.
 

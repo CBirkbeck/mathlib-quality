@@ -312,7 +312,10 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
    With one standing, that check of the site fails, and a failed check has no cell: the
    declaration waits until its fix lands and a later audit finds it clean. Findings in `reuse`,
    `proof`, `api` and `hygiene` do not hold it back. Never review anything a red-team PR wrote or
-   restated, since the red team does not review its own work. For each declaration it reviews,
+   restated, since the red team does not review its own work; the site enforces this by account
+   (Tau Ceti's history, co-authors included): `python3 "$RS" mine <full names>` prints MINE for
+   each declaration the account the reviews go up under wrote or changed, and a MINE gets no yes.
+   One filed in error is taken back with `python3 "$RS" withdraw <name> <version> --note "<why>"`. For each declaration it reviews,
    record two things (reference section 7):
    - **The site's eight cells**: `object`, `convention`, `edge-cases`, `junk`, `vacuous`,
      `choice`, `generality`, `naming`, each `checked`, or `na` where the check cannot fail.
