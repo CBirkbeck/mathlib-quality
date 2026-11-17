@@ -564,23 +564,37 @@ Zulip-specific rules, each learned from reader feedback on the first message:
   and the app at the public address reads `data/` from that repository's Pages, which is the address the
   check below and the helper read. A review filed there shows at the public address once that site has
   rebuilt; nothing is copied. The helper reads links at either address in older posts.
-- **Verify every link on the site before posting.** The site follows the `docgen` branch your
-  window ends at: it checks every 20 minutes and rebuilds in about 45, so at the time of a run it
-  can be behind.
-  1. Right after establishing the window (§1), run the check below with the `docgen` commit and no
-     names: it prints the site's commit. If that is not the `docgen` commit, start the site's update
-     once, `gh workflow run follow.yml -R CBirkbeck/tauceti-reviewed-by-test`, and carry on with the
-     gates; it is ready long before you are.
+- **Verify every link on the site before posting. A post links Tau Ceti Review, or it does not go
+  out** (owner, 2026-11-17: a post that is late with review links is wanted, a post on time with
+  docs links is not). The site follows the `docgen` branch your window ends at, and its build of a
+  new commit takes 1.5 to 2.5 hours, so when the docs moved shortly before a run the site is
+  behind and the run waits for it.
+  1. Right after establishing the window (§1), before reading any pull request, run the check below
+     with the `docgen` commit and no names: it prints the site's commit. If that is not the `docgen`
+     commit, start the site's update once, `gh workflow run follow.yml -R CBirkbeck/tauceti-reviewed-by-test`,
+     and carry on with the gates.
   2. Before posting, run the check with the `docgen` commit and every name you will link. It waits,
      at most nine minutes per call, until each name is on the site or the site has reached the
-     `docgen` commit. On `SITE_PENDING`, run it again, for up to 90 minutes in all. Run it in the
-     foreground with the Bash timeout at 600000; never detach it, and never end your turn while it
-     is pending.
-  3. Every name must print `ON-SITE`. A name still `MISSING` with the site at the `docgen` commit (the
-     site's extractor skips a module that did not build for it), or after 90 minutes: link that
-     bullet to the API docs anchor instead, `https://taucetiproject.github.io/TauCeti/docs/TauCeti/<Module/Path>.html#<Name>`
-     (curled, 200, the `id` present), and say in the run log which name and why. Never post a link
-     you have not verified.
+     `docgen` commit. On `SITE_PENDING`, run it again, for as long as it takes, up to 4 hours
+     counted from the start of the run. Run it in the foreground with the Bash timeout at 600000;
+     never detach it, and never end your turn while it is pending. Every half hour of waiting, look
+     at the build (`gh run list -R CBirkbeck/tauceti-reviewed-by-test --workflow follow.yml -L 2`,
+     and the same for `dataset.yml`): if the newest build for the commit ended `failure` or
+     `cancelled` and none is queued or in progress, start
+     `gh workflow run dataset.yml -R CBirkbeck/tauceti-reviewed-by-test` once (it builds the pinned
+     commit), keep waiting, and say so in the run log.
+  3. Every name must print `ON-SITE`. Only a name still `MISSING` with the site AT the `docgen` commit
+     (the site's extractor skips a module that did not build for it) is linked to the API docs
+     anchor instead, `https://taucetiproject.github.io/TauCeti/docs/TauCeti/<Module/Path>.html#<Name>`
+     (curled, 200, the `id` present), with a line in the run log saying which name and why. Never
+     link the API docs because the site is behind or because time ran out, and never post a link you
+     have not verified.
+  4. If the site has not reached the `docgen` commit 4 hours after the start of the run, do not
+     post. Leave the watermark alone, say in the run log what the site's build was doing, and end
+     with `VOYAGER_RESULT: failed-site`: the wrapper stops there (every other account would wait for
+     the same build), and the retry sweeps and the next run cover the window. (2026-11-17: the
+     90-minute limit this replaces was shorter than the site's build, so a post went out with 20
+     docs links; that day the build was also cut off by its own time limit.)
 
   ```bash
   python3 - <docgen-sha> <Name> <Name> … <<'PY'
@@ -906,8 +920,8 @@ python3 /tmp/voyager-review_site.py no /tmp/voyager-review-why.md --agent "<Astr
 
 **Order and failure.** All of this comes after the post and the state DM. A failure here never
 touches them: report it in the run log. `post` refuses a site not at the window's `docgen` commit,
-so a review is always of the version you checked. The site was waited for in §6; if it is not
-there (it never caught up, or has moved on since), skip the window's reviews this run, say so in
+so a review is always of the version you checked. The site was waited for in §6, and no post
+goes out before it is there; if it has moved on since, skip the window's reviews this run, say so in
 the log, and list the names left unreviewed: they are the backlog, below, and the next run that
 can files them. On the site these are AI approvals, counted apart from people's yeses.
 

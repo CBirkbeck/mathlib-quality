@@ -218,11 +218,13 @@ could be better. Three rules:
 2. **Link the theorem the headline claims**, not the containing definition. The narrow-class-group
    finiteness bullet once linked the group's definition instead of `instFinite`; Chris caught it.
    If the bold text says "…is finite", the link is to the finiteness statement.
-3. **Verify every link on the site**, with SKILL.md §6's check. The site follows `docgen` (every
-   20 minutes, about 45 minutes to rebuild), so it can be behind when a run starts: the run starts
-   the site's update early (`gh workflow run follow.yml -R CBirkbeck/tauceti-reviewed-by-test`) and
-   waits for it before posting, up to 90 minutes. A name the site still lacks (its extractor skips a
-   module that does not build for it) gets the docs anchor,
+3. **Verify every link on the site**, with SKILL.md §6's check. The site follows `docgen` and takes
+   1.5 to 2.5 hours to build a new commit, so it can be behind when a run starts: the run starts
+   the site's update first (`gh workflow run follow.yml -R CBirkbeck/tauceti-reviewed-by-test`) and
+   waits for it before posting, up to 4 hours from its start. A post links Tau Ceti Review or does
+   not go out: if the site is still behind then, the run ends `failed-site` without posting
+   (owner, 2026-11-17). Only a name the site lacks once it IS at the `docgen` commit (its extractor
+   skips a module that does not build for it) gets the docs anchor,
    `https://taucetiproject.github.io/TauCeti/docs/TauCeti/<Module/Path>.html#<FQN>`, and a line in the run log.
 
 The site's public address is https://taucetiproject.org/review/; its data, intake and workflows are the repository CBirkbeck/tauceti-reviewed-by-test. It also reads this topic: its Named page is built
