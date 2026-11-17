@@ -345,6 +345,31 @@ class FetchTests(unittest.TestCase):
             self.assertEqual(raised.exception.code, 2)
             self.assertIn("cannot read", err.getvalue())
 
+    def test_get_tries_again_when_the_host_is_briefly_unavailable(self):
+        # GitHub Pages answers 503 for seconds at a time: a read is tried again, with a longer wait each time. A file
+        # that is not there, and a host that stays unavailable, are errors as before.
+        def unavailable(code, times, body=b'{"ok": 1}'):
+            calls = []
+
+            def urlopen(url, timeout):
+                calls.append(url)
+                if len(calls) <= times:
+                    raise review_site.urllib.error.HTTPError(url, code, "Service Unavailable", {}, None)
+                return self.answer(body)(url, timeout)
+            return urlopen
+
+        with mock.patch.object(review_site.time, "sleep") as sleep:
+            with mock.patch.object(review_site.urllib.request, "urlopen", unavailable(503, 2)):
+                self.assertEqual(review_site.get("standard/191.json"), {"ok": 1})
+            self.assertEqual([c.args[0] for c in sleep.call_args_list], [5, 10])
+            for code, times, slept in ((404, 1, 0), (503, 9, review_site.RETRIES)):
+                sleep.reset_mock()
+                with self.subTest(code=code), mock.patch.object(review_site.urllib.request, "urlopen", unavailable(code, times)), \
+                        contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as raised:
+                    review_site.get("standard/191.json")
+                self.assertEqual((raised.exception.code, sleep.call_count), (2, slept))
+                self.assertIn("cannot read", err.getvalue())
+
     def test_fetch_decodes_utf8_and_drops_a_byte_order_mark(self):
         for body in ("a § b".encode("utf-8"), b"\xef\xbb\xbf" + "a § b".encode("utf-8")):
             with mock.patch.object(review_site.urllib.request, "urlopen", self.answer(body)):
