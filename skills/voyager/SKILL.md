@@ -217,7 +217,10 @@ mandatory, before every post:
    with the sender+topic narrow, `num_before=1000`) and extract every `TauCeti#<n>` ever
    cited. Drop any candidate whose PR number is in that set. PR numbers never recur, so a
    result announced once can never be announced again — regardless of what the watermark
-   says.
+   says. **Keep the two forges apart** (§2): `TauCeti#<n>` is a GitHub number and
+   `TauCeti-Forgejo#<n>` a Forgejo number, and the same `n` names unrelated pull requests on
+   each. A Forgejo PR is announced only if `TauCeti-Forgejo#<n>` is in the set; a GitHub PR
+   with the same number does not count.
 2. **Name-level repeat rule.** Also collect the previously announced result *names* (the
    bold link texts). A candidate whose name matches one already announced posts only if it
    is a genuine strengthening from a *different* PR, and then the sentence must state the
@@ -269,7 +272,28 @@ git log --first-parent --format='%h%x09%s%x09%(trailers:key=Source-PR,valueonly)
 
 A line whose subject ends in `(#N)` or whose third column names `TauCeti#N` is a PR; take `N`
 from whichever is present. A subject with neither (a `Merge pull request` of the queue's own
-infrastructure branches) is not a library PR. Grepping subjects for `(#N)` alone now misses
+infrastructure branches) is not a library PR.
+
+**Which forge the PR is on is read from the trailer, never from the subject.** Since
+mid-November 2026 pull requests also land from the project's Forgejo server
+(`git.taucetiproject.org`); on 2026-11-18 they were 265 of the day's 599 commits. Such a
+commit has BOTH a subject ending in `(#N)` and a trailer of the form
+`Source-PR: forgejo:https://git.taucetiproject.org/TauCetiProject/TauCeti@1#N`, and its `N` is
+a Forgejo number: GitHub's `#N` is an unrelated, usually much older, pull request (Forgejo #336
+is a theorem about flows; GitHub #336 is a Mathlib bump). So:
+
+| Third column (`Source-PR`) | The PR is | Read it with | Cite it as |
+|---|---|---|---|
+| `TauCetiProject/TauCeti#N` | GitHub `N` | `gh pr view N --repo TauCetiProject/TauCeti --json title,body` | `TauCeti#N` |
+| `forgejo:https://git.taucetiproject.org/TauCetiProject/TauCeti@1#N` | Forgejo `N` | `curl -s https://git.taucetiproject.org/api/v1/repos/TauCetiProject/TauCeti/pulls/N` (public; `title`, `body`, `html_url`) | `[TauCeti-Forgejo#N](https://git.taucetiproject.org/TauCetiProject/TauCeti/pulls/N)` |
+| empty, subject ends in `(#N)` (before 2026-11-05) | GitHub `N` | as GitHub | `TauCeti#N` |
+
+Never run `gh pr view` on a Forgejo number. A Forgejo PR's title may carry a
+`[Merged by Bors] - ` prefix, which is dropped, and the API can report `merged: false` for a PR
+that Bors landed: the commit on main is the evidence that it merged, and its message carries
+the PR description as well. A trailer in any other form is skipped and reported in the run's
+final output. A run that reads the forge from the subject drops every Forgejo result, or
+describes it with another pull request's text. Grepping subjects for `(#N)` alone now misses
 every PR: on 2026-11-05 a 1,191-commit batch landed with trailers only, and a run that counted
 subjects reported "1 PR merged". Triage by title: `feat:` is where announcements live; `chore:`/`refactor:`/`fix:` almost
 never are. Then, for each candidate,
@@ -508,7 +532,9 @@ report the same PR, that is the bug. Check with `test -f .git/shallow` and
 `git fetch --unshallow` before trusting any attribution. Note also that in a sandboxed shell
 `git` may have no network while `gh` does; fetch accordingly.
 
-- Cite the PR as bare `TauCeti#<n>` — the Lean Zulip's linkifier turns it into a link.
+- Cite a GitHub PR as bare `TauCeti#<n>` — the Lean Zulip's linkifier turns it into a link. Cite
+  a Forgejo PR (§2) as `[TauCeti-Forgejo#<n>](https://git.taucetiproject.org/TauCetiProject/TauCeti/pulls/<n>)`:
+  a bare `TauCeti#<n>` there would link the unrelated GitHub pull request of that number.
 - The bold result name links to the declaration's page on the **Tau Ceti review site** (see §6).
 - If no PR can be found (direct push), cite the commit hash with an explicit link.
 - Never announce something you could not link.
@@ -542,8 +568,9 @@ Zulip-specific rules, each learned from reader feedback on the first message:
 
 - **One physical line per paragraph and per bullet.** Zulip keeps single newlines as line
   breaks, so hard-wrapped prose renders with ragged mid-sentence breaks. Never wrap.
-- **Use the realm linkifiers**: bare `TauCeti#NNN` for TauCeti PRs, `mathlib4#NNN` for
-  Mathlib PRs — not explicit markdown PR links.
+- **Use the realm linkifiers**: bare `TauCeti#NNN` for TauCeti PRs on GitHub, `mathlib4#NNN` for
+  Mathlib PRs — not explicit markdown PR links. The one exception is a Tau Ceti PR that landed
+  from Forgejo, which has no linkifier and is written as the explicit link of §2.
 - **Link each bold result name to the declaration's page on the Tau Ceti review site** (owner
   request, 2026-10-24), where a reader sees the statement as the docs show it and what it rests on,
   and can review it, suggest a test or say what could be better:
@@ -762,7 +789,9 @@ docstring can mention the word without it being a proof hole.
 carry a PR (a `(#N)` subject or a `Source-PR:` trailer, §2), which is exact and consistent
 with what was actually scanned. The total `T` counts the same commits over the whole docgen
 history. The trailer format began with TauCeti#20359 on 2026-11-05; a count that only reads
-subjects stops moving there, exactly as the merged search did in October.
+subjects stops moving there, exactly as the merged search did in October. Commits that landed
+from Forgejo (§2) are counted like any other: their subject ends in `(#N)`, so the recipe
+above already includes them.
 - **Never use GitHub's merged search.** Tau Ceti lands pull requests through bors, which
   closes them instead of merging them, so that count stopped moving in October 2026
   (11,535 on 2026-10-12).
