@@ -1063,7 +1063,10 @@ def cmd_post(a):
     if problems:
         die("refused, and nothing was posted:\n" + "\n".join("- " + p for p in problems), 1)
     comments = comments_of(head, chunks)
-    bulk = str((meta.get("store") or {}).get("bulk", 1))
+    # The bulk issue is the one the site names (meta.store.bulk). --issue overrides it: a bulk issue fills up at
+    # GitHub's 2,500 comments (2026-11-20, issue #1), and until the site is rebuilt with the new number in
+    # data/settings.json its meta.json still names the full one.
+    bulk = str(getattr(a, "issue", 0) or (meta.get("store") or {}).get("bulk", 1))
     for k, group in enumerate(comments, 1):
         text = head + "".join(lines for _, lines in group)
         if a.dry_run:
@@ -1741,6 +1744,9 @@ def main(argv):
     q.add_argument("--note", default="")
     q.add_argument("--drafts", default="")
     q.add_argument("--dry-run", action="store_true")
+    q.add_argument("--issue", type=int, default=0,
+                   help="post to this bulk issue of the review site, not the one its meta.json names (an issue "
+                        "labelled evidence:bulk; for the hours after a full bulk issue is replaced)")
     q.set_defaults(fn=cmd_post)
     q = sub.add_parser("astra-question")
     q.add_argument("names", nargs="+")
