@@ -102,6 +102,7 @@ stderr); 2 error (a checkout without the commit the site shows, among them).
 """
 import argparse
 import calendar
+import gzip
 import hashlib
 import json
 import os
@@ -232,9 +233,12 @@ def die(msg, code):
 
 
 def fetch(url):
-    """The text at ``url``."""
+    """The text at ``url``; of a file the site publishes gzipped (its name ends `.gz`), the text it holds."""
     with urllib.request.urlopen(url, timeout=60) as r:
-        return r.read().decode("utf-8-sig")
+        body = r.read()
+    if urllib.parse.urlsplit(url).path.endswith(".gz"):
+        body = gzip.decompress(body)
+    return body.decode("utf-8-sig")
 
 
 RETRIES, RETRY_WAIT = 4, 5  # a read of the site that meets a 5xx or a timeout is tried again after 5, 10, 20, 40 s
@@ -1270,8 +1274,9 @@ def fenced(text, info=""):
 
 def module_file(node, read):
     """The file of the site that lists the entries of the module of ``node``: m/<mi>.json for Tau Ceti's own
-    declarations, u/<mi>.json for any other; None for a declaration in no module."""
-    return read(f"{'m' if node[2] & 1 else 'u'}/{node[3]}.json") if node[3] >= 0 else None
+    declarations, u/<mi>.json.gz for any other (the site publishes the modules outside the library gzipped only);
+    None for a declaration in no module."""
+    return read(f"m/{node[3]}.json" if node[2] & 1 else f"u/{node[3]}.json.gz") if node[3] >= 0 else None
 
 
 def entry_in(file, i):

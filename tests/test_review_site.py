@@ -13,6 +13,7 @@ skips without them.
 Run them from the root of the repository: python3 -m unittest discover -s tests
 """
 import contextlib
+import gzip
 import io
 import json
 import os
@@ -200,7 +201,10 @@ class Site:
         if path == "upstream.json":
             return {name: {"records": records} for name, project, records, _ in self.decls if not project}
         kind, _, rest = path.partition("/")
-        k = int(rest.removesuffix(".json")) if rest else -1
+        # The site publishes the modules outside the library gzipped only (u/<k>.json.gz), every other file plain.
+        if rest and not rest.endswith(".json.gz" if kind == "u" else ".json"):
+            raise AssertionError(f"the site does not publish {path}")
+        k = int(rest.split(".")[0]) if rest else -1
         if kind == "names":
             return [[i, name] for i, (name, _, _, _) in enumerate(self.decls) if review_site.fnv(name, self.NAMES) == k]
         if kind == "nodes":
@@ -369,6 +373,15 @@ class FetchTests(unittest.TestCase):
                     review_site.get("standard/191.json")
                 self.assertEqual((raised.exception.code, sleep.call_count), (2, slept))
                 self.assertIn("cannot read", err.getvalue())
+
+    def test_fetch_reads_what_a_gzipped_file_holds(self):
+        # The site publishes the modules outside the library as data/u/<k>.json.gz: the name says it, not a header.
+        body = gzip.compress('{"decls": [], "name": "§"}'.encode("utf-8"))
+        with mock.patch.object(review_site.urllib.request, "urlopen", self.answer(body)):
+            self.assertEqual(json.loads(review_site.fetch(f"{review_site.SITE}data/u/7.json.gz?t=1")),
+                             {"decls": [], "name": "§"})
+            with self.assertRaises(UnicodeDecodeError):  # a plain name is read as it is served
+                review_site.fetch(f"{review_site.SITE}data/u/7.json?t=1")
 
     def test_fetch_decodes_utf8_and_drops_a_byte_order_mark(self):
         for body in ("a § b".encode("utf-8"), b"\xef\xbb\xbf" + "a § b".encode("utf-8")):
@@ -1298,6 +1311,17 @@ class AstraQuestionTests(AstraCase):
         self.assertEqual(len(listed), 13)
         self.assertIn("2 more", listed[12])
         self.assertNotIn(rests[12], one)
+
+    def test_question_reads_a_module_outside_the_library_under_its_gzipped_name(self):
+        # On 2026-11-20 the site stopped publishing data/u/<k>.json: a question about anything that rests on a
+        # declaration of Mathlib met a 404 there.
+        self.site.add("Nat.succ_le", None, project=False, module="Mathlib.Order.Basic", k="t", sig="Nat.succ_le : P")
+        self.site.add("Fixture.uses", entry(review()), line=[13, 14], rests=["Nat.succ_le"], sig="Fixture.uses : True")
+        one, = self.items(Path(self.ask("Fixture.uses")).read_text(encoding="utf-8"))
+        self.assertIn("- Nat.succ_le: Nat.succ_le : P", one)
+        k = self.site.modules.index("Mathlib.Order.Basic")
+        self.assertIn(f"u/{k}.json.gz", self.site.reads)
+        self.assertNotIn(f"u/{k}.json", self.site.reads)
 
     def test_question_says_what_it_rests_on_by_what_the_site_has(self):
         self.site.add("Fixture.stated", None, stmt="theorem stated : 1 = 1", line=[13, 14])  # no signature, a statement
