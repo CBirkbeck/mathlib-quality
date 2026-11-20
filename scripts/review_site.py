@@ -118,13 +118,13 @@ from difflib import SequenceMatcher
 
 #: Where the review data is published (`<SITE>data/…`): the Pages of the review data repository. The app at LINK reads
 #: its data from there, so a review filed in REPO shows at LINK as soon as that site has rebuilt.
-SITE = os.environ.get("REVIEW_SITE", "https://cbirkbeck.github.io/tauceti-reviewed-by-test/")
+SITE = os.environ.get("REVIEW_SITE", "https://taucetiproject.github.io/TauCetiReviewSite/")
 #: The review data repository: evidence is filed, and the follow and dataset workflows run, there.
-REPO = os.environ.get("REVIEW_SITE_REPO", "CBirkbeck/tauceti-reviewed-by-test")
+REPO = os.environ.get("REVIEW_SITE_REPO", "TauCetiProject/TauCetiReviewSite")
 #: The public address of Tau Ceti Review. Links to a declaration are `<LINK>#/d/<name>`, to a module `<LINK>#/m/<module>`.
 LINK = os.environ.get("REVIEW_SITE_LINK", "https://taucetiproject.org/review/")
 #: A link to a declaration page, at the public address or at the data repository's own Pages (the address until 2026-11-13).
-DECLARATION_LINK = re.compile(r"(?:taucetiproject\.org/review|tauceti-reviewed-by-test)/#/d/([^)\s>]+)")
+DECLARATION_LINK = re.compile(r"(?:taucetiproject\.org/review|tauceti-reviewed-by-test|TauCetiReviewSite)/#/d/([^)\s>]+)")
 #: An anchor of the API docs, at either address the docs have had.
 DOCS_ANCHOR = re.compile(r"(?:taucetiproject\.org|taucetiproject\.github\.io/TauCeti)/docs/TauCeti/[^)\s#]+#([^)\s]+)")
 

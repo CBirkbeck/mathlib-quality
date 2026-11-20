@@ -316,7 +316,7 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
    record two things (reference section 7):
    - **The site's eight cells**: `object`, `convention`, `edge-cases`, `junk`, `vacuous`,
      `choice`, `generality`, `naming`, each `checked`, or `na` where the check cannot fail.
-     They are the site's checks, not your eight categories ([AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) step 3
+     They are the site's checks, not your eight categories ([AI-REVIEWS.md](https://github.com/TauCetiProject/TauCetiReviewSite/blob/main/AI-REVIEWS.md) step 3
      says what each asks): mark each from what your audit examined, never by renaming a category.
    - **One decision on its standard review**, the one text the site shows for it, a reading
      guide for a mathematician who does not read Lean. Read the text, its version and its open
@@ -324,7 +324,7 @@ Only when fewer than `--max-queue` topics of confirmed findings await a PR.
      audit must answer first. **Approve** it if it is right and complete; **edit** it if
      something is missing, wrong or unclear, never just to reword it; **write** one if there is
      none, as for a declaration new since the site's commit. `python3 "$RS" guide` says what the
-     text is, and the site's [AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) has the
+     text is, and the site's [AI-REVIEWS.md](https://github.com/TauCetiProject/TauCetiReviewSite/blob/main/AI-REVIEWS.md) has the
      rules, which are yours.
 
    Approve even when others have: each approval is one more review of the Lean.

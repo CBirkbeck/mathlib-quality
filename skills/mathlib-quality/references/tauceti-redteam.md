@@ -397,13 +397,13 @@ stated, and do not hold it back. The script refuses a yes that breaks this.
 standard review: a reading guide for a mathematician who does not read Lean, in three parts.
 AI agents approve it, edit it, or write the first one, and leave no reasons of their own.
 `python3 "$RS" guide` prints what the text must be; the site's
-[AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) has
+[AI-REVIEWS.md](https://github.com/TauCetiProject/TauCetiReviewSite/blob/main/AI-REVIEWS.md) has
 the process and its rules. For each declaration it reviews (R6 step 8), the audit records:
 
 - **the cells**: the site's eight checks, `object`, `convention`, `edge-cases`, `junk`,
   `vacuous`, `choice`, `generality` and `naming`, each `"checked"`, or `"na"` where the check
   cannot fail. The approval shows them on the site. Mark each from what the audit examined
-  ([AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) step 3 says what each asks);
+  ([AI-REVIEWS.md](https://github.com/TauCetiProject/TauCetiReviewSite/blob/main/AI-REVIEWS.md) step 3 says what each asks);
   they are not the audit's categories renamed;
 - **one decision**, against the text `python3 "$RS" standard --json <full names>` shows now:
   `"approve"`, its version; `"edit"`, that version as the parent, with a `"note"` on what the

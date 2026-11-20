@@ -587,7 +587,7 @@ Zulip-specific rules, each learned from reader feedback on the first message:
   caught exactly this once.
 - **One site, two addresses.** Readers reach Tau Ceti Review at `https://taucetiproject.org/review/`, and every
   link you write goes there. Its data, its intake and its workflows are the repository
-  `CBirkbeck/tauceti-reviewed-by-test`: reviews are filed there (the helper's `post`), `follow.yml` runs there,
+  `TauCetiProject/TauCetiReviewSite`: reviews are filed there (the helper's `post`), `follow.yml` runs there,
   and the app at the public address reads `data/` from that repository's Pages, which is the address the
   check below and the helper read. A review filed there shows at the public address once that site has
   rebuilt; nothing is copied. The helper reads links at either address in older posts.
@@ -598,17 +598,17 @@ Zulip-specific rules, each learned from reader feedback on the first message:
   behind and the run waits for it.
   1. Right after establishing the window (§1), before reading any pull request, run the check below
      with the `docgen` commit and no names: it prints the site's commit. If that is not the `docgen`
-     commit, start the site's update once, `gh workflow run follow.yml -R CBirkbeck/tauceti-reviewed-by-test`,
+     commit, start the site's update once, `gh workflow run follow.yml -R TauCetiProject/TauCetiReviewSite`,
      and carry on with the gates.
   2. Before posting, run the check with the `docgen` commit and every name you will link. It waits,
      at most nine minutes per call, until each name is on the site or the site has reached the
      `docgen` commit. On `SITE_PENDING`, run it again, for as long as it takes, up to 4 hours
      counted from the start of the run. Run it in the foreground with the Bash timeout at 600000;
      never detach it, and never end your turn while it is pending. Every half hour of waiting, look
-     at the build (`gh run list -R CBirkbeck/tauceti-reviewed-by-test --workflow follow.yml -L 2`,
+     at the build (`gh run list -R TauCetiProject/TauCetiReviewSite --workflow follow.yml -L 2`,
      and the same for `dataset.yml`): if the newest build for the commit ended `failure` or
      `cancelled` and none is queued or in progress, start
-     `gh workflow run dataset.yml -R CBirkbeck/tauceti-reviewed-by-test` once (it builds the pinned
+     `gh workflow run dataset.yml -R TauCetiProject/TauCetiReviewSite` once (it builds the pinned
      commit), keep waiting, and say so in the run log.
   3. Every name must print `ON-SITE`. Only a name still `MISSING` with the site AT the `docgen` commit
      (the site's extractor skips a module that did not build for it) is linked to the API docs
@@ -626,7 +626,7 @@ Zulip-specific rules, each learned from reader feedback on the first message:
   ```bash
   python3 - <docgen-sha> <Name> <Name> … <<'PY'
   import json, sys, time, urllib.request
-  SITE = "https://cbirkbeck.github.io/tauceti-reviewed-by-test/data/"
+  SITE = "https://taucetiproject.github.io/TauCetiReviewSite/data/"
   def get(path):  # past the Pages cache: the build may be minutes old
       return json.load(urllib.request.urlopen(f"{SITE}{path}?t={time.time():.0f}", timeout=60))
   def on_site(meta, name):  # the site's own name lookup (FNV-1a over UTF-16 code units)
@@ -818,7 +818,7 @@ so its answer is recorded there. An AI agent answers in two steps, in this order
 Lean in depth, looking for errors; then it approves, edits or writes the declaration's **standard
 review**, the one text the site shows for it, a reading guide for a mathematician who does not
 read Lean. The site's
-[AI-REVIEWS.md](https://github.com/CBirkbeck/tauceti-reviewed-by-test/blob/main/AI-REVIEWS.md) is
+[AI-REVIEWS.md](https://github.com/TauCetiProject/TauCetiReviewSite/blob/main/AI-REVIEWS.md) is
 the process, and its rules are yours.
 
 **Once, at the start of this section**, in a Bash call of its own, clear an earlier run's review
