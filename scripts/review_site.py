@@ -251,16 +251,22 @@ def transient(e):
 
 
 def get(path):
-    """The site's data, past the Pages cache: a build may be minutes old."""
-    url = f"{SITE}data/{path}?t={time.time():.0f}"
-    for k in range(RETRIES + 1):
-        try:
-            return json.loads(fetch(url))
-        except Exception as e:  # noqa: BLE001 - any failure to read the site is an error, not a verdict
-            if k < RETRIES and transient(e):
-                time.sleep(RETRY_WAIT * 2 ** k)
-                continue
-            die(f"error: cannot read {url}: {e}", 2)
+    """The site's data, past the Pages cache: a build may be minutes old. A file the site publishes gzipped only, at
+    `<path>.gz` (its scripts/build_site.py, `write_packed`: GitHub Pages serves at most 1 GB), is read there when
+    `<path>` is not found, so a caller names a file the same way whether the site packs it or not."""
+    names = [path] if path.endswith(".gz") else [path, path + ".gz"]
+    for i, name in enumerate(names):
+        url = f"{SITE}data/{name}?t={time.time():.0f}"
+        for k in range(RETRIES + 1):
+            try:
+                return json.loads(fetch(url))
+            except Exception as e:  # noqa: BLE001 - any failure to read the site is an error, not a verdict
+                if isinstance(e, urllib.error.HTTPError) and e.code == 404 and i + 1 < len(names):
+                    break  # not published under this name: the packed file is read next
+                if k < RETRIES and transient(e):
+                    time.sleep(RETRY_WAIT * 2 ** k)
+                    continue
+                die(f"error: cannot read {url}: {e}", 2)
 
 
 def normalize(text):

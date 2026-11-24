@@ -383,6 +383,38 @@ class FetchTests(unittest.TestCase):
             with self.assertRaises(UnicodeDecodeError):  # a plain name is read as it is served
                 review_site.fetch(f"{review_site.SITE}data/u/7.json?t=1")
 
+    def test_get_reads_the_packed_file_when_the_plain_one_is_not_published(self):
+        # The site may publish a module's file gzipped only (data/m/<k>.json.gz): `get("m/<k>.json")` reads it there.
+        packed, urls = gzip.compress('{"decls": [{"id": 3}]}'.encode("utf-8")), []
+
+        def urlopen(url, timeout):
+            urls.append(url)
+            if not review_site.urllib.parse.urlsplit(url).path.endswith(".gz"):
+                raise review_site.urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+            return self.answer(packed)(url, timeout)
+
+        with mock.patch.object(review_site.time, "sleep") as sleep, \
+                mock.patch.object(review_site.urllib.request, "urlopen", urlopen):
+            self.assertEqual(review_site.get("m/7.json"), {"decls": [{"id": 3}]})
+        self.assertEqual(sleep.call_count, 0)
+        self.assertEqual([review_site.urllib.parse.urlsplit(u).path.rsplit("/", 1)[-1] for u in urls], ["7.json", "7.json.gz"])
+        # a plain file that is published is read as before, with one request
+        urls.clear()
+        with mock.patch.object(review_site.urllib.request, "urlopen",
+                               lambda url, timeout: (urls.append(url), self.answer(b'{"ok": 1}')(url, timeout))[1]):
+            self.assertEqual(review_site.get("m/7.json"), {"ok": 1})
+        self.assertEqual(len(urls), 1)
+
+        # neither name is published: the error names the packed file, the last one tried
+        def missing(url, timeout):
+            raise review_site.urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+        with mock.patch.object(review_site.urllib.request, "urlopen", missing), \
+                contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit) as raised:
+            review_site.get("m/7.json")
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("m/7.json.gz", err.getvalue())
+
     def test_fetch_decodes_utf8_and_drops_a_byte_order_mark(self):
         for body in ("a § b".encode("utf-8"), b"\xef\xbb\xbf" + "a § b".encode("utf-8")):
             with mock.patch.object(review_site.urllib.request, "urlopen", self.answer(body)):
